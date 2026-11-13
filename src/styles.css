@@ -109,6 +109,8 @@ body[data-mode='nf'] .mic .m i.lit { background: var(--now); }
 .rung b { width: 28px; height: 28px; display: grid; place-items: center; border-radius: 50%; border: 2px solid var(--line); font-size: 0.875rem; }
 .rung span { font-weight: 600; line-height: 1.2; }
 .rung small { display: block; font-weight: 400; font-size: 0.8125rem; }
+/* what the rung on show does, always visible (the captions of the rungs are not, on small screens) */
+.rungnote { margin: 2px 2px 0; font-size: 0.8125rem; line-height: 1.35; color: var(--muted); }
 .rung:hover { border-color: var(--muted); }
 .rung[aria-pressed='true'] { border-color: var(--now); background: var(--panel); color: var(--text); }
 .rung[aria-pressed='true'] b { border-color: var(--now); background: var(--now); color: var(--now-ink); }

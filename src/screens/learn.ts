@@ -211,7 +211,7 @@ function lesson(root: HTMLElement, m: Material, wanted: string | undefined, ctx?
     `<div class="head">
        ${m.piano ? '' : `<svg id="cbox" class="chordfig" viewBox="0 0 230 210" role="img" aria-label="${L('Chord diagram: where your fingers go for the chord to hold', 'Akkorddiagramm: wo deine Finger für den Akkord hinkommen, den du hältst')}"></svg>`}
        <div class="say"><p class="eyebrow" id="eb"></p><h1 id="h1" aria-live="polite"></h1><p class="sub" id="sub"></p></div>
-       <div class="ladder" role="group" aria-label="${L('How to practise', 'Wie du übst')}">${RUNGS().map((r, i) => `<button class="rung" id="st${i}" aria-pressed="false"><b>${i + 1}</b><span>${r}<small id="st${i}s"></small></span></button>`).join('')}</div>
+       <div class="ladder" role="group" aria-label="${L('How to practise', 'Wie du übst')}">${RUNGS().map((r, i) => `<button class="rung" id="st${i}" aria-pressed="false"><b>${i + 1}</b><span>${r}<small id="st${i}s"></small></span></button>`).join('')}<p class="rungnote" id="rungnote" aria-live="polite"></p></div>
      </div>
      <svg class="fit" id="rowA" viewBox="0 0 1180 ${m.piano ? 180 : 186}" role="img" aria-label="${L(`${m.piano ? 'The notes of this phrase, read left to right' : 'Tablature of this line, read left to right'}, with a marker on the one to play`, `${m.piano ? 'Die Noten dieser Phrase, von links nach rechts gelesen' : 'Tabulatur dieser Zeile, von links nach rechts gelesen'}, mit einer Markierung auf dem, was jetzt dran ist`)}"></svg>
      <svg class="fit" id="rowB" viewBox="0 0 1180 ${m.piano ? 180 : 186}" role="img" aria-label="${L('What comes next', 'Was danach kommt')}" hidden></svg>
@@ -293,7 +293,26 @@ function lesson(root: HTMLElement, m: Material, wanted: string | undefined, ctx?
     hands.innerHTML = fretboard(dots, pluck, LEARN, m.lines[li].from);
   }
 
-  function instruction(cur: Step, prev: Step | null): { h1: string; sub: string } {
+  /**
+   * What comes after the step on show while the chord stays: how many more strums or notes on it, and the
+   * chord it changes to then (in this line or the next). Said instead of the same instruction again and
+   * again, so that playing on one chord is seen to go somewhere.
+   */
+  function ahead(steps: Step[], i: number, li: number): string {
+    const id = chordAt(steps[i]);
+    if (!id) return '';
+    let k = 0;
+    while (i + k < steps.length && chordAt(steps[i + k]) === id) k++;
+    const after = i + k < steps.length ? chordAt(steps[i + k]) : chordAt(m.lines[li + 1]?.steps[0]);
+    const name = m.piano ? chordName(id, true) : shapeOf(id).name;
+    const next = after && after !== id ? (m.piano ? chordName(after, true) : shapeOf(after).name) : '';
+    const strum = !!steps[i].chord && !m.piano;
+    if (k <= 1) return next ? L(`The last ${strum ? 'strum' : 'note'} on ${name}, then the change to ${next}.`, `${strum ? 'Der letzte Anschlag' : 'Der letzte Ton'} auf ${name}, dann Wechsel zu ${next}.`) : '';
+    if (strum) return L(`${k} strums of ${name} from here${next ? `, then the change to ${next}` : ''}.`, `Noch ${k}-mal ${name}${next ? `, dann Wechsel zu ${next}` : ''}.`);
+    return L(`${k} ${m.piano && steps[i].chord ? 'strikes' : 'notes'} on ${name} from here${next ? `, then ${next}` : ''}.`, `Noch ${k} ${m.piano && steps[i].chord ? 'Anschläge' : 'Töne'} auf ${name}${next ? `, dann ${next}` : ''}.`);
+  }
+
+  function instruction(cur: Step, prev: Step | null, upcoming = ''): { h1: string; sub: string } {
     if (m.piano) {
       const k = cur.key!;
       // the chord before this step: of the step before, or at the start of a phrase what the phrase before ended on
@@ -304,7 +323,7 @@ function lesson(root: HTMLElement, m: Material, wanted: string | undefined, ctx?
         if (was && was !== cur.chord) return { h1: L(`Change to <em>${c.name}</em>.`, `Wechsle zu <em>${c.name}</em>.`), sub: keyTip(was, cur.chord) };
         return {
           h1: was ? L(`<em>${c.name}</em> once more.`, `<em>${c.name}</em> noch einmal.`) : L(`Play <em>${c.name}</em>: all its keys at once.`, `Spiel <em>${c.name}</em>: alle Tasten zugleich.`),
-          sub: L(
+          sub: was && upcoming ? upcoming : L(
             `${keysOf.slice(0, -1).join(', ')} and ${keysOf[keysOf.length - 1]} with fingers ${c.fingers.slice(0, -1).join(', ')} and ${c.fingers[c.fingers.length - 1]}. Strike them together and let them ring.`,
             `${keysOf.slice(0, -1).join(', ')} und ${keysOf[keysOf.length - 1]} mit den Fingern ${c.fingers.slice(0, -1).join(', ')} und ${c.fingers[c.fingers.length - 1]}. Schlag sie zusammen an und lass sie klingen.`,
           ),
@@ -332,10 +351,10 @@ function lesson(root: HTMLElement, m: Material, wanted: string | undefined, ctx?
     if (cur.chord)
       return {
         h1: change ? L(`Change to <em>${name}</em> and strum.`, `Wechsle zu <em>${name}</em> und schlag an.`) : L(`Strum <em>${name}</em>${cur.tab?.up ? ', on the way back up' : ''}.`, `Schlag <em>${name}</em> an${cur.tab?.up ? ', auf dem Weg zurück nach oben' : ''}.`),
-        sub: how || (cur.tab?.up ? L('An upstroke: the hand comes back up and brushes only the thin strings.', 'Ein Aufschlag: Die Hand kommt zurück nach oben und streift nur die dünnen Saiten.') : L('One stroke down across the strings of the chord.', 'Ein Abschlag über die Saiten des Akkords.')),
+        sub: how || (cur.tab?.up ? `${L('An upstroke: the hand comes back up and brushes only the thin strings.', 'Ein Aufschlag: Die Hand kommt zurück nach oben und streift nur die dünnen Saiten.')} ${upcoming}`.trim() : upcoming || L('One stroke down across the strings of the chord.', 'Ein Abschlag über die Saiten des Akkords.')),
       };
     const t = cur.tab!;
-    if (id) return { h1: L(`${change ? `Change to ${name}.` : `Hold ${name}.`} Pluck the <em>${STRING_FULL[t.s]} string</em>.`, `${change ? `Wechsle zu ${name}.` : `Halte ${name}.`} Zupf die <em>${STRING_FULL[t.s]}-Saite</em>.`), sub: how || L('Fingers go where the diagram shows, and stay down while you pluck.', 'Die Finger kommen dahin, wo das Diagramm sie zeigt, und bleiben liegen, während du zupfst.') };
+    if (id) return { h1: L(`${change ? `Change to ${name}.` : `Hold ${name}.`} Pluck the <em>${STRING_FULL[t.s]} string</em>.`, `${change ? `Wechsle zu ${name}.` : `Halte ${name}.`} Zupf die <em>${STRING_FULL[t.s]}-Saite</em>.`), sub: how || (prev ? upcoming : '') || L('Fingers go where the diagram shows, and stay down while you pluck.', 'Die Finger kommen dahin, wo das Diagramm sie zeigt, und bleiben liegen, während du zupfst.') };
     if (t.more) return { h1: L('Pluck the <em>marked strings</em> together.', 'Zupf die <em>markierten Saiten</em> zusammen.'), sub: '' };
     return { h1: L(`Pluck the <em>${STRING_FULL[t.s]} string</em>, ${t.f ? 'fret ' + t.f : 'open'}.`, `Zupf die <em>${STRING_FULL[t.s]}-Saite</em>, ${t.f ? t.f + '. Bund' : 'leer'}.`), sub: L(`It sounds like ${noteName(cur.midis[0])}.${t.fg ? ` Finger ${t.fg}.` : ''}`, `Der Ton ist ${noteName(cur.midis[0])}.${t.fg ? ` Finger ${t.fg}.` : ''}`) };
   }
@@ -394,12 +413,13 @@ function lesson(root: HTMLElement, m: Material, wanted: string | undefined, ctx?
       const done = at >= all.length;
       const cur = all[Math.min(at, all.length - 1)];
       const prev = at > 0 ? all[at - 1] : null;
-      const text = instruction(cur, prev);
+      const text = instruction(cur, prev, done ? '' : ahead(all, at, line));
       where(line);
       const bars = m.lines[line].bars;
+      const count = done ? '' : ` · ${cur.chord ? (m.piano ? L(`chord ${at + 1} of ${all.length}`, `Akkord ${at + 1} von ${all.length}`) : L(`strum ${at + 1} of ${all.length}`, `Anschlag ${at + 1} von ${all.length}`)) : m.piano ? L(`key ${at + 1} of ${all.length}`, `Taste ${at + 1} von ${all.length}`) : L(`note ${at + 1} of ${all.length}`, `Ton ${at + 1} von ${all.length}`)}`;
       $('#eb', root).textContent = L(
-        `${ctx ? `${ctx.label} · ${m.title} · ` : ''}${cap(m.unit)} ${line + 1} of ${n}${m.piano ? '' : ` · bar${bars.length > 1 ? `s ${bars[0] + 1}–${bars[bars.length - 1] + 1}` : ` ${bars[0] + 1}`}`} · the app waits for you`,
-        `${ctx ? `${ctx.label} · ${m.title} · ` : ''}${unitDe(m)} ${line + 1} von ${n}${m.piano ? '' : ` · ${bars.length > 1 ? `Takte ${bars[0] + 1}–${bars[bars.length - 1] + 1}` : `Takt ${bars[0] + 1}`}`} · die App wartet auf dich`,
+        `${ctx ? `${ctx.label} · ${m.title} · ` : ''}${cap(m.unit)} ${line + 1} of ${n}${m.piano ? '' : ` · bar${bars.length > 1 ? `s ${bars[0] + 1}–${bars[bars.length - 1] + 1}` : ` ${bars[0] + 1}`}`}${count} · the app waits for you`,
+        `${ctx ? `${ctx.label} · ${m.title} · ` : ''}${unitDe(m)} ${line + 1} von ${n}${m.piano ? '' : ` · ${bars.length > 1 ? `Takte ${bars[0] + 1}–${bars[bars.length - 1] + 1}` : `Takt ${bars[0] + 1}`}`}${count} · die App wartet auf dich`,
       );
       $('#h1', root).innerHTML = done ? L(`${cap(m.unit)} done.`, `${unitDe(m)} geschafft.`) : text.h1;
       $('#sub', root).textContent = done ? '' : text.sub;
@@ -490,16 +510,21 @@ function lesson(root: HTMLElement, m: Material, wanted: string | undefined, ctx?
       say('bad', html);
     }
 
-    // until the first note: how to read what is on the screen
+    // until the first note: what to do (on the first line), and how to read what is on the screen
+    const strums = m.lines[line].steps.every((s) => s.chord);
+    const one = m.piano ? (strums ? L('chord', 'Akkord') : L('key', 'Taste')) : strums ? L('strum', 'Anschlag') : L('note', 'Ton');
+    const each = m.piano ? (strums ? 'Akkord für Akkord' : 'Taste für Taste') : strums ? 'Anschlag für Anschlag' : 'Ton für Ton';
+    const what = line === 0 ? `${L(`Play the ${m.unit} from left to right, one ${one} at a time: the app waits for each and moves the marker on. A clean ${m.unit} brings the next.`, `Spiel die ${unitDe(m)} von links nach rechts, ${each}: Die App wartet jeweils und rückt die Markierung weiter. Ist die ${unitDe(m)} sauber, kommt die nächste.`)} ` : '';
     say(
       'info',
-      m.piano
+      what +
+      (m.piano
         ? chordsOnly
           ? L('Read left to right: each block is one chord, all its keys at once.', 'Lies von links nach rechts: Jeder Block ist ein Akkord, alle Tasten zugleich.')
           : L('Read left to right. Take your time.', 'Lies von links nach rechts. Lass dir Zeit.')
         : m.lines[line].steps.every((s) => s.chord)
           ? L('Read left to right: each slash is one strum.', 'Lies von links nach rechts: Jeder Schrägstrich ist ein Anschlag.')
-          : L('Tab: a line is a string, lowest at the bottom. A number is a fret, 0 is open.', 'Tabulatur: Eine Linie ist eine Saite, die tiefste unten. Eine Zahl ist ein Bund, 0 heißt leer.'),
+          : L('Tab: a line is a string, lowest at the bottom. A number is a fret, 0 is open.', 'Tabulatur: Eine Linie ist eine Saite, die tiefste unten. Eine Zahl ist ein Bund, 0 heißt leer.')),
     );
     draw();
     return {
@@ -798,6 +823,12 @@ function lesson(root: HTMLElement, m: Material, wanted: string | undefined, ctx?
     $('#st0s', root).textContent = L('waits for you', 'wartet auf dich');
     $('#st1s', root).textContent = L(`${m.unit} by ${m.unit}, ${s === 1 ? tempo : suggest(m, line).tempo}%`, `${unitDe(m)} für ${unitDe(m)}, ${s === 1 ? tempo : suggest(m, line).tempo}%`);
     $('#st2s', root).textContent = L('start to end', 'von Anfang bis Ende');
+    // what the rung on show does, and what comes after it: the captions of the rungs are hidden on small screens
+    $('#rungnote', root).textContent = [
+      L(`Waits for every ${m.piano ? 'key' : 'note and strum'}, no clock. When the ${m.unit}s sit: 2, with the click.`, `Wartet auf jeden ${m.piano ? 'Ton' : 'Ton und Anschlag'}, ohne Uhr. Sitzen die ${m.piano ? 'Phrasen' : 'Zeilen'}: weiter mit 2, mit Klick.`),
+      L(`In time with the click, ${m.unit} by ${m.unit}; the tempo rises when it goes well. Then: 3.`, `Im Takt mit dem Klick, ${unitDe(m)} für ${unitDe(m)}; das Tempo steigt, wenn es gut geht. Danach: 3.`),
+      L(`The whole ${m.piano ? 'piece' : 'song'} at full speed, from here to the end.`, `${m.piano ? 'Das ganze Stück' : 'Der ganze Song'} im vollen Tempo, von hier bis zum Ende.`),
+    ][s];
     mode = s === 0 ? waitMode() : clickMode();
   }
 
