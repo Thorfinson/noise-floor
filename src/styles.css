@@ -130,6 +130,11 @@ body[data-mode='nf'] .mic .m i.lit { background: var(--now); }
 .plan b { font-weight: 600; }
 .plan small { display: block; font-size: 0.9375rem; color: var(--muted); }
 .plan .t { color: var(--muted); }
+/* the start page once today's session is done: what was measured today */
+.donecard { padding: 18px 26px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); }
+.donecard .res li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; align-items: center; padding: 9px 0; border-bottom: 1px solid var(--line); }
+.donecard .res li:last-child { border: 0; }
+.donecard .note { margin: 10px 0 0; }
 .links { display: flex; flex-wrap: wrap; gap: 8px; }
 .res { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--line); }
 .res li { display: grid; grid-template-columns: minmax(0, 18rem) minmax(0, 1fr) auto; gap: 20px; align-items: center; padding: 16px 0; border-bottom: 1px solid var(--line); font-size: 1.125rem; }
@@ -642,3 +647,18 @@ canvas.lane { display: block; width: 100%; height: clamp(220px, 38vh, 420px); bo
 canvas.lane.tall { height: clamp(260px, 52vh, 560px); }
 body[data-fit] canvas.lane { height: clamp(180px, 34vh, 400px); }
 body[data-fit] canvas.lane.tall { height: clamp(220px, 46vh, 520px); }
+
+/* a menu chosen from the instrument: waiting for a moment of quiet, then listening */
+.pickstate { margin: 10px 0 0; font-size: 0.9375rem; color: var(--muted); display: flex; align-items: center; gap: 8px; }
+.pickstate::before { content: ''; width: 9px; height: 9px; border-radius: 50%; background: var(--line); flex: none; }
+.pickstate.on { color: var(--now); }
+.pickstate.on::before { background: var(--now); box-shadow: 0 0 0 4px rgba(30, 106, 168, 0.18); }
+
+/* the screen moves on by itself: what comes next, how soon, and a way to stay */
+.later { position: fixed; right: 16px; bottom: 10px; z-index: 60; display: flex; align-items: center; gap: 12px; padding: 5px 6px 5px 16px; max-width: calc(100vw - 32px); border: 1px solid var(--line); border-radius: 999px; background: var(--panel); box-shadow: 0 6px 24px rgba(38, 38, 46, 0.14); font-size: 0.9375rem; color: var(--text); }
+.later .hb { padding: 6px 12px; }
+.later .secs { font-family: var(--mono); font-weight: 600; color: var(--now); min-width: 2.6em; text-align: right; }
+.later i { display: block; width: 96px; height: 4px; border-radius: 2px; background: var(--line); overflow: hidden; flex: none; }
+.later i s { display: block; height: 100%; width: 0; background: var(--now); text-decoration: none; animation: later-fill linear forwards; }
+@keyframes later-fill { from { width: 0; } to { width: 100%; } }
+@media (prefers-reduced-motion: reduce) { .later i s { animation: none; width: 100%; opacity: 0.4; } }

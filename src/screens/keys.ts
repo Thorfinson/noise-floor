@@ -11,7 +11,7 @@ import { store } from '../core/store';
 import { KEY_CHORDS, KEY_CHORDS_ON } from '../music/content';
 import { chordKey } from '../music/difficulty';
 import { isBlackKey, keyLines, keyName, keysAlike, noteName, pianoChord, strumIs, type KeyChord } from '../music/theory';
-import { $, esc, hear, icon, keys, pianoEars, type Screen } from '../ui/dom';
+import { $, esc, hear, icon, keys, later, pianoEars, stopTimer, type Screen } from '../ui/dom';
 import { keyboard, keyRange, LEARN, type KeyMark } from '../ui/draw';
 import { setSimTarget } from '../ui/practice';
 import { frame, levelNews, nextStep } from './learn';
@@ -148,7 +148,7 @@ export const keyCheck: Screen = (root, ids, ctx) => {
 
   /** Starts the check of a chord of the queue. */
   function start(k = q): void {
-    clearTimeout(timer);
+    stopTimer(timer);
     q = k;
     chord = queue[q];
     n = chord.midis.length + 1;
@@ -165,7 +165,7 @@ export const keyCheck: Screen = (root, ids, ctx) => {
 
   /** What comes after a chord: the next of today's chords, the next step of the session, or the same chord again. */
   function onward(): void {
-    clearTimeout(timer);
+    stopTimer(timer);
     if (q + 1 < queue.length) start(q + 1);
     else if (ctx) ctx.next();
     else if (stageCheck) location.hash = '/progress';
@@ -195,7 +195,7 @@ export const keyCheck: Screen = (root, ids, ctx) => {
           : L(`${passed} of ${queue.length} chords rang clean in a row. The stage is confirmed when all of them do; the ones that did not are on the path.`, `${passed} von ${queue.length} Akkorden ${passed === 1 ? 'hat' : 'haben'} in einem Zug sauber geklungen. Die Etappe ist bestätigt, wenn alle es tun; die übrigen findest du auf dem Weg.`);
     }
     store.save();
-    timer = window.setTimeout(onward, guided ? 4000 : 6000);
+    timer = later(guided ? 4000 : 6000, onward, q + 1 < queue.length ? L(`the next chord, ${queue[q + 1].name}`, `der nächste Akkord, ${queue[q + 1].name}`) : ctx ? ctx.after : stageCheck ? L('the path', 'der Weg') : L(`${chord.name} once more`, `noch einmal ${chord.name}`));
   }
 
   /** Leaves the key (or the whole chord) that is being checked. */
@@ -269,7 +269,7 @@ export const keyCheck: Screen = (root, ids, ctx) => {
   };
   const back = (): void => {
     if (at === 0) return;
-    clearTimeout(timer);
+    stopTimer(timer);
     at = Math.min(at, n) - 1;
     results[at] = null;
     tries[at] = 0;
@@ -292,7 +292,7 @@ export const keyCheck: Screen = (root, ids, ctx) => {
   if (ctx) $('#nextstep', root).onclick = ctx.next;
   start(0);
   return () => {
-    clearTimeout(timer);
+    stopTimer(timer);
     stopHear();
     stopKeys();
     setSimTarget(null);

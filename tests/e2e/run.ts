@@ -468,9 +468,12 @@ try {
     check('session: after the song and the barre it ends with a summary', ended && (await page.locator('.res li').count()) >= 2, `${await text(page, 'h1')} · ${await page.locator('.res li').count()} results`);
     await page.screenshot({ path: resolve(out, 'session-done.png') });
 
-    // a session left half-way goes on where it stopped, and can be begun again
+    // once today's session is through, the start page says so, shows what was measured, and offers more
     await page.goto(base + '?autostart#/');
-    await page.waitForSelector('.plan');
+    await page.waitForSelector('.donecard', { timeout: 8000 }).catch(() => undefined);
+    check("home: once today's session is done, the start page says so, with what was measured today, and offers another round", (await text(page, 'h1')).includes("Today's session is done") && (await page.locator('.donecard .res li').count()) >= 2 && (await text(page, '#go')).includes('Another round'), `${await text(page, 'h1')} · ${await page.locator('.donecard .res li').count()} measured · ${await text(page, '#go')}`);
+    await page.screenshot({ path: resolve(out, 'home-done.png') });
+    // another round starts from step 1; a session left half-way goes on where it stopped, and can be begun again
     await page.keyboard.press('Space');
     await page.waitForSelector('#skip');
     await page.click('#skip');
@@ -492,8 +495,9 @@ try {
     await page.waitForSelector('#strings', { timeout: 6000 }).catch(() => undefined);
     check('session: it can also be begun again from step 1', (await text(page, '#eb')).includes('Step 1 of 5'), await text(page, '#eb'));
     await page.goto(base + '?autostart#/');
-    await page.waitForSelector('.plan');
-    check('home: begun again, the plan starts at step 1', (await text(page, '#go')).includes("Start today's session") && (await page.locator('.plan li.done').count()) === 0, (await text(page, '#go')).replace(/\s+/g, ' '));
+    await page.waitForSelector('#go');
+    // today's session was taken to its end before: begun again and left at step 1, the day still counts as done
+    check('home: begun again and left at step 1, the day still counts as done, with another round on offer', (await text(page, '#go')).includes('Another round') && (await page.locator('.plan li.done').count()) === 0, (await text(page, '#go')).replace(/\s+/g, ' '));
 
     await page.goto(base + '?autostart#/chord/F%23m');
     await page.waitForSelector('#tiles');
@@ -530,6 +534,13 @@ try {
       }
     };
     const hits = async (): Promise<number> => Number(/(\d+) of \d+ on the click/.exec(await text(page, '#fbk'))?.[1] ?? -1);
+    /** As on another day: what was done today no longer counts as done (the page is then opened anew to read it). */
+    const newDay = (): Promise<void> =>
+      page.evaluate(() => {
+        const s = JSON.parse(localStorage.getItem('noise-floor/v1') ?? '{}');
+        for (const k of Object.keys(s.progress ?? {})) if (k.startsWith('session:')) delete s.progress[k];
+        localStorage.setItem('noise-floor/v1', JSON.stringify(s));
+      });
     await page.goto(base + '?autostart#/song/scarborough-fair/2');
     await page.waitForSelector('#rowA');
     await page.waitForFunction(() => document.querySelector('#h1')?.textContent?.includes('Get ready'), null, { timeout: 4000 }).catch(() => undefined);
@@ -866,7 +877,7 @@ try {
 
     // the piano session from start to finish
     await page.goto(base + '?autostart#/');
-    await page.waitForSelector('.plan');
+    await page.waitForSelector('#go');
     await page.click('[data-inst="piano"]');
     await page.waitForFunction(() => document.querySelectorAll('.plan li').length === 3, null, { timeout: 4000 }).catch(() => undefined);
     check('piano home: its own three steps', (await page.locator('.plan li').count()) === 3 && (await text(page, '.plan')).includes('Match the app to your piano'), (await text(page, '.plan')).replace(/\s+/g, ' '));
@@ -990,7 +1001,8 @@ try {
     check('piano, a piece of chords: played with the click, the chords are on the click', (await hits()) >= 7, await text(page, '#fbk'));
 
     // the session of a piece of chords leads over its chords and their changes
-    await page.goto(base + '?autostart#/');
+    await newDay();
+    await page.goto(base + '?autostart&day=2#/');
     await page.waitForSelector('.plan');
     const chordPlan = (await text(page, '.plan')).replace(/\s+/g, ' ');
     check('piano home: a piece of chords gets its own steps: pitch, its chords key by key, their changes, the piece', (await page.locator('.plan li').count()) === 4 && /Chord check: F/.test(chordPlan) && chordPlan.includes('Chord changes') && chordPlan.includes('Swing Low'), chordPlan.slice(0, 200));
@@ -1085,7 +1097,7 @@ try {
     check('learning path, piano: a level of the book is a stage of five pieces, each named with its kind', (await page.locator('#stage .items li').count()) === 5 && /(a tune|chords)/.test(await text(page, '#stage .items')) && (await text(page, '#stage .go')).includes('Go on with'), (await text(page, '#stage .items')).replace(/\s+/g, ' ').slice(0, 120));
     await page.screenshot({ path: resolve(out, 'progress-piano.png'), fullPage: true });
     await page.goto(base + '?autostart#/');
-    await page.waitForSelector('.plan');
+    await page.waitForSelector('#go');
     await page.click('[data-inst="guitar"]');
     await page.waitForFunction(() => document.querySelector('[data-inst="guitar"]')?.getAttribute('aria-pressed') === 'true', null, { timeout: 4000 }).catch(() => undefined);
     await page.goto(base + '?autostart#/progress');

@@ -8,7 +8,7 @@ import './ui/practice';
 import { engine } from './audio/engine';
 import { browserLang, L, setLang } from './core/i18n';
 import { store } from './core/store';
-import { $, keys, type Screen } from './ui/dom';
+import { $, keys, stopAllLater, type Screen } from './ui/dom';
 import { home, progress, settings } from './screens/home';
 import { tuner } from './screens/tuner';
 import { chordCheck, pianoLesson, songLesson } from './screens/learn';
@@ -88,6 +88,7 @@ function gate(root: HTMLElement, then: () => void): () => void {
 }
 
 function route(): void {
+  stopAllLater();
   cleanup?.();
   cleanup = undefined;
   const parts = location.hash.replace(/^#\/?/, '').split('/').filter(Boolean).map(decodeURIComponent);

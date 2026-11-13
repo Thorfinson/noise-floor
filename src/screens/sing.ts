@@ -14,7 +14,7 @@ import { store } from '../core/store';
 import { noteTimes } from '../music/content';
 import { noteName } from '../music/theory';
 import { findSongToSing, sungPhraseKey, type SongToSing } from '../music/voicebook';
-import { $, cap, esc, hear, icon, keys, voiceEars, type Screen, type SessionCtx } from '../ui/dom';
+import { $, cap, esc, hear, icon, keys, later, stopTimer, voiceEars, type Screen, type SessionCtx } from '../ui/dom';
 import { Lane, type LaneLook, type LaneNote } from '../ui/lane';
 import { setSimTarget } from '../ui/practice';
 import { frame, levelNews, nextStep } from './learn';
@@ -192,11 +192,11 @@ export const voiceRangeTest: Screen = (root, _params, ctx) => {
     store.settings.voiceHigh = high;
     store.save();
     say('good', `${icon('check')}${L('Saved. The songs follow your voice now.', 'Gespeichert. Die Songs richten sich jetzt nach deiner Stimme.')}`);
-    if (ctx) timer = window.setTimeout(ctx.next, 5000);
+    if (ctx) timer = later(5000, ctx.next, ctx.after);
   }
 
   function start(): void {
-    clearTimeout(timer);
+    stopTimer(timer);
     phase = 'low';
     frames = [];
     low = high = 0;
@@ -232,7 +232,7 @@ export const voiceRangeTest: Screen = (root, _params, ctx) => {
   if (ctx) $('#nextstep', root).onclick = ctx.next;
   start();
   return () => {
-    clearTimeout(timer);
+    stopTimer(timer);
     clearInterval(fade);
     ear.stop();
     stopKeys();
@@ -322,7 +322,7 @@ export const pitchMatch: Screen = (root, _params, ctx) => {
     const sound = model([{ midi: target, at: 0, len: 1 }], 1.2);
     const secs = sound ? engine.demo(sound) : 0;
     ear.quiet(secs + 0.35);
-    clearTimeout(timer);
+    stopTimer(timer);
     timer = window.setTimeout(() => {
       state = 'sing';
       hold = new Hold(target, tol, 0.6);
@@ -351,11 +351,11 @@ export const pitchMatch: Screen = (root, _params, ctx) => {
     store.save();
     say('good', `${icon('check')}${news || L('Practised.', 'Geübt.')}`);
     draw();
-    if (ctx) timer = window.setTimeout(ctx.next, 5000);
+    if (ctx) timer = later(5000, ctx.next, ctx.after);
   }
 
   function start(): void {
-    clearTimeout(timer);
+    stopTimer(timer);
     // five notes around the middle of the voice, none twice in a row, steps and small leaps
     targets = [];
     let m = mid;
@@ -394,7 +394,7 @@ export const pitchMatch: Screen = (root, _params, ctx) => {
   }, 120);
   const forward = (): void => {
     if (state === 'done') return ctx ? ctx.next() : start();
-    clearTimeout(timer);
+    stopTimer(timer);
     tries++;
     next(null);
   };
@@ -405,7 +405,7 @@ export const pitchMatch: Screen = (root, _params, ctx) => {
   if (ctx) $('#nextstep', root).onclick = ctx.next;
   start();
   return () => {
-    clearTimeout(timer);
+    stopTimer(timer);
     clearInterval(fade);
     engine.stopDemo();
     ear.stop();
@@ -467,7 +467,7 @@ export const holdTone: Screen = (root, _params, ctx) => {
   }
 
   function play(): void {
-    clearTimeout(timer);
+    stopTimer(timer);
     state = 'listen';
     frames = [];
     trail = [];
@@ -500,7 +500,7 @@ export const holdTone: Screen = (root, _params, ctx) => {
         : L('The voice has to stay on the note for a few seconds. Breathe in first, then sing.', 'Die Stimme muss ein paar Sekunden auf dem Ton bleiben. Erst einatmen, dann singen.');
     say(held.length >= 20 ? 'good' : 'info', `${held.length >= 20 ? icon('check') : ''}${news}`);
     draw();
-    if (ctx) timer = window.setTimeout(ctx.next, 6000);
+    if (ctx) timer = later(6000, ctx.next, ctx.after);
   }
 
   function onFrame(f: Frame): void {
@@ -531,7 +531,7 @@ export const holdTone: Screen = (root, _params, ctx) => {
   if (ctx) $('#nextstep', root).onclick = ctx.next;
   play();
   return () => {
-    clearTimeout(timer);
+    stopTimer(timer);
     clearInterval(tick);
     engine.stopDemo();
     ear.stop();
@@ -680,12 +680,12 @@ export const singLesson: Screen = (root, [id, rung], ctx) => {
       const leave = !!ctx && linesDone >= 2;
       say('good', `${icon('check')}${speed ? L(`${Math.round(speed)}% of full speed, `, `${Math.round(speed)}% vom vollen Tempo, `) : ''}${slips ? L(`${slips} ${slips === 1 ? 'slip' : 'slips'}`, `${slips} ${slips === 1 ? 'Patzer' : 'Patzer'}`) : L('no slips', 'keine Patzer')}.${news} ${leave ? L('That is the song for today.', 'Das war der Song für heute.') : L('Next phrase in a moment.', 'Gleich die nächste Phrase.')}`);
       draw();
-      timer = window.setTimeout(() => (leave ? ctx!.next() : go(line + 1)), 2800);
+      timer = later(2800, () => (leave ? ctx!.next() : go(line + 1)), leave ? ctx!.after : L('the next phrase', 'die nächste Phrase'));
     }
     say('info', L('Read left to right. A higher bar is a higher note.', 'Von links nach rechts lesen. Ein höherer Balken ist ein höherer Ton.'));
     draw();
     return {
-      stop: () => clearTimeout(timer),
+      stop: () => stopTimer(timer),
       toggle: () => undefined,
       onset: () => {
         fresh = true;
@@ -787,7 +787,7 @@ export const singLesson: Screen = (root, [id, rung], ctx) => {
     }
     function cancel(): void {
       cancelAnimationFrame(raf);
-      clearTimeout(timer);
+      stopTimer(timer);
       engine.clearTicks();
       running = false;
     }
@@ -857,8 +857,8 @@ export const singLesson: Screen = (root, [id, rung], ctx) => {
       const near = close ? L(` ${close} close (amber): nearly there.`, ` ${close} knapp daneben (gelb): fast.`) : '';
       say(clean ? 'good' : 'info', `${clean ? icon('check') : ''}${L(`${hits} of ${notes.length} notes on pitch at ${tempo}%.`, `${hits} von ${notes.length} Tönen getroffen bei ${tempo}%.`)}${near}${levelNews(changes)} ${then}`);
       $('#h1', root).textContent = clean ? L('Clean.', 'Sauber.') : L(`${hits} of ${notes.length}.`, `${hits} von ${notes.length}.`);
-      if (leave) timer = window.setTimeout(ctx!.next, 3200);
-      else if (!whole) timer = window.setTimeout(() => go(clean ? line + 1 : line), 2600);
+      if (leave) timer = later(3200, ctx!.next, ctx!.after);
+      else if (!whole) timer = later(2600, () => go(clean ? line + 1 : line), clean ? L('the next phrase', 'die nächste Phrase') : L('the same phrase again', 'noch einmal dieselbe Phrase'));
       else $('#pause span', root).textContent = L('Play', 'Start');
     }
     begin();

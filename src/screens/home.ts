@@ -12,7 +12,7 @@ import { currentPiece, currentSong, currentSongToSing } from '../music/difficult
 import { rangeMeasured, voiceRange } from './sing';
 import { learningPath, OPEN_CHORDS, type Stage } from '../music/path';
 import { LANDS, Trail, type StoneState } from '../ui/trail';
-import { describeSung, focusChord, plan, resumeAt, todaysChords, todaysKeyChords } from './session';
+import { dayOf, describeSung, doneToday, focusChord, instrumentOf, plan, resumeAt, todaysChords, todaysKeyChords } from './session';
 
 import { skillLabel } from '../music/labels';
 
@@ -88,6 +88,8 @@ export const home: Screen = (root) => {
         'Die App führt dich hindurch. Sie stimmt die Gitarre mit dir und prüft die Akkorde der heutigen Zeilen Saite für Saite. Dann kommen ein kurzes Spiel mit diesen Akkorden und zwei Zeilen des Songs. Der schwere Akkord wartet am Ende, wenn du magst. Nichts beginnt, bevor du bereit bist.',
       );
   const link = (href: string, label: string): string => `<a class="hb" href="#/${href}">${esc(label)}</a>`;
+  // today's session is through: the page says so, shows what was measured today, and offers more
+  if (doneToday(inst, now) && !at) return doneHome(root, now, days, link);
   root.innerHTML = `<div class="page mid">
     <div class="today">
       <div>
@@ -117,6 +119,39 @@ export const home: Screen = (root) => {
   );
   return keys({ ' ': () => go('/session'), Enter: () => go('/session') });
 };
+
+/**
+ * The start page once today's session is through: done, what was measured today and how far it got, and
+ * what can still be done: another round, a game, a song of your choice. Tomorrow the plan is new.
+ */
+function doneHome(root: HTMLElement, now: number, days: number, link: (href: string, label: string) => string): () => void {
+  const inst = store.settings.instrument;
+  const today = dayOf(now);
+  const measured = Object.entries(store.skills.data)
+    .filter(([key, r]) => r.last && dayOf(r.last) === today && instrumentOf(key) === inst)
+    .sort((a, b) => b[1].last - a[1].last);
+  const top = measured.slice(0, 8);
+  const songsLabel = inst === 'piano' ? L('Choose a piece', 'Ein Stück wählen') : L('Choose a song', 'Einen Song wählen');
+  root.innerHTML = `<div class="page mid">
+    <div class="today">
+      <div>
+        <p class="kick">${days > 1 ? L(`Day ${days} in a row`, `Tag ${days} in Folge`) : L('First day of a new streak', 'Erster Tag einer neuen Serie')}${store.skills.rank() ? L(` · rank ${store.skills.rank()}`, ` · Rang ${store.skills.rank()}`) : ''}</p>
+        <h1>${L("Today's session is done.", 'Die heutige Session ist geschafft.')}</h1>
+        <p class="lede">${measured.length ? L(`Measured today: ${measured.length} ${measured.length === 1 ? 'skill' : 'skills'}. Everything is kept on this computer; tomorrow's plan takes up what needs it most.`, `Heute gemessen: ${measured.length} ${measured.length === 1 ? 'Fähigkeit' : 'Fähigkeiten'}. Alles bleibt auf diesem Computer gespeichert; der Plan für morgen greift auf, was es am meisten braucht.`) : L("Everything is kept on this computer; tomorrow's plan takes up what needs it most.", 'Alles bleibt auf diesem Computer gespeichert; der Plan für morgen greift auf, was es am meisten braucht.')} ${L('If you want more today:', 'Wenn du heute noch mehr willst:')}</p>
+        <div class="row" style="margin-top:22px"><a class="btn primary big" id="go" href="#/session/new">${L('Another round', 'Noch eine Runde')} <kbd>${L('Space', 'Leertaste')}</kbd></a><a class="btn" href="#/nf">${L('Play a game', 'Ein Spiel spielen')}</a><a class="btn" href="#/songs">${songsLabel}</a></div>
+      </div>
+      <div class="donecard" aria-label="${L('Measured today', 'Heute gemessen')}">
+        <p class="k" style="margin:0 0 10px">${L('Measured today', 'Heute gemessen')}</p>
+        ${top.length ? `<ul class="res">${top.map(([key, r]) => `<li><span class="k2">${esc(skillLabel(key))}</span>${pips(r.level)}</li>`).join('')}</ul>${measured.length > top.length ? `<p class="note">${L(`and ${measured.length - top.length} more`, `und ${measured.length - top.length} weitere`)} · <a href="#/progress">${L('the path', 'der Weg')}</a></p>` : `<p class="note"><a href="#/progress">${L('See everything on the path', 'Alles auf dem Weg ansehen')}</a></p>`}` : `<p class="note">${L('Nothing was measured this time. That is fine: the steps are still there tomorrow.', 'Diesmal wurde nichts gemessen. Das ist in Ordnung: Die Schritte sind morgen noch da.')}</p>`}
+      </div>
+    </div>
+    <div>
+      <p class="k" style="margin:0 0 10px">${L('Or one thing on its own', 'Oder eine Übung für sich')}</p>
+      <nav class="links" aria-label="${L('Single exercises', 'Einzelne Übungen')}">${inst === 'voice' ? link('match', L('Match the tone', 'Töne treffen')) + link('hold', L('Hold a tone', 'Einen Ton halten')) : inst === 'piano' ? link('tuner/piano', L('Piano pitch', 'Tonhöhe des Klaviers')) + link('keys/C', L('Chord check', 'Akkord-Check')) : link('tuner', L('Guitar tuner', 'Stimmgerät für die Gitarre')) + link('chord/Em', L('Chord check', 'Akkord-Check'))}${link('stride', L('Rhythm game', 'Rhythmusspiel'))}</nav>
+    </div>
+  </div>`;
+  return keys({ ' ': () => go('/session/new'), Enter: () => go('/session/new') });
+}
 
 export const progress: Screen = (root) => {
   const now = Date.now();

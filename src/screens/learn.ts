@@ -11,7 +11,7 @@ import { Take, TEMPOS, type TakeStep } from '../core/playalong';
 import { store } from '../core/store';
 import { barKey, findPiece, findSong, noteTimes, phraseKey, shapeOf, songLines, stepKeys, stepMidis, type PianoNote, type PianoPiece, type Song, type TabNote } from '../music/content';
 import { barreStrings, changeTip, chordMidis, chordName, chordNotes, CHORDS, isBlackKey, keyName, keysAlike, keyTip, noteName, pianoChord, STRING_FULL, STRING_NAMES, stringName, strumIs, type Chord } from '../music/theory';
-import { $, cap, esc, hear, icon, keys, learnRing, micMeter, pianoEars, type Screen, type SessionCtx } from '../ui/dom';
+import { $, cap, esc, hear, icon, keys, later, learnRing, micMeter, pianoEars, stopTimer, type Screen, type SessionCtx } from '../ui/dom';
 import { chordBox, chordMarks, fretboard, keyboard, keyRange, LEARN, noteStrip, playhead, tabLine, type Drawn, type KeyMark, type Mark, type StepLook } from '../ui/draw';
 import { practiceBar, setSimTarget, type SimTarget } from '../ui/practice';
 import { skillLabel } from './home';
@@ -448,17 +448,17 @@ function lesson(root: HTMLElement, m: Material, wanted: string | undefined, ctx?
       );
       draw();
       if (!again) {
-        timer = window.setTimeout(moveOn, 2800);
+        timer = later(2800, moveOn, leave ? ctx!.after : L(`the next ${m.unit}`, `die nächste ${unitDe(m)}`));
         return;
       }
       spotted = true;
       afterSpot = then;
-      timer = window.setTimeout(() => {
+      timer = later(2600, () => {
         at = idx[0];
         spotEnd = idx[idx.length - 1] + 1;
         say('info', L(`Once more, only ${m.piano ? 'this phrase' : `bar ${spot + 1}`}, as slowly as you like.`, `Noch einmal, nur ${m.piano ? 'diese Phrase' : `Takt ${spot + 1}`}, so langsam, wie du magst.`));
         draw();
-      }, 2600);
+      }, m.piano ? L('this phrase once more, alone', 'diese Phrase noch einmal, allein') : L(`bar ${spot + 1} once more, alone`, `Takt ${spot + 1} noch einmal, allein`));
     }
     let moveOn: () => void = () => undefined;
     /** while the bar that slipped is played once more: the step after its last; -1 otherwise */
@@ -475,7 +475,7 @@ function lesson(root: HTMLElement, m: Material, wanted: string | undefined, ctx?
         at = all.length;
         say('good', `${icon('check')}${L('That is it.', 'Genau so.')} ${afterSpot}`);
         draw();
-        timer = window.setTimeout(moveOn, 2400);
+        timer = later(2400, moveOn, ctx && linesDone >= 2 ? ctx.after : L(`the next ${m.unit}`, `die nächste ${unitDe(m)}`));
       } else if (at >= all.length) finish();
       else {
         say('good', `${icon('check')}${cur.chord ? L(`${nameOf(cur.chord)}: right.`, `${nameOf(cur.chord)}: richtig.`) : m.piano ? L(`${keyName(cur.midis[0], cur.over)}: right key.`, `${keyName(cur.midis[0], cur.over)}: richtige Taste.`) : L(`${cap(STRING_FULL[cur.tab!.s])} string: right.`, `${cap(STRING_FULL[cur.tab!.s])}-Saite: richtig.`)}`);
@@ -503,7 +503,7 @@ function lesson(root: HTMLElement, m: Material, wanted: string | undefined, ctx?
     );
     draw();
     return {
-      stop: () => clearTimeout(timer),
+      stop: () => stopTimer(timer),
       toggle: () => undefined,
       // A string that was struck but did not ring: the commonest fault of all, and worth saying so.
       // (It is reported a moment later than a note would be, so it may follow a "wrong note" for the same pluck.)
@@ -578,7 +578,7 @@ function lesson(root: HTMLElement, m: Material, wanted: string | undefined, ctx?
 
     function cancel(): void {
       cancelAnimationFrame(raf);
-      clearTimeout(timer);
+      stopTimer(timer);
       engine.clearTicks();
       take = null;
       rows.forEach((r) => playhead(r, null));
@@ -709,7 +709,7 @@ function lesson(root: HTMLElement, m: Material, wanted: string | undefined, ctx?
         say(hit === idx.length ? 'good' : 'info', `${hit === idx.length ? icon('check') : ''}${L(`That bar: ${hit} of ${idx.length} on the click. Now the whole ${m.unit} again.`, `Dieser Takt: ${hit} von ${idx.length} auf dem Klick. Jetzt noch einmal die ganze ${unitDe(m)}.`)}`);
         take = null;
         setSimTarget(null);
-        timer = window.setTimeout(begin, 2400);
+        timer = later(2400, begin, L(`the whole ${m.unit} again`, `noch einmal die ganze ${unitDe(m)}`));
         return;
       }
       const now = Date.now();
@@ -760,9 +760,9 @@ function lesson(root: HTMLElement, m: Material, wanted: string | undefined, ctx?
       $('#h1', root).innerHTML = clean ? L('Clean.', 'Sauber.') : L(`${r.hits} of ${r.total}.`, `${r.hits} von ${r.total}.`);
       take = null;
       setSimTarget(null);
-      if (leave) timer = window.setTimeout(ctx!.next, 3200);
+      if (leave) timer = later(3200, ctx!.next, ctx!.after);
       // the take of one bar belongs to this visit of the line: it starts here, not from scratch
-      else if (!whole) timer = window.setTimeout(() => (clean ? go(line + 1) : spot !== null ? begin() : go(line)), 2600);
+      else if (!whole) timer = later(2600, () => (clean ? go(line + 1) : spot !== null ? begin() : go(line)), clean ? L(`the next ${m.unit}`, `die nächste ${unitDe(m)}`) : spot !== null ? L(`bar ${spot + 1} alone`, `Takt ${spot + 1} allein`) : L(`the same ${m.unit} again`, `noch einmal dieselbe ${unitDe(m)}`));
       else $('#pause span', root).textContent = L('Play', 'Spielen');
     }
 
@@ -1043,7 +1043,7 @@ export const chordCheck: Screen = (root, ids, ctx) => {
 
   /** Starts the check of a chord of the queue. */
   function start(n = q): void {
-    clearTimeout(timer);
+    stopTimer(timer);
     q = n;
     chord = queue[q];
     midis = chordMidis(chord);
@@ -1062,7 +1062,7 @@ export const chordCheck: Screen = (root, ids, ctx) => {
 
   /** What comes after a chord: the next of today's chords, the next step of the session, or the same chord again. */
   function onward(): void {
-    clearTimeout(timer);
+    stopTimer(timer);
     if (q + 1 < queue.length) start(q + 1);
     else if (ctx) ctx.next();
     else if (stageCheck) location.hash = '/progress';
@@ -1093,7 +1093,7 @@ export const chordCheck: Screen = (root, ids, ctx) => {
           : L(`${passed} of ${queue.length} chords rang clean in a row. The stage is confirmed when all of them do; the ones that did not are on the path.`, `${passed} von ${queue.length} Akkorden ${passed === 1 ? 'hat' : 'haben'} in einem Zug sauber geklungen. Die Etappe ist bestätigt, wenn alle es tun; die übrigen findest du auf dem Weg.`);
     }
     store.save();
-    if (!stay) timer = window.setTimeout(onward, guided ? 4000 : 6000);
+    if (!stay) timer = later(guided ? 4000 : 6000, onward, q + 1 < queue.length ? L(`the next chord, ${queue[q + 1].name}`, `der nächste Akkord, ${queue[q + 1].name}`) : ctx ? ctx.after : stageCheck ? L('the path', 'der Weg') : L(`${chord.name} once more`, `noch einmal ${chord.name}`));
   }
 
   /** Leaves the string that is being checked. */
@@ -1147,7 +1147,7 @@ export const chordCheck: Screen = (root, ids, ctx) => {
   };
   const back = (): void => {
     if (at === 0) return;
-    clearTimeout(timer);
+    stopTimer(timer);
     at = Math.min(at, strings.length) - 1;
     const s = strings[at];
     results[s] = null;
@@ -1171,7 +1171,7 @@ export const chordCheck: Screen = (root, ids, ctx) => {
   if (ctx) $('#nextstep', root).onclick = ctx.next;
   start(0);
   return () => {
-    clearTimeout(timer);
+    stopTimer(timer);
     stopHear();
     stopKeys();
     setSimTarget(null);

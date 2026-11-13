@@ -97,6 +97,58 @@ export function hear(root: HTMLElement, handlers: Handlers, setup?: (l: Listener
 }
 
 /** Global key handler for one screen; keys typed into form fields and on buttons are left alone. */
+/** The pending moves of the screen on show, and what takes their notice away again. */
+const laters = new Map<number, () => void>();
+
+/**
+ * The app moves on by itself here, after `ms`, unless the player stays. What comes next and when is shown
+ * at the bottom of the window, with a way to stay (the button, or Escape): nothing moves on unseen.
+ * Returns the timer, to be stopped with stopTimer.
+ */
+export function later(ms: number, fn: () => void, what: string): number {
+  const box = document.createElement('div');
+  box.className = 'later';
+  box.setAttribute('role', 'status');
+  box.innerHTML = `<span>${esc(L(`Coming up: ${what}`, `Gleich weiter: ${what}`))}</span><b class="secs"></b><i aria-hidden="true"><s style="animation-duration:${ms}ms"></s></i><button class="hb" type="button">${L('Stay here', 'Hier bleiben')} <kbd>Esc</kbd></button>`;
+  document.body.append(box);
+  const until = performance.now() + ms;
+  const secs = box.querySelector<HTMLElement>('.secs')!;
+  const tick = (): void => void (secs.textContent = `${Math.max(1, Math.ceil((until - performance.now()) / 1000))} s`);
+  tick();
+  const ticking = window.setInterval(tick, 200);
+  const onKey = (e: KeyboardEvent): void => {
+    if (e.key !== 'Escape') return;
+    e.preventDefault();
+    e.stopPropagation();
+    stopTimer(id);
+  };
+  const end = (): void => {
+    clearInterval(ticking);
+    box.remove();
+    removeEventListener('keydown', onKey, true);
+    laters.delete(id);
+  };
+  addEventListener('keydown', onKey, true);
+  const id = window.setTimeout(() => {
+    end();
+    fn();
+  }, ms);
+  box.querySelector('button')!.onclick = () => stopTimer(id);
+  laters.set(id, end);
+  return id;
+}
+
+/** Stops a timer, and takes away the notice that said the screen would move on. */
+export function stopTimer(id: number): void {
+  clearTimeout(id);
+  laters.get(id)?.();
+}
+
+/** Another screen opens: nothing of the one before moves on any more. */
+export function stopAllLater(): void {
+  for (const id of [...laters.keys()]) stopTimer(id);
+}
+
 export function keys(map: Record<string, (e: KeyboardEvent) => void>): () => void {
   const on = (e: KeyboardEvent): void => {
     if (e.ctrlKey || e.metaKey || e.altKey) return;

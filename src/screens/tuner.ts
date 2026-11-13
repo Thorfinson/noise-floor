@@ -7,7 +7,7 @@ import { engine } from '../audio/engine';
 import { L } from '../core/i18n';
 import { store } from '../core/store';
 import { FOLLOW_AFTER, midiToFreq, nearestString, NOTE_NAMES, noteName, OPEN_STRINGS, STRING_FULL, STRING_NAMES, stringName } from '../music/theory';
-import { $, $$, hear, icon, keys, micMeter, type Screen } from '../ui/dom';
+import { $, $$, hear, icon, keys, later, micMeter, stopTimer, type Screen } from '../ui/dom';
 import { keyboard, LEARN } from '../ui/draw';
 import { practiceBar, setSimTarget } from '../ui/practice';
 
@@ -59,7 +59,7 @@ function piano(root: HTMLElement, head: string, ctx: Parameters<Screen>[2]): () 
   };
 
   function listen(): void {
-    clearTimeout(timer);
+    stopTimer(timer);
     done = false;
     recent = [];
     key = null;
@@ -114,7 +114,7 @@ function piano(root: HTMLElement, head: string, ctx: Parameters<Screen>[2]): () 
         $('#h1', root).innerHTML = L(`Your piano's A is at <em>${store.settings.pianoA4.toFixed(1)} Hz</em>.`, `Das A deines Klaviers liegt bei <em>${store.settings.pianoA4.toFixed(1).replace('.', ',')} Hz</em>.`);
         $('#msg', root).textContent = off <= 4 ? L('That is standard pitch.', 'Das ist der Kammerton.') : L(`${off} cents ${mid < 0 ? 'below' : 'above'} standard pitch. The app now listens at your piano's pitch.`, `${off} Cent ${mid < 0 ? 'unter' : 'über'} dem Kammerton. Die App hört jetzt in der Tonhöhe deines Klaviers.`);
         showRef();
-        if (ctx) timer = window.setTimeout(ctx.next, 2400);
+        if (ctx) timer = later(2400, ctx.next, ctx.after);
       },
     },
     (l) => {
@@ -136,7 +136,7 @@ function piano(root: HTMLElement, head: string, ctx: Parameters<Screen>[2]): () 
   if (skip && ctx) skip.onclick = ctx.next;
   listen();
   return () => {
-    clearTimeout(timer);
+    stopTimer(timer);
     stopHear();
     stopKeys();
     setSimTarget(null);
@@ -205,7 +205,7 @@ function guitar(root: HTMLElement, head: string, ctx: Parameters<Screen>[2]): ()
 
   /** Puts a string on show. */
   function show(i: number, byHand: boolean): void {
-    clearTimeout(timer);
+    stopTimer(timer);
     at = i;
     locked = byHand;
     finished = false;
@@ -237,7 +237,7 @@ function guitar(root: HTMLElement, head: string, ctx: Parameters<Screen>[2]): ()
       finished = true;
       $('#msg', root).textContent = ctx ? L(`Next: ${ctx.after}, in a moment. Pluck a string to check it once more.`, `Gleich als Nächstes: ${ctx.after}. Zupf eine Saite, um sie noch einmal zu prüfen.`) : L('Pluck any string to check it once more.', 'Zupf irgendeine Saite, um sie noch einmal zu prüfen.');
       draw();
-      if (ctx) timer = window.setTimeout(ctx.next, 3000);
+      if (ctx) timer = later(3000, ctx.next, ctx.after);
       return;
     }
     $('#msg', root).textContent = L(`Next: the ${STRING_FULL[next]} string. Or pluck any other.`, `Als Nächstes: die ${stringName(next)}. Oder zupf eine andere.`);
@@ -282,7 +282,7 @@ function guitar(root: HTMLElement, head: string, ctx: Parameters<Screen>[2]): ()
           }
           done[at] = false;
           finished = false;
-          clearTimeout(timer);
+          stopTimer(timer);
           off = 0;
         }
         moveDot(root, c, ok);
@@ -327,7 +327,7 @@ function guitar(root: HTMLElement, head: string, ctx: Parameters<Screen>[2]): ()
   if (skip && ctx) skip.onclick = ctx.next;
   show(0, false);
   return () => {
-    clearTimeout(timer);
+    stopTimer(timer);
     clearInterval(deaf);
     stopHear();
     stopKeys();

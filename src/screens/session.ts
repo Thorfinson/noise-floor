@@ -9,7 +9,7 @@
 import { L } from '../core/i18n';
 import { kindOf, type SkillRecord } from '../core/skills';
 import { store, type Instrument } from '../core/store';
-import { KEY_CHORDS, shapeOf } from '../music/content';
+import { allPieces, KEY_CHORDS, shapeOf } from '../music/content';
 import { chordKey, chordWeight, currentPiece, currentSong, currentSongToSing, finished, piecesByDifficulty, songsByDifficulty } from '../music/difficulty';
 import { songsToSing, voiceProfile } from '../music/voicebook';
 import { holdTone, pitchMatch, rangeMeasured, singLesson, voiceRangeTest } from './sing';
@@ -85,7 +85,19 @@ export function todaysKeyChords(now = Date.now()): string[] {
   return [...out, ...again].slice(0, 3);
 }
 
-const dayOf = (t: number): number => Math.floor((t - new Date(t).getTimezoneOffset() * 60000) / 86400000);
+export const dayOf = (t: number): number => Math.floor((t - new Date(t).getTimezoneOffset() * 60000) / 86400000);
+
+/** Has today's session on this instrument been taken to its end? */
+export const doneToday = (inst: Instrument, now = Date.now()): boolean => store.progress[`session:${inst}:done`] === dayOf(now);
+
+/** Which instrument a skill belongs to, from its key: the piano's have "p." or are pieces of the piano book, the voice's are sung. */
+export function instrumentOf(key: string): Instrument {
+  const [kind, a = ''] = key.split(':');
+  if (kind === 'pitch' || kind === 'tone' || kind === 'sing' || a.startsWith('v.') || a.endsWith('~voice')) return 'voice';
+  if (a.startsWith('p.') || a.startsWith('piano') || (kind === 'scale' && !a.startsWith('v.')) || a.includes('~keys') || PIANO_IDS().has(a)) return 'piano';
+  return 'guitar';
+}
+const PIANO_IDS = (): Set<string> => new Set(allPieces().map((p) => p.id));
 
 /** The step today's session was left at, counted from 0; 0 when it has not been begun today or is through. */
 export function resumeAt(inst: Instrument, now = Date.now()): number {
@@ -233,6 +245,8 @@ export const session: Screen = (root, [how]) => {
     document.body.dataset.mode = 'learn';
     const now = Date.now();
     store.sessions.push(now);
+    // the start page says so until tomorrow: done for today, and what was measured
+    store.progress[`session:${inst}:done`] = dayOf(now);
     // a finished song makes room for the next one
     const id = currentId(inst);
     let moved = '';

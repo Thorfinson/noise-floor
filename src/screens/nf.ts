@@ -47,34 +47,79 @@ const pickHint = (i: number, piano: boolean): string =>
         `<svg class="pickfig" viewBox="0 0 96 104" role="img" aria-label="${L(`Chord diagram of ${STRUM[i]}`, `Griffbild von ${STRUM[i]}`)}">${chordBox(CHORDS[STRUM[i]], 14, 24, 68, NF, false, undefined, 15)}</svg><span>${L(`Strum ${STRUM[i]} or press ${i + 1}`, `Schlag ${STRUM[i]} an oder drück ${i + 1}`)}</span>`
     : L(`Press ${i + 1}`, `Drück ${i + 1}`);
 
+/** Where a menu says whether it is listening to the instrument yet. */
+const pickState = (): string => (menuOn() ? `<p class="pickstate" id="pickstate" role="status" aria-live="polite"></p>` : '');
+
+/**
+ * A menu chosen from the instrument listens only once the instrument has been quiet for a moment: notes
+ * still ringing from a run, or played on after it, must not pick a card. Until then, and from then on, the
+ * menu says what it is doing.
+ */
+function armed(root: HTMLElement, pick: (i: number) => void, piano: boolean): { heard: (i: number) => void; stop: () => void } {
+  const shown = performance.now();
+  let last = shown;
+  let on = false;
+  const say = (): void => {
+    const el = root.querySelector<HTMLElement>('#pickstate');
+    if (!el) return;
+    el.classList.toggle('on', on);
+    el.textContent = on
+      ? piano
+        ? L('Listening: play C, D or E to choose, or press 1, 2, 3.', 'Hört zu: Spiel C, D oder E zum Wählen, oder drück 1, 2, 3.')
+        : L('Listening: strum Em, Am or C to choose, or press 1, 2, 3.', 'Hört zu: Schlag Em, Am oder C zum Wählen an, oder drück 1, 2, 3.')
+      : L('Let the instrument go quiet for a moment: then it chooses. The keys 1, 2, 3 choose at once.', 'Lass das Instrument einen Moment ruhen: dann wählt es. Die Tasten 1, 2, 3 wählen sofort.');
+  };
+  const timer = window.setInterval(() => {
+    const now = performance.now();
+    const ready = now - shown >= 1500 && now - last >= 1000;
+    if (ready !== on) {
+      on = ready;
+      say();
+    }
+  }, 100);
+  say();
+  return {
+    /** something was played: a card when it is listening and the sound picks one, otherwise the quiet starts again */
+    heard: (i) => {
+      if (on && i >= 0) pick(i);
+      else if (!on) last = performance.now();
+    },
+    stop: () => clearInterval(timer),
+  };
+}
+
 /** Lets a menu be operated from the instrument: strum Em, Am or C, or play C, D or E on the piano, for card 1, 2 or 3. */
 function pickMenu(root: HTMLElement, pick: (i: number) => void, piano: boolean): () => void {
   if (!menuOn()) return () => undefined;
-  if (piano) {
-    return hear(
-      root,
-      {
-        onNote: (e) => {
-          const i = [0, 2, 4].indexOf(e.midi % 12);
-          if (i >= 0 && e.conf > 0.7 && e.midi >= 48 && e.midi <= 84) pick(i);
+  const gate = armed(root, pick, piano);
+  const stop = piano
+    ? hear(
+        root,
+        {
+          onNote: (e) => {
+            const i = [0, 2, 4].indexOf(e.midi % 12);
+            gate.heard(i >= 0 && e.conf > 0.7 && e.midi >= 48 && e.midi <= 84 ? i : -1);
+          },
         },
-      },
-      pianoEars,
-    );
-  }
-  return hear(
-    root,
-    {
-      onChord: (e) => {
-        const i = e.best ? STRUM.indexOf(e.best) : -1;
-        if (i >= 0 && e.score > 0.8 && e.margin > 0.12) pick(i);
-      },
-    },
-    (l) => {
-      l.noteDetection = false;
-      l.chordCandidates = STRUM;
-    },
-  );
+        pianoEars,
+      )
+    : hear(
+        root,
+        {
+          onChord: (e) => {
+            const i = e.best ? STRUM.indexOf(e.best) : -1;
+            gate.heard(i >= 0 && e.score > 0.8 && e.margin > 0.12 ? i : -1);
+          },
+        },
+        (l) => {
+          l.noteDetection = false;
+          l.chordCandidates = STRUM;
+        },
+      );
+  return () => {
+    gate.stop();
+    stop();
+  };
 }
 
 /**
@@ -153,7 +198,7 @@ export const nfStart: Screen = (root) => {
     <div>
       <p class="kick">${L(`Games · ${voice ? 'voice' : piano ? 'piano' : 'guitar'} · run ${store.runs.length + 1}`, `Spiele · ${voice ? 'Stimme' : piano ? 'Klavier' : 'Gitarre'} · Runde ${store.runs.length + 1}`)}</p>
       <h1>${L('Choose a game.', 'Wähl ein Spiel.')}</h1>
-      <p class="lede">${menuOn() ? L(`${piano ? 'Play the key' : 'Strum the chord'} on a card to start, or press its number.`, piano ? 'Spiel die Taste einer Karte, um zu starten, oder drück ihre Nummer.' : 'Schlag den Akkord einer Karte an, um zu starten, oder drück ihre Nummer.') : L(`Press ${types.map((_, i) => i + 1).join(', ')}, or click a card.`, `Drück ${types.map((_, i) => i + 1).join(', ')} oder klick eine Karte an.`)} ${L(`New ${piano ? 'pieces' : 'songs'} are learned in the calm Learn mode first. Runs drill what you already know.`, `Neue ${piano ? 'Stücke' : 'Songs'} lernst du zuerst in Ruhe im Modus „Lernen“. Runden trainieren, was du schon kannst.`)}${voice ? L(' Sing on “la”; any octave counts.', ' Sing auf „la“; jede Oktave zählt.') : ''}</p>
+      <p class="lede">${menuOn() ? L(`${piano ? 'Play the key' : 'Strum the chord'} on a card to start, or press its number.`, piano ? 'Spiel die Taste einer Karte, um zu starten, oder drück ihre Nummer.' : 'Schlag den Akkord einer Karte an, um zu starten, oder drück ihre Nummer.') : L(`Press ${types.map((_, i) => i + 1).join(', ')}, or click a card.`, `Drück ${types.map((_, i) => i + 1).join(', ')} oder klick eine Karte an.`)} ${L(`New ${piano ? 'pieces' : 'songs'} are learned in the calm Learn mode first. Runs drill what you already know.`, `Neue ${piano ? 'Stücke' : 'Songs'} lernst du zuerst in Ruhe im Modus „Lernen“. Runden trainieren, was du schon kannst.`)}${voice ? L(' Sing on “la”; any octave counts.', ' Sing auf „la“; jede Oktave zählt.') : ''}</p>${pickState()}
     </div>
     <div class="cards${types.length >= 3 ? ' four' : ''}">${types
       .map(
@@ -520,7 +565,7 @@ export const nfRun: Screen = (root, [t, short, again], ctx) => {
       drawBoss();
     } else if (view === 'perk') {
       scene.over = null;
-      mid.innerHTML = `<div class="page mid"><div><p class="kick">${L(`Wave ${run.wave} cleared`, `Welle ${run.wave} geschafft`)}</p><h1>${L('Pick one upgrade.', 'Wähl ein Upgrade.')}</h1><p class="lede">${menuOn() ? L(`${piano ? 'Play the key' : 'Strum the chord'} on a card to take it, or press its number.`, piano ? 'Spiel die Taste einer Karte, um sie zu nehmen, oder drück ihre Nummer.' : 'Schlag den Akkord einer Karte an, um sie zu nehmen, oder drück ihre Nummer.') : L('Press 1, 2 or 3.', 'Drück 1, 2 oder 3.')}</p></div>
+      mid.innerHTML = `<div class="page mid"><div><p class="kick">${L(`Wave ${run.wave} cleared`, `Welle ${run.wave} geschafft`)}</p><h1>${L('Pick one upgrade.', 'Wähl ein Upgrade.')}</h1><p class="lede">${menuOn() ? L(`${piano ? 'Play the key' : 'Strum the chord'} on a card to take it, or press its number.`, piano ? 'Spiel die Taste einer Karte, um sie zu nehmen, oder drück ihre Nummer.' : 'Schlag den Akkord einer Karte an, um sie zu nehmen, oder drück ihre Nummer.') : L('Press 1, 2 or 3.', 'Drück 1, 2 oder 3.')}</p>${pickState()}</div>
         <dl class="stats"><div><dt>${L('Score', 'Punkte')}</dt><dd>${num(run.score)}</dd></div><div><dt>${L('Best chain', 'Beste Kette')}</dt><dd>×${run.bestChain}</dd></div><div><dt>${L('Speed', 'Tempo')}</dt><dd>${Math.round(run.speed)}%</dd></div><div><dt>${L('Lamp', 'Lampe')}</dt><dd>${run.integrity}/${run.maxIntegrity}</dd></div></dl>
         <div class="cards">${run.offered.map((p, i) => `<button class="card" data-perk="${p.id}"><span class="k">${p.tag}</span><h2>${p.name}</h2><p>${p.text}</p><span class="pick">${pickHint(i, piano)}</span></button>`).join('')}</div></div>`;
       $('#hints', root).innerHTML = `<span><b>${L('The run adapts', 'Die Runde passt sich an')}</b>${L('phrases you are slow on come back more often', 'Phrasen, bei denen du langsam bist, kommen öfter wieder')}</span>`;
@@ -544,20 +589,23 @@ export const nfRun: Screen = (root, [t, short, again], ctx) => {
   function pickMenuKeepingRun(pick: (i: number) => void): () => void {
     const l = engine.listener;
     if (!l || !menuOn()) return () => undefined;
+    // the run was just being played: the menu listens only once the instrument has been quiet
+    const gate = armed(root, pick, piano);
     if (piano) {
       l.noteDetection = true;
       menuPick = (midi, conf) => {
         const i = [0, 2, 4].indexOf(midi % 12);
-        if (i >= 0 && conf > 0.7) pick(i);
+        gate.heard(i >= 0 && conf > 0.7 ? i : -1);
       };
     } else {
       l.chordCandidates = STRUM;
       menuStrum = (id, score, margin) => {
         const i = STRUM.indexOf(id);
-        if (i >= 0 && score > 0.8 && margin > 0.12) pick(i);
+        gate.heard(i >= 0 && score > 0.8 && margin > 0.12 ? i : -1);
       };
     }
     return () => {
+      gate.stop();
       menuPick = null;
       menuStrum = null;
     };
