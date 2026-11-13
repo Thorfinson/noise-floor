@@ -1006,6 +1006,8 @@ try {
     await page.keyboard.press('Space');
     await page.keyboard.press('Space');
     await page.waitForSelector('#brief', { timeout: 6000 }).catch(() => undefined);
+    // on a slow machine the briefing is drawn a moment after its frame
+    await page.waitForFunction(() => (document.querySelector('#brief h1')?.textContent ?? '').startsWith('Chord changes'), null, { timeout: 8000 }).catch(() => undefined);
     check('piano session of chords: then the game with those changes', (await text(page, '#brief h1')).startsWith('Chord changes: C and G') && (await text(page, '.hud .k')).includes('STEP 3 OF 4'), `${await text(page, '.hud .k')} | ${await text(page, '#brief h1')}`);
     await page.click('#skipstep');
     await page.waitForSelector('#rowA rect', { timeout: 6000 }).catch(() => undefined);

@@ -5,6 +5,7 @@ export default defineConfig({
   base: './',
   server: { port: 5173, strictPort: true },
   preview: { port: 5173, strictPort: true },
-  // the listener tests push minutes of synthesized audio through real signal processing
-  test: { include: ['tests/**/*.test.ts'], environment: 'node', testTimeout: 60000 },
+  // the listener tests push minutes of synthesized audio through real signal processing: on a slow
+  // machine (a shared CI runner) one of them can take a few minutes
+  test: { include: ['tests/**/*.test.ts'], environment: 'node', testTimeout: 240000 },
 });
