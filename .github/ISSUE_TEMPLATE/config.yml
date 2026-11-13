@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Documentation
+    url: https://github.com/Thorfinson/noise-floor/tree/main/docs
+    about: How the app works, what it measures, and troubleshooting.

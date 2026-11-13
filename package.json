@@ -1,0 +1,55 @@
+{
+  "name": "noise-floor",
+  "private": true,
+  "version": "0.1.0",
+  "description": "A guitar, piano and singing trainer in the browser that listens to your real instrument or voice through the microphone. English and German.",
+  "license": "MIT",
+  "author": "Thorfinson",
+  "homepage": "https://thorfinson.github.io/noise-floor/",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Thorfinson/noise-floor.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Thorfinson/noise-floor/issues"
+  },
+  "keywords": [
+    "guitar",
+    "piano",
+    "singing",
+    "music-education",
+    "web-audio",
+    "pitch-detection",
+    "chord-recognition",
+    "typescript",
+    "vite"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "type": "module",
+  "scripts": {
+    "start": "vite --open",
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit",
+    "test": "node scripts/test.mjs",
+    "e2e": "vite-node tests/e2e/run.ts",
+    "samples": "node scripts/samples.mjs",
+    "hear": "vite-node scripts/hear.ts --",
+    "shots": "vite-node scripts/shots.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "playwright-core": "^1.49.0",
+    "typescript": "^5.6.0",
+    "vite": "^8.3.8",
+    "vite-node": "^6.0.0",
+    "vitest": "^4.1.12"
+  },
+  "dependencies": {
+    "@fontsource/ibm-plex-mono": "^5.1.0",
+    "@fontsource/ibm-plex-sans": "^5.1.0"
+  }
+}

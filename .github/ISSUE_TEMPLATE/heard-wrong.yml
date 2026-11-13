@@ -1,0 +1,38 @@
+name: Something is heard wrong
+description: The app does not hear a note, chord or sung tone you played, or hears something you did not.
+labels: [listening]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        What the app hears in your room is the one thing nobody else can test, so a recording helps most.
+        **Settings → When something is not heard right → Record** saves up to 30 seconds of exactly what the app heard to your downloads folder. Zip it and attach it below.
+  - type: dropdown
+    id: instrument
+    attributes:
+      label: Instrument
+      options: [Guitar, Piano, Voice]
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What you played or sang, and what the app made of it
+      placeholder: "I strummed G, it said Em. / I held A3, the ring never filled."
+    validations:
+      required: true
+  - type: input
+    id: where
+    attributes:
+      label: Where in the app
+      placeholder: "Chord check, #/chord/G"
+  - type: textarea
+    id: setup
+    attributes:
+      label: Instrument, microphone, browser
+      placeholder: "Acoustic steel-string guitar, laptop microphone about a metre away, Edge 132 on Windows 11"
+  - type: textarea
+    id: recording
+    attributes:
+      label: Recording
+      description: Drag the zipped recording here.

@@ -1,0 +1,30 @@
+node_modules
+dist
+*.log
+
+# songs kept privately on this computer (see src/music/songbook.ts): never published
+src/music/private/
+
+# recordings of real instruments and voices, fetched by `npm run samples`: their licences do not allow
+# passing them on, so they stay on the computer that fetched them
+tests/real/cache/
+tests/real/notes/
+tests/real/pieces/
+tests/real/chords/
+tests/real/vocadito/
+*.wav
+
+# what the browser checks write: screenshots and recordings
+tests/e2e/out
+
+# working material that is not part of the app
+mockups/
+reports/
+research_notes/
+
+# editor and tool settings of one machine
+.claude/
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

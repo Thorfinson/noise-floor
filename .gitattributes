@@ -1,0 +1,7 @@
+# text files are kept with LF line endings in the repository, whatever the computer they were written on
+* text=auto eol=lf
+*.cmd text eol=crlf
+*.png binary
+*.jpg binary
+*.woff binary
+*.woff2 binary

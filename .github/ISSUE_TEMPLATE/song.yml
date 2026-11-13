@@ -1,0 +1,39 @@
+name: Song or piece
+description: Suggest a song, or report a wrong chord or note.
+labels: [songs]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Songs that come with the app must be in the **public domain in the USA and in the EU**: traditional, or the composer (and, for a song's title, the lyricist) dead for more than 70 years and first published before 1931. Songs still under copyright cannot be added, but you can keep them on your own computer: see CONTRIBUTING.md.
+  - type: input
+    id: song
+    attributes:
+      label: Song
+      placeholder: "Shenandoah (traditional)"
+    validations:
+      required: true
+  - type: dropdown
+    id: kind
+    attributes:
+      label: What is it about
+      options: [A new song, A wrong chord, A wrong note or rhythm, The level seems wrong]
+    validations:
+      required: true
+  - type: textarea
+    id: details
+    attributes:
+      label: Details
+      description: For a new song, the chords or notes if you have them, in the notation of src/music/songbook.ts if you can.
+  - type: input
+    id: source
+    attributes:
+      label: Published source
+      description: A score, hymnal or chord sheet the song can be checked against.
+      placeholder: "https://hymnary.org/..."
+  - type: checkboxes
+    id: pd
+    attributes:
+      label: Public domain
+      options:
+        - label: As far as I know, this song is in the public domain in the USA and in the EU.

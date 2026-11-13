@@ -1,0 +1,29 @@
+name: Bug
+description: Something on screen is wrong, stuck or broken.
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened, and what you expected
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: How to get there
+      placeholder: "1. Voice, start today's session 2. ..."
+  - type: input
+    id: browser
+    attributes:
+      label: Browser and system
+      placeholder: "Chrome 133 on macOS 15"
+  - type: dropdown
+    id: language
+    attributes:
+      label: Language of the app
+      options: [English, Deutsch]
+  - type: textarea
+    id: shot
+    attributes:
+      label: Screenshot
