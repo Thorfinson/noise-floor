@@ -18,7 +18,7 @@ import { dueReviews, syncReviews } from '../music/review';
 import { LYRICS } from '../music/lyrics';
 import { OPEN_CHORDS } from '../music/path';
 import { chordName, CHORDS } from '../music/theory';
-import { $, esc, keys, type Screen, type SessionCtx } from '../ui/dom';
+import { $, esc, keys, stopAllLater, type Screen, type SessionCtx } from '../ui/dom';
 import { cleanStrings, skillLabel } from './home';
 import { chordCheck, describe, pianoLesson, pieceMaterial, songLesson, songMaterial } from './learn';
 import { withIntro } from './basics';
@@ -188,10 +188,14 @@ export const describeSung = (id: string): string => {
 const changesStep: Screen = (root, params, ctx) => {
   const pair = weakestChange(params[0] === 'kchanges');
   if (!pair || !ctx) return nfRun(root, params, ctx);
+  // the game starts once, however often the drill says it is done
+  let inGame = false;
   let stop: void | (() => void) = changeDrill(root, pair, {
     ...ctx,
     after: L('the game with your changes', 'das Spiel mit deinen Wechseln'),
     next: () => {
+      if (inGame) return;
+      inGame = true;
       stop?.();
       document.body.dataset.mode = 'nf';
       stop = nfRun(root, params, ctx);
@@ -376,6 +380,20 @@ const fmt = (key: string, v: number): string => {
 };
 
 /**
+ * After a session on a song that is now finished: the one to go on with, easiest first, as the session would
+ * choose it by itself (a song, not a riff or a lick; a piece, not the basic version of one). Null while the
+ * song is not finished, or when nothing is left.
+ */
+export function nextAfter(inst: Instrument, id: string): { done: { id: string; title: string }; next: { id: string; title: string } } | null {
+  if (!finished(inst, id)) return null;
+  // the finished one itself is kept in the list for its title, whatever it is
+  const all: { id: string; title: string }[] = inst === 'voice' ? songsToSing() : inst === 'piano' ? piecesByDifficulty().filter((p) => !p.of || p.id === id) : songsByDifficulty().filter((s) => !s.exercise || s.id === id);
+  const done = all.find((x) => x.id === id);
+  const next = all.find((x) => !finished(inst, x.id));
+  return done && next ? { done, next } : null;
+}
+
+/**
  * Five minutes: the first step (tuning, the piano's pitch, a held tone) and the song. Counts as fully as the
  * whole session: on a busy day, a little is what keeps the habit.
  */
@@ -412,6 +430,8 @@ export const session: Screen = (root, [how]) => {
     `<ol class="rail" aria-label="${L("Today's steps", 'Heutige Schritte')}">${steps.map((s, k) => `<li data-n="${k + 1}" class="${k < at ? 'done' : k === at ? 'cur' : ''}"${k === at ? ' aria-current="step"' : ''}><span>${esc(s.short)}</span></li>`).join('')}</ol>`;
 
   function show(): void {
+    // nothing the step before had planned moves on any more, as when the router opens another screen
+    stopAllLater();
     cleanup?.();
     cleanup = undefined;
     scrollTo(0, 0);
@@ -421,10 +441,15 @@ export const session: Screen = (root, [how]) => {
     }
     const step = steps[i];
     document.body.dataset.mode = step.mode;
+    // a step goes on once: "Next step" pressed while its own move was pending, or a late callback of it,
+    // must not skip the step after it
+    let gone = false;
     const ctx: SessionCtx = {
       rail: rail(i),
       label: L(`Step ${i + 1} of ${steps.length}`, `Schritt ${i + 1} von ${steps.length}`),
       next: () => {
+        if (gone) return;
+        gone = true;
         i++;
         mark(i < steps.length ? i : 0);
         show();
@@ -444,15 +469,11 @@ export const session: Screen = (root, [how]) => {
     const id = currentId(inst);
     let moved = '';
     let choices: ReturnType<typeof songChoices> = [];
-    if (finished(inst, id)) {
-      // on to the next one, easiest first
-      const all: { id: string; title: string }[] = inst === 'voice' ? songsToSing() : inst === 'piano' ? piecesByDifficulty().filter((p) => !p.of || p.id === id) : songsByDifficulty();
-      const next = all.find((x) => !finished(inst, x.id));
-      if (next) {
-        store.current[inst] = next.id;
-        moved = L(`${all.find((x) => x.id === id)!.title} is at full speed. Next: ${next.title}.`, `${all.find((x) => x.id === id)!.title} läuft im vollen Tempo. Als Nächstes: ${next.title}.`);
-        choices = songChoices(inst);
-      }
+    const step = nextAfter(inst, id);
+    if (step) {
+      store.current[inst] = step.next.id;
+      moved = L(`${step.done.title} is at full speed. Next: ${step.next.title}.`, `${step.done.title} läuft im vollen Tempo. Als Nächstes: ${step.next.title}.`);
+      choices = songChoices(inst);
     }
     store.save();
     const rows = Object.keys(store.skills.data)
@@ -477,6 +498,7 @@ export const session: Screen = (root, [how]) => {
       ${moved ? `<p class="note"><b id="moved">${esc(moved)}</b></p>${chooseRow(choices, store.current[inst] ?? '')}` : weakest ? `<p class="note">${L(`<b>Tomorrow</b> comes back to ${esc(skillLabel(weakest))}.`, `<b>Morgen</b> geht es wieder um ${esc(skillLabel(weakest))}.`)}</p>` : ''}
       <div class="row"><a class="btn primary big" href="#/">${L('Finish', 'Abschließen')} <kbd>${L('Space', 'Leertaste')}</kbd></a><a class="btn big" href="#/nf">${L('Keep playing: a game', 'Weiterspielen: ein Spiel')}</a></div>
     </div>`;
+    stopKeys();
     stopKeys = keys({ ' ': () => (location.hash = '/') });
     bindChoose(root, inst, (c) => ($('#moved', root).textContent = L(`Next: ${c.title}.`, `Als Nächstes: ${c.title}.`)));
     $('.btn.primary', root).focus();

@@ -1103,6 +1103,14 @@ function lesson(root: HTMLElement, m: Material, wanted: string | undefined, ctx?
 
   function setStage(s: number): void {
     mode?.stop();
+    // a question about the slips of a take that is no longer on show is not answered any more: its answer
+    // would be kept for the wrong take and move the session on in the middle of the next one
+    if (rating) {
+      rating = null;
+      $('#selfrate', root).hidden = true;
+      // nothing is held back any more: the bars of that take say how the app heard them
+      paintBars(false);
+    }
     stage = s;
     RUNGS().forEach((_, i) => $('#st' + i, root).setAttribute('aria-pressed', String(i === s)));
     $('#st0s', root).textContent = L('waits for you', 'wartet auf dich');
@@ -1410,22 +1418,28 @@ function lesson(root: HTMLElement, m: Material, wanted: string | undefined, ctx?
 /** A song on the guitar. The second part of the address picks the rung: 1, 2 or 3. */
 export const songLesson: Screen = (root, [id, rung], ctx) => {
   const song = findSong(id);
-  if (!ctx && store.current.guitar !== song.id) {
-    store.current.guitar = song.id;
-    store.save();
+  // an address to a song that is not there (an own song deleted since) shows the first one, but does not
+  // make it the song the session works on
+  if (song.id === id) {
+    if (!ctx && store.current.guitar !== song.id) {
+      store.current.guitar = song.id;
+      store.save();
+    }
+    store.opened('guitar', song.id);
   }
-  store.opened('guitar', song.id);
   return lesson(root, songMaterial(song), rung, ctx);
 };
 
 /** A piece on the piano. */
 export const pianoLesson: Screen = (root, [id, rung], ctx) => {
   const piece = findPiece(id);
-  if (!ctx && store.current.piano !== piece.id) {
-    store.current.piano = piece.id;
-    store.save();
+  if (piece.id === id) {
+    if (!ctx && store.current.piano !== piece.id) {
+      store.current.piano = piece.id;
+      store.save();
+    }
+    store.opened('piano', piece.id);
   }
-  store.opened('piano', piece.id);
   return lesson(root, pieceMaterial(piece), rung, ctx);
 };
 
@@ -1467,6 +1481,14 @@ export function holdLines(c: Chord): string[] {
 const TRIES = 3;
 
 /**
+ * The check at the end of a stage is passed when every chord it asks for has rung clean: each chord once,
+ * however often one of them was played again. A check that asks for no chord confirms nothing.
+ */
+export function stageConfirmed(required: readonly string[], passed: ReadonlySet<string>): boolean {
+  return required.length > 0 && required.every((id) => passed.has(id));
+}
+
+/**
  * Chord check: hold the chord, pluck one string at a time, see which ring clean. No clock. In the guided
  * session it takes today's chords one after the other and never gets stuck: a string that will not ring
  * is left for next time after three tries, and any string can be skipped or done again.
@@ -1475,8 +1497,11 @@ export const chordCheck: Screen = (root, ids, ctx) => {
   /** the check at the end of a stage: several chords in a row, from memory, and the result is kept */
   const stageCheck = !ctx && ids[0] === 'check';
   const guided = !!ctx || stageCheck;
-  let passed = 0;
   const queue = (guided ? ids : ids.slice(0, 1)).map((id) => CHORDS[id]).filter(Boolean);
+  /** the chords the stage check asks for, each once; the Em shown when none is named is not one of them */
+  const required = [...new Set(queue.map((c) => c.id))];
+  /** the chords whose last go rang clean: a chord played again (R, or ←) is not counted twice */
+  const passed = new Set<string>();
   if (!queue.length) queue.push(CHORDS['Em']);
   /** practice rather than a check: after the result it waits for the player, who may go again as often as they like */
   const stay = !!ctx && ids.includes('stay');
@@ -1606,24 +1631,27 @@ export const chordCheck: Screen = (root, ids, ctx) => {
   function finishChord(time: number): void {
     const n = strings.length;
     const clean = cleanCount();
-    const after = nextName() ? L(`Next: ${nextName()}.`, `Als Nächstes: ${nextName()}.`) : stay ? L('Once more with R, or finish with the right arrow.', 'Noch einmal mit R, oder mit dem Pfeil nach rechts abschließen.') : ctx ? L(`Next: ${ctx.after}.`, `Als Nächstes: ${ctx.after}.`) : L('It starts over in a moment.', 'Gleich geht es von vorn los.');
+    // the tip is shown as HTML: what the session says comes next can hold the title of an own song
+    const after = nextName() ? L(`Next: ${nextName()}.`, `Als Nächstes: ${nextName()}.`) : stay ? L('Once more with R, or finish with the right arrow.', 'Noch einmal mit R, oder mit dem Pfeil nach rechts abschließen.') : ctx ? L(`Next: ${esc(ctx.after)}.`, `Als Nächstes: ${esc(ctx.after)}.`) : L('It starts over in a moment.', 'Gleich geht es von vorn los.');
     if (clean === n && !left.size && startT >= 0) {
-      passed++;
+      passed.add(chord.id);
       const secs = time - startT;
       const change = store.skills.record(`chord:${chord.id}`, secs, Date.now());
       tip = L(`All ${n} strings clean, ${secs.toFixed(0)} seconds after the chord came up.${levelNews([change])} ${after}`, `Alle ${n} Saiten sauber, ${secs.toFixed(0)} Sekunden, nachdem der Akkord erschienen ist.${levelNews([change])} ${after}`);
     } else {
+      passed.delete(chord.id);
       store.skills.record(`chord:${chord.id}`, Infinity, Date.now(), Math.min(5, Math.round((clean / n) * 6)));
       const missing = strings.filter((i) => results[i] !== 'clean').map((i) => STRING_NAMES[i]);
       tip = L(`${missing.join(', ')} ${missing.length > 1 ? 'do' : 'does'} not ring yet. That is normal for a chord that is new to the hand; it comes back next time. ${after}`, `${missing.join(', ')} ${missing.length > 1 ? 'klingen' : 'klingt'} noch nicht. Das ist normal bei einem Akkord, der für die Hand neu ist; beim nächsten Mal kommt er wieder dran. ${after}`);
     }
-    if (stageCheck && q === queue.length - 1) {
+    if (stageCheck && required.length && q === queue.length - 1) {
       // every chord of the stage, each string clean, in one go: the stage is confirmed
-      if (passed === queue.length) store.progress['check:open'] = Date.now();
-      tip =
-        passed === queue.length
-          ? L(`All ${queue.length} chords rang clean in a row. The stage is confirmed.`, `Alle ${queue.length} Akkorde haben in einem Zug sauber geklungen. Die Etappe ist bestätigt.`)
-          : L(`${passed} of ${queue.length} chords rang clean in a row. The stage is confirmed when all of them do; the ones that did not are on the path.`, `${passed} von ${queue.length} Akkorden ${passed === 1 ? 'hat' : 'haben'} in einem Zug sauber geklungen. Die Etappe ist bestätigt, wenn alle es tun; die übrigen findest du auf dem Weg.`);
+      const ok = stageConfirmed(required, passed);
+      const rang = required.filter((id) => passed.has(id)).length;
+      if (ok) store.progress['check:open'] = Date.now();
+      tip = ok
+        ? L(`All ${required.length} chords rang clean in a row. The stage is confirmed.`, `Alle ${required.length} Akkorde haben in einem Zug sauber geklungen. Die Etappe ist bestätigt.`)
+        : L(`${rang} of ${required.length} chords rang clean in a row. The stage is confirmed when all of them do; the ones that did not are on the path.`, `${rang} von ${required.length} Akkorden ${rang === 1 ? 'hat' : 'haben'} in einem Zug sauber geklungen. Die Etappe ist bestätigt, wenn alle es tun; die übrigen findest du auf dem Weg.`);
     }
     store.save();
     if (!stay) timer = later(guided ? 4000 : 6000, onward, q + 1 < queue.length ? L(`the next chord, ${queue[q + 1].name}`, `der nächste Akkord, ${queue[q + 1].name}`) : ctx ? ctx.after : stageCheck ? L('the path', 'der Weg') : L(`${chord.name} once more`, `noch einmal ${chord.name}`));

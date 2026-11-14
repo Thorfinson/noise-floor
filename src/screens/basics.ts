@@ -9,7 +9,7 @@ import { L } from '../core/i18n';
 import { store, type Instrument } from '../core/store';
 import { findPiece, findSong } from '../music/content';
 import { barreStrings, CHORDS, isBlackKey, noteName, pianoChord } from '../music/theory';
-import { $, $$, esc, hear, icon, keys, micMeter, pianoEars, voiceEars, type Screen } from '../ui/dom';
+import { $, $$, cap, esc, hear, icon, keys, micMeter, pianoEars, voiceEars, type Screen } from '../ui/dom';
 import { centsOff, Hold } from '../core/singing';
 import { VOICE_CHAPTERS, VOICE_COMES_UP, VOICE_PAGES } from './voicepages';
 import { chordBox, chordMarks, keyboard, keyChord, keyRange, LEARN } from '../ui/draw';
@@ -956,7 +956,7 @@ export const basics: Screen = (root, [id, how]) => {
       <nav class="toc" id="toc" aria-label="${L('Contents', 'Inhalt')}"></nav>
       <article class="leaf" id="leaf" aria-live="polite"></article>
     </div>
-    <p class="note">${L(`The ${instName(others[0])} and the ${instName(others[1])} have handbooks of their own: switch at the top right.`, `${others.map((o) => (o === 'voice' ? 'Die Stimme' : o === 'piano' ? 'Das Klavier' : 'Die Gitarre')).join(' und ')} haben eigene Handbücher: Wechsle oben rechts.`)}</p>
+    <p class="note">${L(`The ${instName(others[0])} and the ${instName(others[1])} have handbooks of their own: switch at the top right.`, `${cap(others.map((o) => (o === 'voice' ? 'die Stimme' : o === 'piano' ? 'das Klavier' : 'die Gitarre')).join(' und '))} haben eigene Handbücher: Wechsle oben rechts.`)}</p>
   </div>`;
 
   function draw(): void {
