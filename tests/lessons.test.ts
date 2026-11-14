@@ -10,7 +10,7 @@ import { setLang } from '../src/core/i18n';
 import { store } from '../src/core/store';
 import { barKey, type Song } from '../src/music/content';
 import { finished, songsByDifficulty } from '../src/music/difficulty';
-import { stageConfirmed } from '../src/screens/learn';
+import { stageConfirmed } from '../src/screens/chordcheck';
 import { nextAfter } from '../src/screens/session';
 
 afterEach(() => {

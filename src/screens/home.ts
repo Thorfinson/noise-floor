@@ -7,7 +7,7 @@ import { store, type Instrument } from '../core/store';
 import { allPieces, KEY_CHORDS } from '../music/content';
 import { CHORDS, noteName, pianoChord } from '../music/theory';
 import { $, $$, applyScale, esc, go, hear, icon, keys, micMeter, type Screen } from '../ui/dom';
-import { describe, pieceMaterial } from './learn';
+import { describe, pieceMaterial } from '../music/material';
 import { currentPiece, currentSong, currentSongToSing } from '../music/difficulty';
 import { rangeMeasured, voiceRange } from './sing';
 import { learningPath, OPEN_CHORDS, type Stage } from '../music/path';

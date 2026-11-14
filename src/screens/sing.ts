@@ -21,7 +21,7 @@ import { findSongToSing, sungPhraseKey, type SongToSing } from '../music/voicebo
 import { $, cap, esc, hear, icon, keys, later, stopTimer, voiceEars, type Screen, type SessionCtx } from '../ui/dom';
 import { Lane, type LaneLook, type LaneNote } from '../ui/lane';
 import { setSimTarget } from '../ui/practice';
-import { frame, levelNews, nextStep } from './learn';
+import { frame, levelNews, nextStep } from './frame';
 
 export { voiceEars };
 
