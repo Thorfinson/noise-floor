@@ -85,9 +85,15 @@ export class CheckRun {
     return this.items[this.at];
   }
 
-  start(): void {
+  /**
+   * Begins at this moment of the listener's clock. Live, that clock has run since the microphone was
+   * opened: a check that began at 0 would see the quiet as long over at the first level it is given, and
+   * measure no room at all.
+   */
+  start(time = 0): void {
     this.outcomes.length = 0;
     this.quiet = [];
+    this.now = time;
     this.at = -1;
     this.next();
   }

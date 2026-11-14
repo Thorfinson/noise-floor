@@ -38,7 +38,9 @@ const BARS = 2;
 
 export const strumTrainer: Screen = (root, [pid, stageParam, a, b], ctx?: SessionCtx) => {
   const pattern = suggested(pid);
-  const [c1, c2] = a && CHORDS[a] ? [a, CHORDS[b] ? b : a] : chordsFor();
+  // own keys only: an address like #/strum/x/1/constructor would otherwise find Object's constructor
+  const isChord = (id: string | undefined): id is string => !!id && Object.hasOwn(CHORDS, id);
+  const [c1, c2] = isChord(a) ? [a, isChord(b) ? b : a] : chordsFor();
   let stage: StrumStage = stageParam === '1' ? 1 : stageParam === '2' ? 2 : stageParam === '0' ? 0 : store.skills.level(strumKey(pattern.id)) >= 1 ? 2 : 0;
   const level = store.skills.level(strumKey(pattern.id));
   let bpm = Math.max(50, Math.min(120, store.speeds[strumKey(pattern.id)] ?? (pattern.beat === 4 ? 50 : 60)));

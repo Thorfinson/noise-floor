@@ -3,8 +3,8 @@
  * full speed; from then on it comes back at growing gaps, from cold, and this page shows how each one
  * stands: since when, how fast at best, how the last cold try went, and when it is due again.
  */
-import { dayMonth, L } from '../core/i18n';
-import { store, type Instrument } from '../core/store';
+import { dayMonth, L, num } from '../core/i18n';
+import { store, type Instrument, type TakeMeta } from '../core/store';
 import { finished } from '../music/difficulty';
 import { everything, type Freshness, relDay, repertoire, type RepertoireItem, songSkills, whatStays } from '../music/review';
 import { $, $$, esc, icon, keys, type Screen } from '../ui/dom';
@@ -54,6 +54,10 @@ export const takesPage: Screen = (root, [id]) => {
   const both = (['first', 'last'] as const).map((w) => ({ w, meta: takeMeta(inst, id, w) })).filter((x) => x.meta);
   // one recording only (the first is the latest): shown once
   const shown = both.length === 2 && both[0].meta!.t === both[1].meta!.t ? both.slice(1) : both;
+  // The index of the recordings travels in a backup, so what it says is written as numbers, never as it
+  // stands: a crafted file could put markup where a tempo or a bar number belongs.
+  const n = (v: unknown): number => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
+  const barsOf = (meta: TakeMeta): TakeMeta['bars'] => (Array.isArray(meta.bars) ? meta.bars : []);
   root.innerHTML = `<div class="page">
     ${progressTabs('repertoire')}
     <div><p class="kick">${L('Your recordings', 'Deine Aufnahmen')}</p><h1>${esc(title)}</h1>
@@ -61,13 +65,15 @@ export const takesPage: Screen = (root, [id]) => {
     ${
       shown.length
         ? shown
-            .map(
-              ({ w, meta }) => `<section class="takecard" data-w="${w}">
-      <p class="k">${w === 'first' ? L('Your first recording', 'Deine erste Aufnahme') : L('The latest', 'Die neueste')} · ${dayMonth(meta!.t)} · ${meta!.tempo} % · ${L(`${meta!.bars.filter((b) => b.clean).length} of ${meta!.bars.length} clean`, `${meta!.bars.filter((b) => b.clean).length} von ${meta!.bars.length} sauber`)}</p>
-      <div class="barmap">${meta!.bars.map((b, k) => `<button class="bm ${b.clean ? 'ok' : 'bad'}" data-k="${k}" aria-label="${L(`bar ${b.bar + 1}`, `Takt ${b.bar + 1}`)}">${b.bar + 1}</button>`).join('')}</div>
+            .map(({ w, meta }) => {
+              const bars = barsOf(meta!);
+              const clean = bars.filter((b) => b.clean).length;
+              return `<section class="takecard" data-w="${w}">
+      <p class="k">${w === 'first' ? L('Your first recording', 'Deine erste Aufnahme') : L('The latest', 'Die neueste')} · ${esc(dayMonth(n(meta!.t)))} · ${num(Math.round(n(meta!.tempo)))} % · ${L(`${clean} of ${bars.length} clean`, `${clean} von ${bars.length} sauber`)}</p>
+      <div class="barmap">${bars.map((b, k) => `<button class="bm ${b.clean ? 'ok' : 'bad'}" data-k="${k}" aria-label="${L(`bar ${Math.round(n(b.bar)) + 1}`, `Takt ${Math.round(n(b.bar)) + 1}`)}">${Math.round(n(b.bar)) + 1}</button>`).join('')}</div>
       <div class="row"><button class="btn" data-play>${L('Listen to all of it', 'Ganz anhören')}</button><button class="btn quiet" data-save>${L('Save as a file', 'Als Datei speichern')}</button></div>
-    </section>`,
-            )
+    </section>`;
+            })
             .join('')
         : `<p class="note">${L('No recording of it yet: one is made whenever it is played to the end at full speed (rung 3).', 'Noch keine Aufnahme davon: Eine entsteht, wann immer es im vollen Tempo bis zum Ende gespielt wird (Stufe 3).')}</p>`
     }
@@ -75,7 +81,11 @@ export const takesPage: Screen = (root, [id]) => {
   </div>`;
   let source: AudioBufferSourceNode | null = null;
   let ctx: AudioContext | null = null;
+  /** counts the requests to play: only the latest one plays once its recording has been read */
+  let asked = 0;
+  let gone = false;
   const stop = (): void => {
+    asked++;
     try {
       source?.stop();
     } catch {
@@ -86,7 +96,11 @@ export const takesPage: Screen = (root, [id]) => {
   /** Plays part of a kept recording through the speakers: this page does not listen, so no microphone is needed. */
   const play = async (w: 'first' | 'last', from = 0, to = Infinity): Promise<void> => {
     stop();
+    const mine = asked;
     const s = await loadTake(inst, id, w);
+    // a second click while the first recording was being read, or the page left: this one stays silent,
+    // so two never play at once and no sound is made (nor a context opened) on the page after this one
+    if (gone || mine !== asked) return;
     if (!s) return void ($('#msg', root).textContent = L('This recording could not be read from the browser.', 'Diese Aufnahme ließ sich nicht aus dem Browser lesen.'));
     ctx ??= new AudioContext();
     const part = s.subarray(Math.floor(from * TAKE_RATE), Math.min(s.length, Math.floor(to * TAKE_RATE)));
@@ -103,19 +117,20 @@ export const takesPage: Screen = (root, [id]) => {
     card.querySelector<HTMLElement>('[data-play]')!.onclick = () => void play(w);
     card.querySelector<HTMLElement>('[data-save]')!.onclick = async () => {
       const blob = await takeFile(inst, id, w);
-      if (!blob) return;
+      if (!blob || gone) return;
       const a = document.createElement('a');
       a.href = URL.createObjectURL(blob);
-      a.download = `${id}-${w}-${new Date(meta.t).toISOString().slice(0, 10)}.wav`;
+      a.download = `${id}-${w}-${new Date(n(meta.t)).toISOString().slice(0, 10)}.wav`;
       a.click();
       URL.revokeObjectURL(a.href);
     };
     card.querySelectorAll<HTMLElement>('[data-k]').forEach((b) => {
-      const bar = meta.bars[Number(b.dataset.k)];
-      b.onclick = () => void play(w, Math.max(0, bar.from - 0.15), bar.to + 0.4);
+      const bar = barsOf(meta)[Number(b.dataset.k)];
+      b.onclick = () => void play(w, Math.max(0, n(bar.from) - 0.15), n(bar.to) + 0.4);
     });
   });
   return () => {
+    gone = true;
     stop();
     void ctx?.close();
   };

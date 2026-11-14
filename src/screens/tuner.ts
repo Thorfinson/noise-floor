@@ -363,6 +363,10 @@ function guitar(root: HTMLElement, head: string, ctx: Parameters<Screen>[2]): ()
   };
 }
 
+/** How far the guitar's reference may go: a semitone below and above A = 440 (415 Hz is the Baroque A). */
+const A4_MIN = 415;
+const A4_MAX = 466;
+
 /** Whatever is sounding, with the option to make it the reference pitch. */
 function anyNote(root: HTMLElement, head: string): () => void {
   root.innerHTML = `${head}<div class="stage"><div class="tuner">
@@ -399,14 +403,29 @@ function anyNote(root: HTMLElement, head: string): () => void {
     (l) => {
       l.pitchTracking = true;
       l.noteDetection = false;
+      // the note as it sounds, against the reference this page sets. Not the A a capo or a lowered tuning
+      // moves the lessons to: with capo 2 a piano's A would read as G, and adopting it would tune every
+      // string two semitones sharp.
+      l.a4 = store.settings.a4;
     },
   );
   const setA4 = (hz: number): void => {
-    store.settings.a4 = Math.round(hz * 10) / 10;
+    // A reference more than about a semitone from 440 is no instrument's pitch but a wrong reading or a
+    // wrong note, and the guitar tuner would then ask for strings far too tight: it goes no further.
+    const kept = Math.min(A4_MAX, Math.max(A4_MIN, hz));
+    store.settings.a4 = Math.round(kept * 10) / 10;
     store.save();
     if (engine.listener) engine.listener.a4 = store.settings.a4;
     recent.length = 0;
     showRef();
+    if (Math.abs(kept - hz) > 0.05) {
+      const de = (v: number): string => v.toFixed(1).replace('.', ',');
+      // said where it stays: the line under the needle changes with every reading
+      $('#ref', root).textContent = L(
+        `That note would put A at ${hz.toFixed(1)} Hz, too far from 440: the app goes no further than ${store.settings.a4.toFixed(1)} Hz, about a semitone. If the other instrument really is that far off, tune it first; "Back to A = 440" undoes this.`,
+        `Mit diesem Ton läge das A bei ${de(hz)} Hz, zu weit weg von 440: Die App geht nur bis ${de(store.settings.a4)} Hz, etwa einen Halbton. Wenn das andere Instrument wirklich so weit daneben liegt, stimm zuerst das; „Zurück zu A = 440“ macht das rückgängig.`,
+      );
+    }
   };
   $('#adopt', root).onclick = () => {
     // whatever note is sounding becomes exactly in tune: shift the reference by its deviation

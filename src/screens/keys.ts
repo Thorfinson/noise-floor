@@ -23,12 +23,25 @@ type Result = 'clean' | 'muted' | 'wrong' | 'buzz' | null;
 /** Is this the name of a chord the piano can be asked for? */
 export const isKeyChord = (id: string | undefined): id is string => !!id && /^[A-G][#b]?(m7b5|maj7|7sus4|m7|add9|sus4|sus2|69|7|m)?$/.test(id);
 
+/**
+ * How a stage check stands: of the chords it asks for, how many have rung clean. Counted by chord, not by
+ * pass, so that one chord played clean twice (after R, or ← into a chord already done) is still one.
+ */
+export function stageTally(asked: string[], clean: ReadonlySet<string>): { passed: number; of: number; all: boolean } {
+  const want = new Set(asked);
+  const passed = [...want].filter((id) => clean.has(id)).length;
+  return { passed, of: want.size, all: want.size > 0 && passed === want.size };
+}
+
 export const keyCheck: Screen = (root, ids, ctx) => {
   /** the check at the end of a stage: several chords in a row, from memory, and the result is kept */
   const stageCheck = !ctx && ids[0] === 'check';
   const guided = !!ctx || stageCheck;
-  let passed = 0;
-  const queue: KeyChord[] = (guided ? ids : ids.slice(0, 1)).filter(isKeyChord).map(pianoChord);
+  /** the chords that have rung clean all through in this check */
+  const passed = new Set<string>();
+  /** the chords asked for in the address; a stage check that names none confirms nothing */
+  const asked = (guided ? ids : ids.slice(0, 1)).filter(isKeyChord);
+  const queue: KeyChord[] = asked.map(pianoChord);
   if (!queue.length) queue.push(pianoChord('C'));
   let q = 0;
   let chord = queue[0];
@@ -129,7 +142,8 @@ export const keyCheck: Screen = (root, ids, ctx) => {
       })
       .join('');
     $('#fwdl', root).textContent = !done ? (all ? L('Skip this', 'Überspringen') : L('Skip this key', 'Taste überspringen')) : nextName() ? L(`Next chord: ${nextName()}`, `Nächster Akkord: ${nextName()}`) : ctx ? L('Next step', 'Nächster Schritt') : L('Once more', 'Noch einmal');
-    $<HTMLButtonElement>('#back', root).disabled = at === 0;
+    // a chord that is through stays through: going back into it would let a replay count twice
+    $<HTMLButtonElement>('#back', root).disabled = at === 0 || done;
     const l = engine.listener;
     if (done) {
       setSimTarget(null);
@@ -178,7 +192,7 @@ export const keyCheck: Screen = (root, ids, ctx) => {
     const key = chordKey(chord.id, true);
     const after = nextName() ? L(`Next: ${nextName()}.`, `Als Nächstes: ${nextName()}.`) : ctx ? L(`Next: ${ctx.after}.`, `Als Nächstes: ${ctx.after}.`) : L('It starts over in a moment.', 'Gleich geht es von vorn los.');
     if (clean === n && !left.size && startT >= 0) {
-      passed++;
+      passed.add(chord.id);
       const secs = time - startT;
       const change = store.skills.record(key, secs, Date.now());
       tip = L(`All of it clean, ${secs.toFixed(0)} seconds after the chord came up.${levelNews([change])} ${after}`, `Alles sauber, ${secs.toFixed(0)} Sekunden, nachdem der Akkord erschienen ist.${levelNews([change])} ${after}`);
@@ -188,11 +202,11 @@ export const keyCheck: Screen = (root, ids, ctx) => {
       tip = L(`${missing.join(', ')}: not there yet. That is normal for a chord that is new to the hand; it comes back next time. ${after}`, `${missing.join(', ')}: noch nicht so weit. Das ist normal bei einem Akkord, der für die Hand neu ist; beim nächsten Mal kommt er wieder dran. ${after}`);
     }
     if (stageCheck && q === queue.length - 1) {
-      if (passed === queue.length) store.progress['check:keys'] = Date.now();
-      tip =
-        passed === queue.length
-          ? L(`All ${queue.length} chords rang clean in a row. The stage is confirmed.`, `Alle ${queue.length} Akkorde haben in einem Zug sauber geklungen. Die Etappe ist bestätigt.`)
-          : L(`${passed} of ${queue.length} chords rang clean in a row. The stage is confirmed when all of them do; the ones that did not are on the path.`, `${passed} von ${queue.length} Akkorden ${passed === 1 ? 'hat' : 'haben'} in einem Zug sauber geklungen. Die Etappe ist bestätigt, wenn alle es tun; die übrigen findest du auf dem Weg.`);
+      const t = stageTally(asked, passed);
+      if (t.all) store.progress['check:keys'] = Date.now();
+      tip = t.all
+        ? L(`All ${t.of} chords rang clean in a row. The stage is confirmed.`, `Alle ${t.of} Akkorde haben in einem Zug sauber geklungen. Die Etappe ist bestätigt.`)
+        : L(`${t.passed} of ${t.of} chords rang clean in a row. The stage is confirmed when all of them do; the ones that did not are on the path.`, `${t.passed} von ${t.of} Akkorden ${t.passed === 1 ? 'hat' : 'haben'} in einem Zug sauber geklungen. Die Etappe ist bestätigt, wenn alle es tun; die übrigen findest du auf dem Weg.`);
     }
     store.save();
     timer = later(guided ? 4000 : 6000, onward, q + 1 < queue.length ? L(`the next chord, ${queue[q + 1].name}`, `der nächste Akkord, ${queue[q + 1].name}`) : ctx ? ctx.after : stageCheck ? L('the path', 'der Weg') : L(`${chord.name} once more`, `noch einmal ${chord.name}`));
@@ -268,9 +282,9 @@ export const keyCheck: Screen = (root, ids, ctx) => {
     draw();
   };
   const back = (): void => {
-    if (at === 0) return;
+    if (at === 0 || at >= n) return;
     stopTimer(timer);
-    at = Math.min(at, n) - 1;
+    at = at - 1;
     results[at] = null;
     tries[at] = 0;
     left.delete(at);

@@ -170,6 +170,8 @@ const voiceIntervals: Screen = (root, _params, ctx) => {
     draw();
     const secs = sound(items[i].from);
     timer = window.setTimeout(() => {
+      // the round may have moved on while the note sounded (skipped, finished): nothing is left to sing
+      if (state !== 'listen' || i >= items.length) return;
       state = 'sing';
       hold = new Hold(target(), tol, 0.5);
       wrong = -1;
@@ -178,6 +180,9 @@ const voiceIntervals: Screen = (root, _params, ctx) => {
     }, (secs + 0.3) * 1000);
   }
   function next(ok: boolean): void {
+    if (state === 'done') return;
+    // a skip while the note still sounds: its timer would bring back "sing" for an interval that is gone
+    stopTimer(timer);
     results.push(ok);
     i++;
     hold = null;
@@ -188,6 +193,7 @@ const voiceIntervals: Screen = (root, _params, ctx) => {
     draw();
   }
   function finish(): void {
+    stopTimer(timer);
     state = 'done';
     const right = results.filter(Boolean).length;
     const news = levelNews([store.skills.record('ear:v.interval', Math.round((100 * right) / Math.max(1, results.length)), Date.now())]);
@@ -209,6 +215,8 @@ const voiceIntervals: Screen = (root, _params, ctx) => {
     i = 0;
     results = [];
     first = true;
+    // a new round after one that ended: play() does nothing while the state says done
+    state = 'listen';
     say('info', L('The app sings a note and names an interval: sing the note that far from it.', 'Die App singt einen Ton und nennt ein Intervall: Sing den Ton, der so weit davon entfernt ist.'));
     play();
   }
@@ -289,7 +297,7 @@ export const earTraining: Screen = (root, params, ctx) => {
        ${ctx ? '' : `<nav class="seg earkinds" aria-label="${L('Kind', 'Art')}">${(['motif', 'chords', 'sing'] as EarKind[]).map((k) => `<a href="#/ear/${k}" aria-current="${k === kind}">${titles[k]}</a>`).join('')}</nav>`}</div>
      <div class="tiles" id="tiles" role="list" aria-label="${L('This round', 'Diese Runde')}"></div>
      <svg class="fit" id="reveal" viewBox="0 0 1180 ${piano ? 226 : 186}" role="img" aria-label="${L('What was played, shown after asking for it', 'Was gespielt wurde, gezeigt, wenn du darum bittest')}" hidden></svg>
-     <div class="foot"><p class="fbk info" id="fbk"></p><p class="legend">${kind === 'chords' ? L(`The chords of this round: ${chords.map((c) => chordName(c, piano)).join(', ')}`, `Die Akkorde dieser Runde: ${chords.map((c) => chordName(c, piano)).join(', ')}`) : L(`From ${source.title}. Any octave counts.`, `Aus ${source.title}. Jede Oktave zählt.`)}</p></div>`,
+     <div class="foot"><p class="fbk info" id="fbk"></p><p class="legend">${kind === 'chords' ? L(`The chords of this round: ${chords.map((c) => chordName(c, piano)).join(', ')}`, `Die Akkorde dieser Runde: ${chords.map((c) => chordName(c, piano)).join(', ')}`) : L(`From ${esc(source.title)}. Any octave counts.`, `Aus ${esc(source.title)}. Jede Oktave zählt.`)}</p></div>`,
     `<div class="grp"><button class="btn" id="hearit">${L('Hear it again', 'Nochmal anhören')} <kbd>H</kbd></button><button class="btn quiet" id="show">${kind === 'chords' ? L('Name it', 'Namen zeigen') : L('Show it', 'Zeigen')} <kbd>T</kbd></button><button class="btn quiet" id="skip">${L('Skip', 'Überspringen')} <kbd>→</kbd></button><button class="btn quiet" id="again">${L('New round', 'Neue Runde')} <kbd>R</kbd></button>${nextStep(ctx)}</div>
      <p class="auto">${L('Nothing is shown before you ask: listen, then play. A slip costs nothing; hear it again and start over.', 'Nichts wird gezeigt, bevor du fragst: hören, dann spielen. Ein Patzer kostet nichts; hör es noch einmal und fang von vorn an.')}</p>`,
     ctx,
@@ -323,6 +331,7 @@ export const earTraining: Screen = (root, params, ctx) => {
     state = 'listen';
     draw();
     timer = window.setTimeout(() => {
+      if (state === 'done') return;
       state = kind === 'sing' && at === 0 && !hold?.done ? 'sing' : 'play';
       listen();
       draw();
@@ -373,6 +382,9 @@ export const earTraining: Screen = (root, params, ctx) => {
                 say('bad', L(`That was ${chordName(e.best, piano)}. Listen again: this one is ${chordName(it.chord!, piano)}.`, `Das war ${chordName(e.best, piano)}. Hör noch einmal hin: Dieser ist ${chordName(it.chord!, piano)}.`));
                 shown = true;
                 draw();
+                // a second wrong chord within the wait puts the replay off; it must not leave the first
+                // one running, to play into whatever screen is open by then
+                stopTimer(timer);
                 timer = window.setTimeout(play, 1400);
               }
             },
@@ -408,6 +420,8 @@ export const earTraining: Screen = (root, params, ctx) => {
   }
 
   function right(): void {
+    // the right chord during the wait after a wrong one: no replay of the chord just found
+    stopTimer(timer);
     stopEars();
     stopEars = () => undefined;
     results.push(clean && !shown);
@@ -428,6 +442,7 @@ export const earTraining: Screen = (root, params, ctx) => {
   }
 
   function finish(): void {
+    stopTimer(timer);
     stopEars();
     stopEars = () => undefined;
     state = 'done';
@@ -505,6 +520,8 @@ export const earTraining: Screen = (root, params, ctx) => {
       return draw();
     }
     say('info', kind === 'chords' ? L('Listen, then play the chord you heard.', 'Hör zu, dann spiel den Akkord, den du gehört hast.') : L('Listen, then play it back. Nothing is shown before you ask.', 'Hör zu, dann spiel es nach. Nichts wird gezeigt, bevor du fragst.'));
+    // a new round after one that ended: play() does nothing while the state says done
+    state = 'listen';
     next();
   }
 
