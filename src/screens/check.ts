@@ -28,8 +28,18 @@ export const hearingCheck: Screen = (root) => {
   const a4 = piano ? store.settings.pianoA4 : guitarA4();
   let run = new CheckRun(items, piano, () => show());
   let live = false;
+  /** the engine keeps what the microphone hears for this check (up to three minutes of it) */
+  let recording = false;
+  /** the page was left: a file still being read has nowhere to show its result */
+  let gone = false;
   let rec: { samples: Float32Array; sampleRate: number } | null = null;
   let report: Record<string, unknown> | null = null;
+  /** Ends the keeping of the live check's sound; what was kept, if anything. */
+  const endRecording = (): { samples: Float32Array; sampleRate: number } | null => {
+    if (!recording) return null;
+    recording = false;
+    return engine.recorded();
+  };
 
   root.innerHTML = frame(
     `<b>${L('Hearing check', 'Hörcheck')}</b>`,
@@ -91,7 +101,9 @@ export const hearingCheck: Screen = (root) => {
   function finish(s: CheckSummary, from = ''): void {
     live = false;
     setSimTarget(null);
-    if (!from) rec = engine.micOn ? engine.recorded() : null;
+    // a live check keeps its sound; one over a file ends whatever live check it interrupted
+    const kept = endRecording();
+    if (!from) rec = kept;
     store.progress[`check:${inst}`] = Date.now();
     store.progress[`checkscore:${inst}`] = Math.round((100 * s.right) / Math.max(1, s.of));
     store.save();
@@ -110,10 +122,13 @@ export const hearingCheck: Screen = (root) => {
     run = new CheckRun(items, piano, () => show());
     live = true;
     say('info', '');
-    if (engine.micOn) engine.record(180);
+    if (engine.micOn) {
+      engine.record(180);
+      recording = true;
+    }
     $<HTMLButtonElement>('#go', root).disabled = true;
     $('#save', root).hidden = true;
-    run.start();
+    run.start(engine.listener?.time ?? 0);
   }
 
   const stopEars = hear(
@@ -136,9 +151,14 @@ export const hearingCheck: Screen = (root) => {
 
   /** A recording made elsewhere, checked as if it were played now: the same things in the same order. */
   async function fromFile(f: File): Promise<void> {
-    const ctx = engine.ctx ?? new AudioContext();
+    // without the microphone on, a context of its own only to decode the file, closed again after
+    const own = engine.ctx ? null : new AudioContext();
+    const ctx = engine.ctx ?? own!;
     try {
-      const buf = await ctx.decodeAudioData(await f.arrayBuffer());
+      const data = await f.arrayBuffer();
+      if (gone) return;
+      const buf = await ctx.decodeAudioData(data);
+      if (gone) return;
       const ch = buf.getChannelData(0);
       live = false;
       say('info', L('Listening to the recording…', 'Höre die Aufnahme…'));
@@ -147,7 +167,9 @@ export const hearingCheck: Screen = (root) => {
       rec = { samples: ch, sampleRate: buf.sampleRate };
       finish(r.summary, f.name);
     } catch {
-      say('bad', L('That file could not be read as sound.', 'Diese Datei ließ sich nicht als Klang lesen.'));
+      if (!gone) say('bad', L('That file could not be read as sound.', 'Diese Datei ließ sich nicht als Klang lesen.'));
+    } finally {
+      void own?.close().catch(() => undefined);
     }
   }
 
@@ -185,6 +207,9 @@ export const hearingCheck: Screen = (root) => {
   list();
   return () => {
     live = false;
+    gone = true;
+    // a check left half-way: the engine would otherwise go on keeping minutes of sound nobody reads
+    endRecording();
     stopEars();
     stopKeys();
     setSimTarget(null);
