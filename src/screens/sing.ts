@@ -21,7 +21,7 @@ import { findSongToSing, sungPhraseKey, type SongToSing } from '../music/voicebo
 import { $, cap, esc, hear, icon, keys, later, stopTimer, voiceEars, type Screen, type SessionCtx } from '../ui/dom';
 import { Lane, type LaneLook, type LaneNote } from '../ui/lane';
 import { setSimTarget } from '../ui/practice';
-import { frame, levelNews, nextStep } from './learn';
+import { frame, levelNews, nextStep } from './frame';
 
 export { voiceEars };
 
@@ -121,6 +121,9 @@ export const voiceRangeTest: Screen = (root, _params, ctx) => {
   let frames: Frame[] = [];
   let low = 0;
   let high = 0;
+  /** which ends were really held: a skipped one is not a measurement */
+  let heldLow = false;
+  let heldHigh = false;
   let timer = 0;
   root.innerHTML = frame(
     `<b>${L('Your range', 'Dein Stimmumfang')}</b>`,
@@ -144,12 +147,17 @@ export const voiceRangeTest: Screen = (root, _params, ctx) => {
     } else if (phase === 'high') {
       $('#h1', root).innerHTML = L('Now a <em>high</em> note, and hold it.', 'Jetzt einen <em>hohen</em> Ton, und halte ihn.');
       $('#sub', root).textContent = L('Glide up until it is high but not strained. It may go light or into a thinner voice: that is fine. Hold it for a second.', 'Gleite nach oben, bis es hoch, aber nicht angestrengt ist. Die Stimme darf leicht und dünner werden: das ist gut so. Halte ihn eine Sekunde.');
-    } else {
+    } else if (heldLow && heldHigh) {
       $('#h1', root).innerHTML = L(`From <em>${noteName(low)}</em> to <em>${noteName(high)}</em>.`, `Von <em>${noteName(low)}</em> bis <em>${noteName(high)}</em>.`);
       $('#sub', root).textContent = L(
         `${high - low} semitones. Songs are now set a little inside this range, so that their lowest and highest notes stay easy. The range grows with practice: measure it again in a few weeks.`,
         `${high - low} Halbtöne. Songs liegen jetzt etwas innerhalb dieses Umfangs, damit ihr tiefster und höchster Ton leicht bleiben. Der Umfang wächst mit dem Üben: miss ihn in ein paar Wochen noch einmal.`,
       );
+    } else {
+      $('#h1', root).innerHTML = L('Skipped: nothing measured.', 'Übersprungen: nichts gemessen.');
+      $('#sub', root).textContent = rangeMeasured()
+        ? L(`Your range stays as it was measured, from ${noteName(voiceRange()[0])} to ${noteName(voiceRange()[1])}.`, `Dein Umfang bleibt, wie er gemessen wurde: von ${noteName(voiceRange()[0])} bis ${noteName(voiceRange()[1])}.`)
+        : L('Until your range is measured, songs are set for a voice in the middle. Find it here whenever you like.', 'Bis dein Umfang gemessen ist, liegen die Songs für eine mittlere Stimme. Du kannst ihn hier finden, wann immer du magst.');
     }
     $('#fwdl', root).textContent = phase === 'done' ? L('Once more', 'Nochmal') : L('Skip', 'Überspringen');
     // in the session the step's own button goes on; this one is not needed twice
@@ -172,11 +180,13 @@ export const voiceRangeTest: Screen = (root, _params, ctx) => {
     if (r) {
       if (phase === 'low') {
         low = r.low;
+        heldLow = true;
         phase = 'high';
         frames = [];
         say('good', `${icon('check')}${L(`Low: ${noteName(low)}.`, `Tief: ${noteName(low)}.`)}`);
       } else if (r.high >= low + 5) {
         high = r.high;
+        heldHigh = true;
         finish();
       }
       draw();
@@ -192,10 +202,18 @@ export const voiceRangeTest: Screen = (root, _params, ctx) => {
 
   function finish(): void {
     phase = 'done';
-    store.settings.voiceLow = low;
-    store.settings.voiceHigh = high;
-    store.save();
-    say('good', `${icon('check')}${L('Saved. The songs follow your voice now.', 'Gespeichert. Die Songs richten sich jetzt nach deiner Stimme.')}`);
+    // a range is a measurement only when both ends were held: a skipped end would be saved as the default,
+    // and the range would count as measured (the session would never ask for it again)
+    if (heldLow && heldHigh) {
+      store.settings.voiceLow = low;
+      store.settings.voiceHigh = high;
+      store.save();
+      say('good', `${icon('check')}${L('Saved. The songs follow your voice now.', 'Gespeichert. Die Songs richten sich jetzt nach deiner Stimme.')}`);
+    } else {
+      // the band on the lane shows the range the songs keep following
+      [low, high] = voiceRange();
+      say('info', L('Nothing was saved: a range is kept only when both notes were held.', 'Nichts wurde gespeichert: Ein Umfang wird nur behalten, wenn beide Töne gehalten wurden.'));
+    }
     if (ctx) timer = later(5000, ctx.next, ctx.after);
   }
 
@@ -204,6 +222,7 @@ export const voiceRangeTest: Screen = (root, _params, ctx) => {
     phase = 'low';
     frames = [];
     low = high = 0;
+    heldLow = heldHigh = false;
     say('info', L('The app listens. Nothing is recorded.', 'Die App hört zu. Nichts wird aufgenommen.'));
     draw();
     paint();
@@ -579,11 +598,15 @@ const RUNGS = (): string[] => [L('Learn', 'Lernen'), L('With the click', 'Mit Kl
  */
 export const singLesson: Screen = (root, [id, rung], ctx) => {
   const song = findSongToSing(id);
-  if (!ctx && store.current.voice !== song.id) {
-    store.current.voice = song.id;
-    store.save();
+  // an address to a song that is not there (an own song deleted since) shows the first one, but does not
+  // make it the song the session works on
+  if (song.id === id) {
+    if (!ctx && store.current.voice !== song.id) {
+      store.current.voice = song.id;
+      store.save();
+    }
+    store.opened('voice', song.id);
   }
-  store.opened('voice', song.id);
   const shift = placeFor(song);
   const tune = sungLines(song, shift);
   /** the second voice: a third below every note, in the key of the song */
@@ -859,23 +882,25 @@ export const singLesson: Screen = (root, [id, rung], ctx) => {
       if (now > t0 + units * unit + latency + 0.3 && state.every((s) => s !== 'up')) done();
     }
     function done(): void {
+      // the voice, recorded at full speed: taken before cancel(), which throws away what is being recorded
+      const recStart = recFrom;
+      const rec = recStart >= 0 ? engine.recorded() : null;
+      recFrom = -1;
       cancel();
       delete root.dataset.step;
       const hits = state.filter((s) => s === 'done').length;
       const close = state.filter((s) => s === 'close').length;
       const changes = [];
       const now = Date.now();
-      // the voice, recorded at full speed: kept to listen to, beside the first recording of the song
-      const rec = recFrom >= 0 ? engine.recorded() : null;
+      // kept to listen to, beside the first recording of the song
       if (rec && rec.samples.length > rec.sampleRate) {
         const bars = idxs.map((li, k) => {
-          const from = t0 + idxs.slice(0, k).reduce((s, x) => s + lines[x].units, 0) * unit - recFrom;
+          const from = t0 + idxs.slice(0, k).reduce((s, x) => s + lines[x].units, 0) * unit - recStart;
           const mine = notes.map((nt, i) => (nt.line === li ? i : -1)).filter((i) => i >= 0);
           return { bar: li, from: Math.max(0, from), to: from + lines[li].units * unit, clean: mine.every((i) => state[i] === 'done') };
         });
         void saveTake('voice', song.id, rec.samples, rec.sampleRate, { t: now, secs: rec.samples.length / rec.sampleRate, tempo, bars });
       }
-      recFrom = -1;
       // the second voice is practice of its own: the tune's phrases are not measured by it
       if (harmony) changes.push(store.skills.record('ear:v.harmony', Math.round((100 * hits) / Math.max(1, notes.length)), now));
       else for (const li of idxs) {

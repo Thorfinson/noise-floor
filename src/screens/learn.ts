@@ -1,197 +1,37 @@
 /**
  * Learn mode: calm, one task at a time. A song on the guitar or a piece on the piano goes up three
  * rungs: the app waits for you, then you play line by line with the click, then the whole thing at
- * full speed. Also here: the chord check, string by string.
+ * full speed. What a lesson teaches is worked out in music/material.ts; the recording of a take is shown by
+ * takepanel.ts; the chord check is in chordcheck.ts.
  */
-import type { ChordEvent, NoteEvent, StringResult, ThudEvent } from '../audio/listener';
+import type { ChordEvent, NoteEvent, ThudEvent } from '../audio/listener';
 import { engine } from '../audio/engine';
 import { backing } from '../audio/backing';
 import { mixInto, strum, tone } from '../audio/synth';
 import { L } from '../core/i18n';
 import { Take, TEMPOS, type TakeStep } from '../core/playalong';
-import { loadTake, saveTake, TAKE_MAX, TAKE_RATE, takeMeta } from '../core/takes';
-import { encodeWav, resample } from '../audio/wav';
-import { dayMonth } from '../core/i18n';
-import { store, type Instrument, type TakeMeta } from '../core/store';
-import { barKey, findPiece, findSong, noteTimes, phraseKey, shapeOf, songLines, stepKeys, stepMidis, type PianoNote, type PianoPiece, type Song, type TabNote } from '../music/content';
+import { saveTake, TAKE_MAX } from '../core/takes';
+import { store, type Instrument } from '../core/store';
+import { findPiece, findSong, shapeOf, stepKeys } from '../music/content';
+import { pieceMaterial, songMaterial, suggest, unitDe, type Material, type Step } from '../music/material';
 import { enlist, REVIEW_DAYS, reviewed, reviewKey, reviewLines } from '../music/review';
-import { barreStrings, changeTip, chordMidis, chordName, chordNotes, CHORDS, isBlackKey, keyName, keysAlike, keysId, keyTip, noteName, pianoChord, STRING_FULL, STRING_NAMES, stringName, strumIs, type Chord } from '../music/theory';
-import { $, $$, cap, esc, hear, icon, keys, later, learnRing, micMeter, pianoEars, stopTimer, type Screen, type SessionCtx } from '../ui/dom';
+import { changeTip, chordName, chordNotes, isBlackKey, keyName, keysAlike, keyTip, noteName, pianoChord, STRING_FULL, strumIs } from '../music/theory';
+import { $, cap, esc, hear, icon, keys, later, pianoEars, stopTimer, type Screen, type SessionCtx } from '../ui/dom';
 import { melodyWords } from '../music/accompany';
 import { guitarA4, guitarSetup } from '../music/tuning';
 import { SING_ALONG } from '../music/lyrics';
-import { chordBox, chordMarks, fretboard, keyboard, keyRange, LEARN, noteStrip, playhead, tabLine, type Drawn, type KeyMark, type Mark, type StepLook } from '../ui/draw';
+import { chordBox, chordMarks, fretboard, keyboard, keyRange, LEARN, noteStrip, playhead, tabLine, type Drawn, type KeyMark, type StepLook } from '../ui/draw';
 import { staffLine } from '../ui/staff';
-import { practiceBar, setSimTarget, type SimTarget } from '../ui/practice';
-import { skillLabel } from './home';
+import { setSimTarget, type SimTarget } from '../ui/practice';
+import { frame, levelNews, nextStep } from './frame';
+import { takeBox, takePanel } from './takepanel';
 
-
-export const frame = (where: string, stage: string, bar: string, ctx?: SessionCtx, up: [string, string] = ['#/', L('Home', 'Start')]): string => `<header class="top"><div><a class="btn quiet" href="${ctx ? '#/' : up[0]}">${icon(ctx ? 'x' : 'left')}${ctx ? L('End session', 'Session beenden') : up[1]}</a></div>${ctx ? `<div class="c">${ctx.rail}</div><span id="where" hidden></span>` : `<div class="c" id="where">${where}${store.settings.instrument === 'guitar' && guitarSetup() ? ` · ${guitarSetup()}` : ''}</div>`}<div class="r">${micMeter()}</div></header><p class="sideways">${L('Turn the phone on its side: a line of music needs the width.', 'Dreh das Telefon quer: Eine Zeile Musik braucht die Breite.')}</p>
-  <div class="stage">${stage}</div>${practiceBar()}<footer class="bar">${bar}</footer>`;
-
-export const nextStep = (ctx?: SessionCtx): string => (ctx ? `<button class="btn" id="nextstep">${ctx.after === L('the summary', 'die Zusammenfassung') ? L('Finish', 'Abschließen') : L('Next step', 'Nächster Schritt')}${icon('right')}</button>` : '');
-
-/** " Am bar and C bar: level 2." for the levels that went up. */
-export function levelNews(changes: { key: string; before: number; after: number }[]): string {
-  const levels = new Map<number, Set<string>>();
-  for (const c of changes) {
-    if (c.after <= c.before) continue;
-    // inside a lesson the name of the song goes without saying
-    const name = skillLabel(c.key).split(', ').pop()!;
-    levels.set(c.after, (levels.get(c.after) ?? new Set()).add(name));
-  }
-  return [...levels].map(([level, names]) => L(` ${[...names].join(' and ')}: level ${level}.`, ` ${[...names].join(' und ')}: Stufe ${level}.`)).join('');
-}
-
-/** One thing to play in a lesson: a note (or several at once), or a strum. */
-interface Step {
-  /** pitches that count; empty for a strum */
-  midis: number[];
-  /** chord to strum */
-  chord?: string;
-  /** start, in note units from the start of the line */
-  at: number;
-  /** the bar (guitar) or phrase (piano) it is measured with */
-  bar: number;
-  tab?: TabNote;
-  key?: PianoNote;
-  /** piano: the chord whose keys are being played one after the other at this step */
-  over?: string;
-  /** piano: a key for the left hand */
-  left?: boolean;
-  /** piano: a key of the left hand together with the right's (both hands together) */
-  both?: boolean;
-}
-
-interface Line {
-  steps: Step[];
-  bars: number[];
-  /** length in note units */
-  units: number;
-  /** metronome clicks, in note units from the start of the line */
-  clicks: { u: number; accent: boolean }[];
-  /** guitar: the bars as they are drawn */
-  tab: { chord?: string; notes: TabNote[] }[];
-  /** guitar: the fretboard shows frets from + 1 to from + 5 */
-  from: number;
-}
-
-/** What a lesson teaches. The same for a song on the guitar and a piece on the piano. */
-export interface Material {
-  id: string;
-  title: string;
-  piano: boolean;
-  /** seconds per note unit at full speed */
-  noteDur: number;
-  /** note units per click */
-  beat: number;
-  /** clicks counted in */
-  count: number;
-  lines: Line[];
-  /** skill a bar or phrase measures */
-  skill: (bar: number) => string;
-  /** guitar: chord held during a bar; where a bar is shared by two chords, the first */
-  chordOf: (bar: number) => string | undefined;
-  /** guitar: the chord a bar ends on */
-  endOf: (bar: number) => string | undefined;
-  /** guitar: the part of the song a bar belongs to, where the song names its parts */
-  partOf: (bar: number) => string | undefined;
-  /** who wrote it or made it known */
-  by?: string;
-  /** "line" or "phrase" */
-  unit: string;
-}
-
-export function songMaterial(song: Song): Material {
-  // the length of a whole bar: what most bars have. A first bar that is shorter is an upbeat.
-  const lengths = new Map<number, number>();
-  for (const b of song.bars) lengths.set(noteTimes(b.notes).total, (lengths.get(noteTimes(b.notes).total) ?? 0) + 1);
-  const whole = [...lengths].sort((x, y) => y[1] - x[1] || y[0] - x[0])[0]?.[0] ?? 0;
-  const lines = songLines(song).map((bars): Line => {
-    const steps: Step[] = [];
-    const clicks: Line['clicks'] = [];
-    const frets: number[] = [];
-    let u = 0;
-    for (const b of bars) {
-      const bar = song.bars[b];
-      const { at, total } = noteTimes(bar.notes);
-      bar.notes.forEach((n, i) => {
-        steps.push({ midis: stepMidis(n), chord: n.strum, at: u + at[i], bar: b, tab: n });
-        if (!n.strum) for (const x of [n, ...(n.more ?? [])]) frets.push(x.f);
-      });
-      if (bar.chord) frets.push(...shapeOf(bar.chord).frets);
-      // the clicks of an upbeat are counted back from the bar line it leads to
-      const upbeat = b === 0 && total < whole - 1e-6;
-      for (let c = upbeat ? total % song.beat : 0; c < total - 1e-6; c += song.beat) clicks.push({ u: u + c, accent: c === 0 && !upbeat });
-      u += total;
-    }
-    const fretted = frets.filter((f) => f > 0);
-    const from = fretted.length && Math.max(...fretted) > 5 ? Math.min(...fretted) - 1 : 0;
-    return { steps, bars, units: u, clicks, tab: bars.map((b) => ({ chord: song.bars[b].chord ? shapeOf(song.bars[b].chord!).name : undefined, notes: song.bars[b].notes })), from };
-  });
-  const per = Math.round(Math.max(...song.bars.map((b) => noteTimes(b.notes).total)) / song.beat);
-  const endOf = (b: number): string | undefined => {
-    const strums = (song.bars[b]?.notes ?? []).filter((n) => n.strum);
-    return strums.length ? strums[strums.length - 1].strum : song.bars[b]?.chord;
-  };
-  const partOf = (b: number): string | undefined => {
-    for (let i = Math.min(b, song.bars.length - 1); i >= 0; i--) if (song.bars[i].part) return song.bars[i].part;
-    return undefined;
-  };
-  return { id: song.id, title: song.title, by: song.by, piano: false, noteDur: song.noteDur, beat: song.beat, count: per === 3 ? 3 : 4, lines, skill: (b) => barKey(song, b), chordOf: (b) => song.bars[b]?.chord, endOf, partOf, unit: 'line' };
-}
-
-export function pieceMaterial(piece: PianoPiece): Material {
-  // the chord a broken passage is in carries on from phrase to phrase until another is named
-  let over: string | undefined;
-  const lines = piece.phrases.map((notes, k): Line => {
-    const { at, total } = noteTimes(notes);
-    const clicks: Line['clicks'] = [];
-    // a phrase that begins with an upbeat has its first heavy click after it
-    const lead = piece.leads?.[k] ?? 0;
-    const bar = piece.bar ?? 0;
-    for (let c = lead % piece.beat; c < total - 1e-6; c += piece.beat) {
-      const bars = bar > 0 ? (c - lead) / bar : -1;
-      clicks.push({ u: c, accent: bar > 0 ? Math.abs(bars - Math.round(bars)) < 1e-6 : clicks.length === 0 });
-    }
-    const steps = notes.map((n, i): Step => {
-      if (n.over) over = n.over;
-      if (n.chord) over = undefined;
-      // a key of the left hand struck with the melody's is judged as the two keys together, as a chord is
-      if (n.bass) return { midis: [], chord: keysId([n.bass, n.midi]), at: at[i], bar: k, key: n, both: true };
-      return { midis: n.chord ? [] : [n.midi], chord: n.chord, at: at[i], bar: k, key: n, ...(over && !n.chord && !n.left ? { over } : {}), ...(n.left ? { left: true } : {}) };
-    });
-    return { steps, bars: [k], units: total, clicks, tab: [], from: 0 };
-  });
-  const named = (k: number): string[] => (piece.phrases[k] ?? []).map((n) => n.chord ?? n.over).filter((c): c is string => !!c);
-  const partOf = (k: number): string | undefined => {
-    for (let i = Math.min(k, piece.phrases.length - 1); i >= 0; i--) if (piece.parts?.[i]) return piece.parts[i];
-    return undefined;
-  };
-  return { id: piece.id, title: piece.title, by: piece.by, piano: true, noteDur: piece.noteDur, beat: piece.beat, count: piece.count ?? 4, lines, skill: (k) => phraseKey(piece, k), chordOf: () => undefined, endOf: (k) => named(k).pop(), partOf, unit: 'phrase' };
-}
+// what other screens take from here, now kept in modules of their own
+export { frame, levelNews, nextStep } from './frame';
+export { chordCheck, stringTip } from './chordcheck';
+export { describe, pieceMaterial, songMaterial, type Material } from '../music/material';
 
 const RUNGS = (): string[] => [L('Learn', 'Lernen'), L('With the click', 'Mit Klick'), L('Full speed', 'Volles Tempo')];
-
-/** The unit of a lesson in German, one or more: Zeile, Zeilen; Phrase, Phrasen. */
-const unitDe = (m: Material, plural = false): string => (m.piano ? 'Phrase' : 'Zeile') + (plural ? 'n' : '');
-
-/** The rung to practise a line on, from what has been measured: wait, then the click, then the whole piece. */
-export function suggest(m: Material, line: number): { stage: number; tempo: number } {
-  const level = (ks: string[]): number => Math.min(...ks.map((k) => store.skills.level(k)));
-  const here = [...new Set(m.lines[line].bars.map(m.skill))];
-  if (level(here) < 1) return { stage: 0, tempo: 50 };
-  if (level([...new Set(m.lines.flatMap((l) => l.bars.map(m.skill)))]) >= 3) return { stage: 2, tempo: 100 };
-  const best = Math.min(...here.map((k) => store.skills.get(k)?.best ?? 0));
-  return { stage: 1, tempo: TEMPOS.find((t) => t >= 50 && t > best) ?? 100 };
-}
-
-/** What the session plan says about the next visit to a song or piece. */
-export function describe(m: Material): string {
-  const line = Math.min(m.lines.length - 1, store.progress[m.id] ?? 0);
-  const s = suggest(m, line);
-  return s.stage === 0 ? L(`Two ${m.unit}s, starting at ${m.unit} ${line + 1}`, `Zwei ${unitDe(m, true)}, ab ${unitDe(m)} ${line + 1}`) : s.stage === 1 ? L(`With the click at ${s.tempo}%, from ${m.unit} ${line + 1}`, `Mit Klick bei ${s.tempo}%, ab ${unitDe(m)} ${line + 1}`) : L('The whole thing at full speed', 'Das Ganze in vollem Tempo');
-}
 
 /** Words under the notes of a melody (K): asked for once, they stay while the app is open. */
 const wordsOn = { on: false };
@@ -267,11 +107,7 @@ function lesson(root: HTMLElement, m: Material, wanted: string | undefined, ctx?
      <svg class="fit" id="rowB" viewBox="0 0 1180 ${m.piano ? 180 : 186}" role="img" aria-label="${L('What comes next', 'Was danach kommt')}" hidden></svg>
      <svg class="fit" id="hands" viewBox="0 0 1180 ${m.piano ? 226 : 224}" role="img" aria-label="${m.piano ? L('Keyboard: the highlighted key is the one to play, with its finger number', 'Tastatur: die hervorgehobene Taste ist die, die du spielst, mit ihrer Fingernummer') : L('Fretboard: numbered dots show where your fingers go, the vibrating string is the one to pluck', 'Griffbrett: nummerierte Punkte zeigen, wo deine Finger hinkommen, die schwingende Saite ist die, die du zupfst')}"></svg>
      <div class="foot"><p class="fbk info" id="fbk"></p><p class="legend">${fingers}</p></div>
-     <div class="takebox" id="takebox" hidden>
-       <div class="selfrate" id="selfrate" hidden role="group" aria-label="${L('How many slips did you hear?', 'Wie viele Patzer hast du gehört?')}"><span>${L('Slips you heard:', 'Gehörte Patzer:')}</span>${['0', '1', '2', '3+'].map((v, i) => `<button class="btn" data-rate="${i}">${v} <kbd>${i}</kbd></button>`).join('')}</div>
-       <div class="barmap" id="barmap" role="group" aria-label="${L('The recording, bar by bar: pick one to hear it', 'Die Aufnahme, Takt für Takt: wähl einen, um ihn zu hören')}"></div>
-       <div class="row"><button class="btn" id="listen">${L('Listen back', 'Anhören')} <kbd>P</kbd></button><button class="btn quiet" id="firsttake" hidden>${L('Your first recording', 'Deine erste Aufnahme')}</button><button class="btn quiet" id="savetake">${L('Save as a file', 'Als Datei speichern')}</button><span class="note" id="takenote"></span></div>
-     </div>`,
+     ${takeBox()}`,
     `<div class="grp"><button class="btn quiet" id="prev">${icon('left')}${L('Previous', 'Zurück')} <kbd>←</kbd></button><button class="btn" id="again">${L('Again', 'Nochmal')} <kbd>R</kbd></button><button class="btn" id="hearit">${L('Hear it', 'Anhören')} <kbd>H</kbd></button><button class="btn quiet" id="next">${L('Next', 'Weiter')} <kbd>→</kbd>${icon('right')}</button>${nextStep(ctx)}</div>
      <div class="grp" id="tempobox" hidden><button class="btn quiet" id="slower" title="${L('Slower by 5%', 'Um 5 % langsamer')}" aria-label="${L('Slower by 5%', 'Um 5 % langsamer')}">−5 % <kbd>−</kbd></button><b id="tempo"></b><button class="btn quiet" id="faster" title="${L('Faster by 5%, up to 125%', 'Um 5 % schneller, bis 125 %')}" aria-label="${L('Faster by 5%', 'Um 5 % schneller')}">+5 % <kbd>+</kbd></button><button class="btn" id="pause"><span>${L('Pause', 'Pause')}</span> <kbd>${L('Space', 'Leertaste')}</kbd></button><button class="btn quiet tog" id="loopbtn" aria-pressed="false" title="${L('The bars on show go round and round with the click, one bar counted in, until L again.', 'Die gezeigten Takte laufen mit dem Klick im Kreis, ein Takt eingezählt, bis wieder L.')}">${L('Loop', 'Schleife')} <kbd>L</kbd></button></div>
      <details class="more" id="more"><summary class="btn quiet">${L('More', 'Mehr')}</summary><div class="morepanel">
@@ -864,7 +700,7 @@ function lesson(root: HTMLElement, m: Material, wanted: string | undefined, ctx?
       // the whole piece, or a loop, is recorded, to be listened to afterwards
       recFrom = whole && engine.micOn && store.settings.recordTakes ? engine.now() : -1;
       if (recFrom >= 0) engine.record(TAKE_MAX);
-      if (whole) $('#takebox', root).hidden = true;
+      if (whole) panel.hide();
       shown = '';
       $('#tempo', root).textContent = `${tempo}%`;
       $('#pause span', root).textContent = L('Pause', 'Pause');
@@ -955,7 +791,7 @@ function lesson(root: HTMLElement, m: Material, wanted: string | undefined, ctx?
         const order = [...starts.entries()].sort((a, b) => a[1] - b[1]);
         const kept = rec && rec.samples.length > rec.sampleRate ? rec : null;
         const meta = { t: Date.now(), secs: kept ? kept.samples.length / kept.sampleRate : 0, tempo: played, bars: order.map(([bar, from], k) => ({ bar, from: Math.max(0, from), to: order[k + 1]?.[1] ?? endT - zero, clean: r.cleanBars.includes(bar) })) };
-        showTake(kept ? { samples: kept.samples, rate: kept.sampleRate, meta } : { samples: new Float32Array(0), rate: 48000, meta }, !!perform);
+        panel.show(kept ? { samples: kept.samples, rate: kept.sampleRate, meta } : { samples: new Float32Array(0), rate: 48000, meta }, !!perform);
         if (kept) void saveTake(inst, m.id, kept.samples, kept.sampleRate, meta);
       }
       recFrom = -1;
@@ -1061,7 +897,7 @@ function lesson(root: HTMLElement, m: Material, wanted: string | undefined, ctx?
       if (wasPerform) {
         $('#h1', root).innerHTML = L('How did it go?', 'Wie lief es?');
         say('info', L('Before the app says how it heard it: how many slips did you hear yourself? (0 to 3)', 'Bevor die App sagt, wie sie es gehört hat: Wie viele Patzer hast du selbst gehört? (0 bis 3)'));
-        selfRate(r.bars.length - r.cleanBars.length, () => {
+        panel.selfRate(r.bars.length - r.cleanBars.length, () => {
           verdict();
           onward();
         });
@@ -1103,6 +939,9 @@ function lesson(root: HTMLElement, m: Material, wanted: string | undefined, ctx?
 
   function setStage(s: number): void {
     mode?.stop();
+    // a question about the slips of a take that is no longer on show is not answered any more: its answer
+    // would be kept for the wrong take and move the session on in the middle of the next one
+    panel.drop();
     stage = s;
     RUNGS().forEach((_, i) => $('#st' + i, root).setAttribute('aria-pressed', String(i === s)));
     $('#st0s', root).textContent = L('waits for you', 'wartet auf dich');
@@ -1240,65 +1079,16 @@ function lesson(root: HTMLElement, m: Material, wanted: string | undefined, ctx?
     extras();
   }
 
-  /** The recording on show: the one just made, or one that was kept. */
-  let heardTake: { samples: Float32Array; rate: number; meta: TakeMeta } | null = null;
-  /** the bars of the last take at full speed, recorded or not */
-  let shownTake: { samples: Float32Array; rate: number; meta: TakeMeta } | null = null;
-  /** the player is asked for their count of slips: what to do with the answer */
-  let rating: ((n: number) => void) | null = null;
-
-  function paintBars(hidden: boolean): void {
-    const t = shownTake;
-    if (!t) return;
-    $('#barmap', root).innerHTML = t.meta.bars.map((b, k) => `<button class="bm${hidden ? '' : b.clean ? ' ok' : ' bad'}" data-k="${k}" aria-label="${esc(barsSaid({ from: b.bar, to: b.bar }))}${hidden ? '' : b.clean ? L(': clean', ': sauber') : L(': not clean', ': nicht sauber')}">${b.bar + 1}</button>`).join('');
-    $$<HTMLButtonElement>('#barmap [data-k]', root).forEach((el) => (el.onclick = () => {
-      const b = t.meta.bars[Number(el.dataset.k)];
-      if (t.samples.length) playBack(t.samples, t.rate, Math.max(0, b.from - 0.15), b.to + 0.4, barsSaid({ from: b.bar, to: b.bar }));
-    }));
-  }
-
-  /** Shows the recording just made under the music, as a row of bars to pick from. */
-  function showTake(t: { samples: Float32Array; rate: number; meta: TakeMeta }, hideVerdict: boolean): void {
-    // without a recording (no microphone, or recording switched off) the bars are there to look at, not to hear
-    const audible = t.samples.length > 0;
-    heardTake = audible ? t : null;
-    shownTake = t;
-    $('#takebox', root).hidden = false;
-    paintBars(hideVerdict);
-    const first = takeMeta(inst, m.id, 'first');
-    $('#firsttake', root).hidden = !first;
-    $('#listen', root).hidden = !audible;
-    $('#savetake', root).hidden = !audible;
-    $('#takenote', root).textContent = !audible ? (store.settings.recordTakes ? L('Nothing was recorded: the microphone is off.', 'Nichts wurde aufgenommen: Das Mikrofon ist aus.') : L('Recording is switched off in the settings.', 'Das Aufnehmen ist in den Einstellungen ausgeschaltet.')) : first ? L(`Your first recording of it is from ${dayMonth(first.t)}, at ${first.tempo}%.`, `Deine erste Aufnahme davon ist vom ${dayMonth(first.t)}, bei ${first.tempo}%.`) : L('Kept in this browser as your first recording of it.', 'In diesem Browser als deine erste Aufnahme davon gespeichert.');
-  }
-
-  /** The player's count of slips, asked for before the app's verdict is shown, and kept beside it. */
-  function selfRate(app: number, then: () => void): void {
-    $('#selfrate', root).hidden = false;
-    rating = (n) => {
-      rating = null;
-      $('#selfrate', root).hidden = true;
-      store.ratings.push({ t: Date.now(), self: n, app });
-      store.save();
-      paintBars(false);
-      then();
-      const same = Math.min(n, 3) === Math.min(app, 3);
-      $('#takenote', root).textContent = same ? L(`You heard it as the app did: ${app === 0 ? 'no slips' : `slips in ${app} ${app === 1 ? 'bar' : 'bars'}`}.`, `Du hast es gehört wie die App: ${app === 0 ? 'keine Patzer' : `Patzer in ${app} ${app === 1 ? 'Takt' : 'Takten'}`}.`) : L(`You counted ${n === 3 ? '3 or more' : n}; the app heard slips in ${app} ${app === 1 ? 'bar' : 'bars'}. Listen back to the red ones to hear what it heard.`, `Du hast ${n === 3 ? '3 oder mehr' : n} gezählt; die App hörte Patzer in ${app} ${app === 1 ? 'Takt' : 'Takten'}. Hör dir die roten an, um zu hören, was sie gehört hat.`);
-    };
-    $$<HTMLButtonElement>('#selfrate [data-rate]', root).forEach((b) => (b.onclick = () => rating?.(Number(b.dataset.rate))));
-  }
-
-  /** Plays part of a recording through the speakers; what the microphone hears of it meanwhile is not playing. */
-  function playBack(samples: Float32Array, rate: number, from = 0, to = Infinity, what = ''): void {
-    const ctx = engine.ctx;
-    if (!ctx) return;
-    if (mode?.running()) mode.toggle();
-    let part = samples.subarray(Math.floor(from * rate), Math.min(samples.length, Math.floor(to * rate)));
-    if (rate !== ctx.sampleRate) part = resample(part, rate, ctx.sampleRate);
-    const seconds = engine.demo(part);
-    modelUntil = performance.now() + seconds * 1000 + 300;
-    say('info', what ? L(`Listening back: ${what}.`, `Zum Anhören: ${what}.`) : L('Listening back to your take.', 'Dein Durchgang zum Anhören.'));
-  }
+  const panel = takePanel(root, {
+    inst,
+    id: m.id,
+    barsSaid,
+    say,
+    pause: () => {
+      if (mode?.running()) mode.toggle();
+    },
+    playing: (seconds) => (modelUntil = performance.now() + seconds * 1000 + 300),
+  });
 
   const stopHear = hear(
     root,
@@ -1329,10 +1119,10 @@ function lesson(root: HTMLElement, m: Material, wanted: string | undefined, ctx?
     ArrowRight: () => go(line + 1),
     r: () => go(line),
     h: hearIt,
-    '1': () => (rating ? rating(1) : pick(0)),
-    '2': () => (rating ? rating(2) : pick(1)),
-    '3': () => (rating ? rating(3) : pick(2)),
-    '0': () => rating?.(0),
+    '1': () => panel.rate(1) || pick(0),
+    '2': () => panel.rate(2) || pick(1),
+    '3': () => panel.rate(3) || pick(2),
+    '0': () => panel.rate(0),
     l: toggleLoop,
     '[': () => widen(-1),
     ']': () => widen(1),
@@ -1347,7 +1137,7 @@ function lesson(root: HTMLElement, m: Material, wanted: string | undefined, ctx?
       revealed = true;
       setStage(stage);
     },
-    p: () => heardTake && playBack(heardTake.samples, heardTake.rate),
+    p: panel.listen,
     '-': () => setTempo(-1),
     '+': () => setTempo(1),
     '=': () => setTempo(1),
@@ -1378,21 +1168,6 @@ function lesson(root: HTMLElement, m: Material, wanted: string | undefined, ctx?
       setStage(stage);
     };
   }
-  $('#listen', root).onclick = () => heardTake && playBack(heardTake.samples, heardTake.rate);
-  $('#firsttake', root).onclick = async () => {
-    const first = await loadTake(inst, m.id, 'first');
-    if (first) playBack(first, TAKE_RATE, 0, Infinity, L(`your first recording, from ${dayMonth(takeMeta(inst, m.id, 'first')!.t)}`, `deine erste Aufnahme, vom ${dayMonth(takeMeta(inst, m.id, 'first')!.t)}`));
-  };
-  $('#savetake', root).onclick = () => {
-    const t = heardTake;
-    if (!t) return;
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(new Blob([encodeWav(t.samples, t.rate)], { type: 'audio/wav' }));
-    a.download = `${m.id}-${new Date(t.meta.t).toISOString().slice(0, 10)}.wav`;
-    a.click();
-    URL.revokeObjectURL(a.href);
-    $('#takenote', root).textContent = L('Saved to your downloads folder, to keep or to send.', 'In deinem Download-Ordner gespeichert, zum Behalten oder Verschicken.');
-  };
   RUNGS().forEach((_, i) => ($('#st' + i, root).onclick = () => pick(i)));
   if (ctx) $('#nextstep', root).onclick = ctx.next;
   extras();
@@ -1410,303 +1185,27 @@ function lesson(root: HTMLElement, m: Material, wanted: string | undefined, ctx?
 /** A song on the guitar. The second part of the address picks the rung: 1, 2 or 3. */
 export const songLesson: Screen = (root, [id, rung], ctx) => {
   const song = findSong(id);
-  if (!ctx && store.current.guitar !== song.id) {
-    store.current.guitar = song.id;
-    store.save();
+  // an address to a song that is not there (an own song deleted since) shows the first one, but does not
+  // make it the song the session works on
+  if (song.id === id) {
+    if (!ctx && store.current.guitar !== song.id) {
+      store.current.guitar = song.id;
+      store.save();
+    }
+    store.opened('guitar', song.id);
   }
-  store.opened('guitar', song.id);
   return lesson(root, songMaterial(song), rung, ctx);
 };
 
 /** A piece on the piano. */
 export const pianoLesson: Screen = (root, [id, rung], ctx) => {
   const piece = findPiece(id);
-  if (!ctx && store.current.piano !== piece.id) {
-    store.current.piano = piece.id;
-    store.save();
+  if (piece.id === id) {
+    if (!ctx && store.current.piano !== piece.id) {
+      store.current.piano = piece.id;
+      store.save();
+    }
+    store.opened('piano', piece.id);
   }
-  store.opened('piano', piece.id);
   return lesson(root, pieceMaterial(piece), rung, ctx);
-};
-
-/** What to change when a string of a chord does not ring. */
-export function stringTip(chordId: string, s: number, result: StringResult, heard: number | null): string {
-  const c = CHORDS[chordId];
-  const barre = barreStrings(c).includes(s);
-  if (result === 'wrong') return L(`That was ${heard === null ? 'another string' : noteName(heard)}. Pluck the ${STRING_FULL[s]} string.`, `Das war ${heard === null ? 'eine andere Saite' : noteName(heard)}. Zupf die ${STRING_FULL[s]}-Saite.`);
-  if (result === 'buzz') return L('Move the finger right up behind the fret and press a little harder.', 'Setz den Finger direkt hinter den Bund und drück etwas fester.');
-  if (barre) return L(`Roll your index finger slightly onto its bony edge, right behind fret ${c.frets[s]}.`, `Kipp den Zeigefinger leicht auf seine harte Außenkante, direkt hinter dem ${c.frets[s]}. Bund.`);
-  if (c.frets[s] === 0) return L('Something is touching this open string. Arch the fingers next to it.', 'Etwas berührt diese leere Saite. Stell die Finger daneben steiler auf.');
-  return L('Press with the fingertip, right behind the fret, and keep the finger arched so it stays off the next string.', 'Drück mit der Fingerspitze, direkt hinter dem Bund, und halte den Finger gewölbt, damit er die Nachbarsaite nicht berührt.');
-}
-
-const FINGER_NAMES = (): string[] => ['', L('index finger', 'Zeigefinger'), L('middle finger', 'Mittelfinger'), L('ring finger', 'Ringfinger'), L('little finger', 'kleiner Finger')];
-
-/** Where the fingers go, in words, one line per finger. */
-export function holdLines(c: Chord): string[] {
-  const list = (s: number[]): string => {
-    const n = s.map((i) => STRING_FULL[i]);
-    return n.length > 1 ? L(`${n.slice(0, -1).join(', ')} and ${n[n.length - 1]} strings`, `${n.slice(0, -1).join('-, ')}- und ${n[n.length - 1]}-Saite`) : L(`${n[0]} string`, `${n[0]}-Saite`);
-  };
-  const flat = barreStrings(c);
-  const barre = flat.length > 0;
-  const out: string[] = [];
-  if (barre) out.push(L(`Index finger flat across fret ${c.frets[flat[0]]}, from the ${STRING_FULL[flat[0]]} string to the ${STRING_FULL[flat[flat.length - 1]]} string`, `Zeigefinger flach über den ${c.frets[flat[0]]}. Bund, von der ${stringName(flat[0], true)} bis zur ${stringName(flat[flat.length - 1], true)}`));
-  for (let s = 0; s < 6; s++) {
-    const f = c.fingers[s];
-    if (f && !(barre && f === 1)) out.push(L(`${cap(FINGER_NAMES()[f])}: ${STRING_FULL[s]} string, fret ${c.frets[s]}`, `${cap(FINGER_NAMES()[f])}: ${STRING_FULL[s]}-Saite, ${c.frets[s]}. Bund`));
-  }
-  const unused = c.frets.map((f, i) => (f < 0 ? i : -1)).filter((i) => i >= 0);
-  if (unused.length) out.push(L(`The ${list(unused)} ${unused.length > 1 ? 'are' : 'is'} not played`, `Die ${list(unused)} ${unused.length > 1 ? 'werden' : 'wird'} nicht gespielt`));
-  // what makes a barre ring is not strength
-  if (barre) out.push(L('Thumb behind the neck, opposite the index finger. Index finger close to the fret, rolled a little onto its bony edge', 'Daumen hinter dem Hals, gegenüber dem Zeigefinger. Zeigefinger nah am Bund, leicht auf seine harte Außenkante gekippt'));
-  return out;
-}
-
-/** How often a string is tried in the guided session before it is left for next time. */
-const TRIES = 3;
-
-/**
- * Chord check: hold the chord, pluck one string at a time, see which ring clean. No clock. In the guided
- * session it takes today's chords one after the other and never gets stuck: a string that will not ring
- * is left for next time after three tries, and any string can be skipped or done again.
- */
-export const chordCheck: Screen = (root, ids, ctx) => {
-  /** the check at the end of a stage: several chords in a row, from memory, and the result is kept */
-  const stageCheck = !ctx && ids[0] === 'check';
-  const guided = !!ctx || stageCheck;
-  let passed = 0;
-  const queue = (guided ? ids : ids.slice(0, 1)).map((id) => CHORDS[id]).filter(Boolean);
-  if (!queue.length) queue.push(CHORDS['Em']);
-  /** practice rather than a check: after the result it waits for the player, who may go again as often as they like */
-  const stay = !!ctx && ids.includes('stay');
-  let q = 0;
-  let chord = queue[0];
-  let midis = chordMidis(chord);
-  let strings = midis.map((m, i) => (m === null ? -1 : i)).filter((i) => i >= 0);
-  let at = 0;
-  let results: Mark[] = [];
-  let tries: number[] = [];
-  let left = new Set<number>();
-  let startT = -1;
-  let timer = 0;
-  let tip = '';
-  /** the tip is advice on a string that did not ring, not just news */
-  let advice = false;
-  /** a chord that already rings is first asked for from memory: its picture stays hidden until asked for or needed */
-  let shown = true;
-
-  root.innerHTML = frame(
-    `<b>${L('Chord check', 'Akkord-Check')}</b> · <span id="cname"></span>`,
-    `<div class="two">
-       <div><svg class="fit" id="box" viewBox="0 0 400 440" role="img"></svg><p class="legend" style="text-align:center">${L('1 index · 2 middle · 3 ring · 4 little finger', '1 Zeigefinger · 2 Mittelfinger · 3 Ringfinger · 4 kleiner Finger')}</p></div>
-       <div>
-         <p class="eyebrow" id="eb"></p><h1 id="h1" aria-live="polite"></h1>
-         <p class="tip" id="tip"></p>
-         <div class="tiles" id="tiles" role="list" aria-label="${L('Result for each string', 'Ergebnis für jede Saite')}"></div>
-       </div>
-     </div>`,
-    `<div class="grp"><button class="btn" id="again">${L('Start over', 'Von vorn')} <kbd>R</kbd></button><button class="btn" id="back">${icon('left')}${L('Back a string', 'Eine Saite zurück')} <kbd>←</kbd></button><button class="btn" id="fwd"><span id="fwdl"></span> <kbd>→</kbd></button>${nextStep(ctx)}</div>${
-      ctx
-        ? `<p class="auto">${ids.includes('stay') ? L('Optional. A barre takes weeks, not minutes: a few tries a day do more than one long fight.', 'Freiwillig. Ein Barré braucht Wochen, nicht Minuten: Ein paar Versuche am Tag bringen mehr als ein langer Kampf.') : L('No clock. A string that will not ring after three tries is left for next time.', 'Keine Uhr. Eine Saite, die nach drei Versuchen nicht klingt, bleibt fürs nächste Mal.')}</p>`
-        : `<nav class="chords" aria-label="${L('Chord', 'Akkord')}">${[...new Set(['Em', 'Am', 'E', 'A', 'D', 'C', 'G', 'Dm', 'F', chord.id])]
-            .map((id) => CHORDS[id])
-            .map((c) => `<a href="#/chord/${encodeURIComponent(c.id)}" aria-current="${c.id === chord.id}">${c.name}</a>`)
-            .join('')}<a href="#/chords">${L('All chords…', 'Alle Griffe …')}</a></nav>`
-    }`,
-    ctx,
-  );
-
-  const cleanCount = (): number => strings.filter((i) => results[i] === 'clean').length;
-  const nextName = (): string => (q + 1 < queue.length ? queue[q + 1].name : '');
-
-  function draw(): void {
-    const done = at >= strings.length;
-    const s = strings[Math.min(at, strings.length - 1)];
-    const last = results[s];
-    const marks = midis.map((m, i) => (m === null ? null : !done && i === s ? 'now' : (results[i] ?? null))) as Mark[];
-    let svg = shown
-      ? chordBox(chord, 70, 76, 260, LEARN, false, marks, 62)
-      : [0, 1, 2, 3, 4, 5].map((k) => `<line x1="${70 + k * 52}" x2="${70 + k * 52}" y1="76" y2="386" stroke="${LEARN.faint}" stroke-width="1.5"/><line x1="70" x2="330" y1="${76 + k * 62}" y2="${76 + k * 62}" stroke="${k ? LEARN.line : LEARN.text}" stroke-width="${k ? 1.5 : 4}"/>`).join('') + `<text x="200" y="250" class="cn" text-anchor="middle" style="font-size:64px" fill="${LEARN.faint}">?</text>`;
-    STRING_NAMES.forEach((n, i) => {
-      const x = 70 + (store.settings.leftHanded ? 5 - i : i) * 52;
-      const m = marks[i];
-      svg += `<text x="${x}" y="40" class="sn" fill="${m === 'now' ? LEARN.now : midis[i] === null ? LEARN.faint : LEARN.text}">${n}</text>`;
-      const y = 418;
-      const failed = m === 'now' && results[i] && results[i] !== 'clean';
-      if (failed) svg += `<path d="M${x - 8} ${y - 8}l16 16M${x + 8} ${y - 8}l-16 16" stroke="${LEARN.bad}" stroke-width="3.4" stroke-linecap="round"/>`;
-      else if (m === 'clean') svg += `<path d="M${x - 9} ${y}l6 6 12-13" fill="none" stroke="${LEARN.good}" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"/>`;
-      else if (m === 'muted' || m === 'buzz' || m === 'wrong') svg += `<path d="M${x - 8} ${y - 8}l16 16M${x + 8} ${y - 8}l-16 16" stroke="${LEARN.bad}" stroke-width="3.4" stroke-linecap="round"/>`;
-      else if (midis[i] !== null) svg += `<circle cx="${x}" cy="${y}" r="6" fill="none" stroke="${m === 'now' ? LEARN.now : LEARN.faint}" stroke-width="2.5"/>`;
-    });
-    const box = $('#box', root);
-    box.innerHTML = svg;
-    box.setAttribute('aria-label', L(`Chord diagram of ${chord.name} with the result for each string`, `Akkorddiagramm von ${chord.name} mit dem Ergebnis für jede Saite`));
-    const cname = root.querySelector('#cname');
-    if (cname) cname.textContent = chord.name;
-    const which = queue.length > 1 ? L(`Chord ${q + 1} of ${queue.length} · `, `Akkord ${q + 1} von ${queue.length} · `) : '';
-    $('#eb', root).textContent = `${ctx ? ctx.label + ' · ' : ''}${which}${chord.name} · ${done ? L('checked', 'geprüft') : L(`string ${at + 1} of ${strings.length}`, `Saite ${at + 1} von ${strings.length}`)}`;
-    $('#h1', root).innerHTML = done
-      ? cleanCount() === strings.length
-        ? L('Every string rings clean.', 'Jede Saite klingt sauber.')
-        : L(`${cleanCount()} of ${strings.length} strings ring clean.`, `${cleanCount()} von ${strings.length} Saiten ${cleanCount() === 1 ? 'klingt' : 'klingen'} sauber.`)
-      : last && last !== 'clean' && last !== 'now'
-        ? L(`${STRING_NAMES[s]} ${last === 'muted' ? 'is muted' : last === 'buzz' ? 'buzzes' : 'was not it'}. Pluck the <em>${STRING_FULL[s]} string</em> again.`, `${last === 'muted' ? `${STRING_NAMES[s]} ist abgedämpft` : last === 'buzz' ? `${STRING_NAMES[s]} schnarrt` : `Das war nicht ${STRING_NAMES[s]}`}. Zupf die <em>${STRING_FULL[s]}-Saite</em> noch einmal.`)
-        : L(`Hold ${chord.name}. Pluck the <em>${STRING_FULL[s]} string</em>.`, `Halte ${chord.name}. Zupf die <em>${STRING_FULL[s]}-Saite</em>.`);
-    // before the first pluck: where the fingers go
-    const fresh = !done && !tip && at === 0 && results.length === 0;
-    $('#tip', root).innerHTML = fresh && !shown
-      ? L(`<b>From memory</b>You have had ${chord.name} ringing before. Put it down without the picture, then pluck one string at a time, low to high. <kbd>S</kbd> shows the shape.`, `<b>Auswendig</b>${chord.name} hat bei dir schon geklungen. Greif ihn ohne Bild, dann zupf eine Saite nach der anderen, von tief nach hoch. <kbd>S</kbd> zeigt den Griff.`)
-      : fresh
-      ? L(`<b>How to hold ${chord.name}</b>${holdLines(chord).join('.<br>')}.<br>Then pluck one string at a time, low to high, and let each ring.`, `<b>So greifst du ${chord.name}</b>${holdLines(chord).join('.<br>')}.<br>Dann zupf eine Saite nach der anderen, von tief nach hoch, und lass jede klingen.`)
-      : `<b>${done ? L('Result', 'Ergebnis') : tip ? (advice ? L('Try this', 'Versuch das') : L('Moving on', 'Weiter geht’s')) : L('How it works', 'So geht’s')}</b>${tip || L('Pluck one string at a time, low to high, and let it ring for a moment.', 'Zupf eine Saite nach der anderen, von tief nach hoch, und lass sie kurz klingen.')}`;
-    /** a result as a tile says it */
-    const said = (r: Mark): string => L(String(r), r === 'muted' ? 'abgedämpft' : r === 'buzz' ? 'schnarrt' : r === 'wrong' ? 'falsch' : r === 'clean' ? 'sauber' : String(r));
-    $('#tiles', root).innerHTML = STRING_NAMES.map((n, i) => {
-      const m = marks[i];
-      const word = midis[i] === null ? L('not played', 'nicht gespielt') : m === 'now' ? (results[i] && results[i] !== 'clean' ? said(results[i]) : L('now', 'jetzt')) : m === 'clean' ? L('clean', 'sauber') : left.has(i) ? L('next time', 'nächstes Mal') : m ? said(m) : L('next', 'kommt noch');
-      return `<div class="tile ${midis[i] === null ? 'skip' : m === 'now' ? 'now ' + (results[i] ?? '') : (m ?? '')}" role="listitem"><b>${n}</b><span>${word}</span></div>`;
-    }).join('');
-    $('#fwdl', root).textContent = !done ? L('Skip this string', 'Saite überspringen') : nextName() ? L(`Next chord: ${nextName()}`, `Nächster Akkord: ${nextName()}`) : stay ? L('Done for today', 'Fertig für heute') : ctx ? L('Next step', 'Nächster Schritt') : L('Once more', 'Noch einmal');
-    $<HTMLButtonElement>('#back', root).disabled = at === 0;
-    setSimTarget(done ? null : { kind: 'note', midi: midis[s]!, string: s });
-    if (done) engine.listener?.cancelStringCheck();
-    else engine.listener?.startStringCheck(midis[s]!);
-  }
-
-  /** Starts the check of a chord of the queue. */
-  function start(n = q): void {
-    stopTimer(timer);
-    q = n;
-    chord = queue[q];
-    midis = chordMidis(chord);
-    strings = midis.map((m, i) => (m === null ? -1 : i)).filter((i) => i >= 0);
-    at = 0;
-    results = [];
-    tries = [];
-    left = new Set();
-    shown = !stageCheck && store.skills.level(`chord:${chord.id}`) < 2;
-    // The clock starts when the chord is shown, not at the first pluck: what is measured is how long it
-    // takes to find the shape and get every string to ring, which is what knowing a chord means.
-    startT = engine.listener?.time ?? -1;
-    tip = '';
-    draw();
-  }
-
-  /** What comes after a chord: the next of today's chords, the next step of the session, or the same chord again. */
-  function onward(): void {
-    stopTimer(timer);
-    if (q + 1 < queue.length) start(q + 1);
-    else if (ctx) ctx.next();
-    else if (stageCheck) location.hash = '/progress';
-    else start(q);
-  }
-
-  /** Every string has been clean, tried or skipped. */
-  function finishChord(time: number): void {
-    const n = strings.length;
-    const clean = cleanCount();
-    const after = nextName() ? L(`Next: ${nextName()}.`, `Als Nächstes: ${nextName()}.`) : stay ? L('Once more with R, or finish with the right arrow.', 'Noch einmal mit R, oder mit dem Pfeil nach rechts abschließen.') : ctx ? L(`Next: ${ctx.after}.`, `Als Nächstes: ${ctx.after}.`) : L('It starts over in a moment.', 'Gleich geht es von vorn los.');
-    if (clean === n && !left.size && startT >= 0) {
-      passed++;
-      const secs = time - startT;
-      const change = store.skills.record(`chord:${chord.id}`, secs, Date.now());
-      tip = L(`All ${n} strings clean, ${secs.toFixed(0)} seconds after the chord came up.${levelNews([change])} ${after}`, `Alle ${n} Saiten sauber, ${secs.toFixed(0)} Sekunden, nachdem der Akkord erschienen ist.${levelNews([change])} ${after}`);
-    } else {
-      store.skills.record(`chord:${chord.id}`, Infinity, Date.now(), Math.min(5, Math.round((clean / n) * 6)));
-      const missing = strings.filter((i) => results[i] !== 'clean').map((i) => STRING_NAMES[i]);
-      tip = L(`${missing.join(', ')} ${missing.length > 1 ? 'do' : 'does'} not ring yet. That is normal for a chord that is new to the hand; it comes back next time. ${after}`, `${missing.join(', ')} ${missing.length > 1 ? 'klingen' : 'klingt'} noch nicht. Das ist normal bei einem Akkord, der für die Hand neu ist; beim nächsten Mal kommt er wieder dran. ${after}`);
-    }
-    if (stageCheck && q === queue.length - 1) {
-      // every chord of the stage, each string clean, in one go: the stage is confirmed
-      if (passed === queue.length) store.progress['check:open'] = Date.now();
-      tip =
-        passed === queue.length
-          ? L(`All ${queue.length} chords rang clean in a row. The stage is confirmed.`, `Alle ${queue.length} Akkorde haben in einem Zug sauber geklungen. Die Etappe ist bestätigt.`)
-          : L(`${passed} of ${queue.length} chords rang clean in a row. The stage is confirmed when all of them do; the ones that did not are on the path.`, `${passed} von ${queue.length} Akkorden ${passed === 1 ? 'hat' : 'haben'} in einem Zug sauber geklungen. Die Etappe ist bestätigt, wenn alle es tun; die übrigen findest du auf dem Weg.`);
-    }
-    store.save();
-    if (!stay) timer = later(guided ? 4000 : 6000, onward, q + 1 < queue.length ? L(`the next chord, ${queue[q + 1].name}`, `der nächste Akkord, ${queue[q + 1].name}`) : ctx ? ctx.after : stageCheck ? L('the path', 'der Weg') : L(`${chord.name} once more`, `noch einmal ${chord.name}`));
-  }
-
-  /** Leaves the string that is being checked. */
-  function skip(time: number): void {
-    left.add(strings[at]);
-    at++;
-    tip = '';
-    if (at >= strings.length) finishChord(time);
-  }
-
-  const stopHear = hear(
-    root,
-    {
-      onString: (e) => {
-        if (at >= strings.length) return;
-        const s = strings[at];
-        if (startT < 0) startT = e.time;
-        results[s] = e.result;
-        if (e.result === 'clean') {
-          learnRing(e.ring);
-          left.delete(s);
-          at++;
-          tip = '';
-          if (at >= strings.length) finishChord(e.time);
-        } else {
-          tries[s] = (tries[s] ?? 0) + 1;
-          tip = stringTip(chord.id, s, e.result, e.heard);
-          advice = true;
-          // the picture comes back as soon as it is needed
-          shown = true;
-          store.skills.record(`chord:${chord.id}`, Infinity, Date.now(), Math.min(5, Math.round((cleanCount() / strings.length) * 6)));
-          store.save();
-          // in the session nothing may take for ever: after three tries the string is left for next time
-          if (guided && tries[s] >= TRIES) {
-            skip(e.time);
-            if (at < strings.length) {
-              tip = L(`The ${STRING_FULL[s]} string is left for next time. On with the ${STRING_FULL[strings[at]]} string.`, `Die ${STRING_FULL[s]}-Saite bleibt fürs nächste Mal. Weiter mit der ${stringName(strings[at], true)}.`);
-              advice = false;
-            }
-          }
-        }
-        draw();
-      },
-    },
-    (l) => (l.noteDetection = false),
-  );
-  const forward = (): void => {
-    if (at >= strings.length) return onward();
-    skip(engine.listener?.time ?? 0);
-    draw();
-  };
-  const back = (): void => {
-    if (at === 0) return;
-    stopTimer(timer);
-    at = Math.min(at, strings.length) - 1;
-    const s = strings[at];
-    results[s] = null;
-    tries[s] = 0;
-    left.delete(s);
-    tip = '';
-    draw();
-  };
-  const stopKeys = keys({
-    r: () => start(q),
-    ArrowLeft: back,
-    ArrowRight: forward,
-    s: () => {
-      shown = true;
-      draw();
-    },
-  });
-  $('#again', root).onclick = () => start(q);
-  $('#back', root).onclick = back;
-  $('#fwd', root).onclick = forward;
-  if (ctx) $('#nextstep', root).onclick = ctx.next;
-  start(0);
-  return () => {
-    stopTimer(timer);
-    stopHear();
-    stopKeys();
-    setSimTarget(null);
-  };
 };
