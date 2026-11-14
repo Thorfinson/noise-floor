@@ -20,8 +20,10 @@ const MINUTE = 60;
 
 export const changeDrill: Screen = (root, [a0, b0], ctx) => {
   const piano = store.settings.instrument === 'piano';
-  const a = piano ? (isKeyChord(a0) ? a0 : 'C') : CHORDS[a0] ? a0 : 'Em';
-  const b = piano ? (isKeyChord(b0) && b0 !== a ? b0 : a === 'G' ? 'C' : 'G') : CHORDS[b0] && b0 !== a ? b0 : 'Am';
+  // own keys only: an address like #/change/constructor would otherwise find Object's constructor
+  const isChord = (id: string | undefined): id is string => !!id && Object.hasOwn(CHORDS, id);
+  const a = piano ? (isKeyChord(a0) ? a0 : 'C') : isChord(a0) ? a0 : 'Em';
+  const b = piano ? (isKeyChord(b0) && b0 !== a ? b0 : a === 'G' ? 'C' : 'G') : isChord(b0) && b0 !== a ? b0 : 'Am';
   const key = pairKey(a, b, piano);
   /** what the player does to a chord: strum it on the guitar, play it on the piano */
   const Verb = piano ? 'Play' : 'Strum';

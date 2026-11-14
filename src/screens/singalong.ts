@@ -21,7 +21,8 @@ import { frame } from './learn';
 
 
 export const singAlong: Screen = (root, [id]) => {
-  if (!id || !SING_ALONG[id]) return chooser(root);
+  // own keys only: #/singalong/constructor would otherwise find Object's constructor and no song
+  if (!id || !Object.hasOwn(SING_ALONG, id)) return chooser(root);
   const song = findSong(id);
   const sh = sheet(song)!;
   const units = barUnits(song);
@@ -48,7 +49,7 @@ export const singAlong: Screen = (root, [id]) => {
     `<div class="grp"><button class="btn primary" id="go"><span>${L('Start', 'Starten')}</span> <kbd>${L('Space', 'Leertaste')}</kbd></button><button class="btn quiet" id="slower" aria-label="${L('Slower by 5%', 'Um 5 % langsamer')}">−5 % <kbd>−</kbd></button><b id="tempo"></b><button class="btn quiet" id="faster" aria-label="${L('Faster by 5%', 'Um 5 % schneller')}">+5 % <kbd>+</kbd></button></div>
      <div class="grp"><button class="btn quiet tog" id="melody" aria-pressed="false">${L('The melody (headphones)', 'Die Melodie (Kopfhörer)')} <kbd>H</kbd></button><button class="btn quiet tog" id="backing" aria-pressed="${backingOn}">${L('Backing (headphones)', 'Begleitung (Kopfhörer)')} <kbd>A</kbd></button></div>`,
     undefined,
-    ['#/song/' + encodeURIComponent(song.id), song.title],
+    ['#/song/' + encodeURIComponent(song.id), esc(song.title)],
   );
 
   const say = (cls: string, text: string): void => {

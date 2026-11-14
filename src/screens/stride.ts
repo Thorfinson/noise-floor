@@ -363,8 +363,20 @@ export const stride: Screen = (root, [pid, again]) => {
       l.chordCandidates = pair;
     },
   );
+  /**
+   * Space during the bar counted in: not a walk that failed, a start taken back. Nothing is scored and the
+   * tempo stays, as if the walk had not begun.
+   */
+  function cancel(): void {
+    if (phase !== 'count') return;
+    engine.clearTicks();
+    walk = null;
+    trail.over = null;
+    delete root.dataset.step;
+    brief();
+  }
   const stopKeys = keys({
-    ' ': () => (phase === 'brief' ? begin() : phase === 'done' && !closing ? rerun() : finish()),
+    ' ': () => (phase === 'brief' ? begin() : phase === 'count' ? cancel() : phase === 'done' && !closing ? rerun() : finish()),
     '-': () => tempo(-1),
     '+': () => tempo(1),
     '=': () => tempo(1),

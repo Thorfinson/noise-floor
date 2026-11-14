@@ -34,10 +34,10 @@ export function weekStats(inst: Instrument, now = Date.now()): { days: number; g
   return { days: w.count, goal: w.goal, minutes: Math.round(secs / 60), bests };
 }
 
-/** The value of a measurement as its kind is said: "6.2 s", "26 a minute", "85 %". */
-function said(key: string, v: number): string {
+/** The value of a measurement as its kind is said: "6.2 s" (in German "6,2 s"), "26 a minute", "85 %". */
+export function said(key: string, v: number): string {
   const kind = kindOf(key);
-  if (kind === 'chord' || kind === 'scale') return `${v.toFixed(1)} s`;
+  if (kind === 'chord' || kind === 'scale') return `${num(Math.round(v * 10) / 10)} s`;
   if (kind === 'pair') return L(`${Math.round(v)} a minute`, `${Math.round(v)} pro Minute`);
   if (kind === 'finger' || kind === 'beat') return `${Math.round(v)} bpm`;
   if (kind === 'pitch' || kind === 'tone') return `${Math.round(v)} ct`;
@@ -59,6 +59,8 @@ function calendar(now: number): string {
   const left = 34;
   const top = 22;
   const names = [L('Mon', 'Mo'), '', L('Wed', 'Mi'), '', L('Fri', 'Fr'), '', L('Sun', 'So')];
+  let days = 0;
+  let shown = 0;
   let h = names.map((n, r) => (n ? `<text x="${left - 6}" y="${top + r * (cell + gap) + 13}" class="axis" text-anchor="end">${n}</text>` : '')).join('');
   for (let w = 0; w < 12; w++) {
     const monday = first + w * 7;
@@ -69,12 +71,18 @@ function calendar(now: number): string {
       if (d > today) continue;
       const mins = Math.round((store.practice[d] ?? 0) / 60);
       const s = played.has(d) ? Math.max(1, step(mins)) : 0;
+      shown++;
+      if (s) days++;
       const tip = `${new Date(dayStart(d)).toLocaleDateString(L('en-GB', 'de-DE'), { weekday: 'short', day: 'numeric', month: 'long' })}: ${s ? (mins ? L(`${mins} minutes`, `${mins} Minuten`) : L('played', 'gespielt')) : L('not played', 'nicht gespielt')}`;
-      h += `<rect class="cell" x="${left + w * (cell + gap)}" y="${top + r * (cell + gap)}" width="${cell}" height="${cell}" rx="4" fill="${STEPS[s]}" tabindex="0" data-tip="${esc(tip)}"><title>${esc(tip)}</title></rect>`;
+      h += `<rect class="cell" x="${left + w * (cell + gap)}" y="${top + r * (cell + gap)}" width="${cell}" height="${cell}" rx="4" fill="${STEPS[s]}" data-tip="${esc(tip)}"><title>${esc(tip)}</title></rect>`;
     }
   }
   const width = left + 12 * (cell + gap) + 4;
-  return `<svg class="cal" viewBox="0 0 ${width} ${top + 7 * (cell + gap) + 4}" role="img" aria-label="${L('Days played in the last twelve weeks: the darker, the longer', 'Gespielte Tage der letzten zwölf Wochen: je dunkler, desto länger')}">${h}</svg>
+  // One picture, not 84 stops for the Tab key: inside role="img" a screen reader hears none of the cells,
+  // and a keyboard would step through every day to get past it. What it shows is said in its label; the
+  // day by day is there to point at, and the minutes of this week stand in the numbers above.
+  const label = L(`Days played in the last twelve weeks: ${days} of ${shown}. The darker a day, the longer.`, `Gespielte Tage der letzten zwölf Wochen: ${days} von ${shown}. Je dunkler ein Tag, desto länger.`);
+  return `<svg class="cal" viewBox="0 0 ${width} ${top + 7 * (cell + gap) + 4}" role="img" aria-label="${esc(label)}">${h}</svg>
     <p class="calkey" aria-hidden="true"><span>${L('less', 'weniger')}</span>${STEPS.map((c) => `<i style="background:${c}"></i>`).join('')}<span>${L('more', 'mehr')}</span></p>`;
 }
 
@@ -176,14 +184,12 @@ export const trendsPage: Screen = (root) => {
       tip.textContent = '';
     });
   });
-  // the calendar's cells: their day and minutes, on hover and on focus
+  // the calendar's cells: their day and minutes, under the pointer (the picture as a whole has its label)
   const calTip = document.createElement('p');
   calTip.className = 'ctip';
-  calTip.setAttribute('aria-live', 'polite');
+  calTip.setAttribute('aria-hidden', 'true');
   root.querySelector('.calkey')?.after(calTip);
   $$<SVGRectElement>('.cal .cell', root).forEach((c) => {
-    const say = (): void => void (calTip.textContent = c.dataset.tip ?? '');
-    c.addEventListener('pointerenter', say);
-    c.addEventListener('focus', say);
+    c.addEventListener('pointerenter', () => void (calTip.textContent = c.dataset.tip ?? ''));
   });
 };
