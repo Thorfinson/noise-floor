@@ -7,6 +7,7 @@ import { $, $$, cap, esc, go, icon, type Screen } from '../ui/dom';
 import { LEARN, noteStrip, tabLine } from '../ui/draw';
 import { pips } from './home';
 import { describe, pieceMaterial, songMaterial, type Material } from './learn';
+import { SING_ALONG } from '../music/lyrics';
 import { finished, LEVELS, pieceProfile, piecesByDifficulty, readiness, songProfile, songsByDifficulty, type Profile } from '../music/difficulty';
 import { currentId } from './session';
 import { chordName } from '../music/theory';
@@ -18,7 +19,7 @@ const refresh = (): void => void dispatchEvent(new HashChangeEvent('hashchange')
 const byLine = (by: string): string => (by === 'Traditional' ? L('Traditional', 'Traditionell') : by);
 
 /** What the list shows, kept while the app is open so that coming back from a song finds the list as it was left. */
-const view: { level: number | null; kind: string; q: string; inst: string } = { level: null, kind: '', q: '', inst: '' };
+const view: { level: number | null; kind: string; q: string; inst: string; pick: string } = { level: null, kind: '', q: '', inst: '', pick: '' };
 
 interface Item {
   id: string;
@@ -31,6 +32,10 @@ interface Item {
   basic?: { id: string };
   /** piano: the chords the song has on the guitar, where the piano plays it in another key */
   guitar?: string[];
+  /** piano: the version for both hands */
+  hands?: { id: string };
+  /** an exercise of the app's own, not a song */
+  exercise?: boolean;
 }
 
 export const library: Screen = (root, params, ctx) => {
@@ -39,13 +44,14 @@ export const library: Screen = (root, params, ctx) => {
   const piano = inst === 'piano';
   const all = piano ? [] : songsByDifficulty();
   const pieces = piano ? piecesByDifficulty() : [];
-  const basicOf = new Map(pieces.filter((p) => p.of).map((p) => [p.of!, p]));
+  const basicOf = new Map(pieces.filter((p) => p.of && !p.hands).map((p) => [p.of!, p]));
+  const handsOf = new Map(pieces.filter((p) => p.hands).map((p) => [p.of!, p]));
   const items: Item[] = piano
-    ? pieces.filter((p) => !p.of).map((p) => ({ id: p.id, title: p.title, by: p.by ?? '', custom: p.custom, m: pieceMaterial(p), p: pieceProfile(p), basic: basicOf.get(p.id), guitar: p.guitar }))
-    : all.filter((s) => !s.of).map((s) => ({ id: s.id, title: s.title, by: s.by ?? '', custom: s.custom, m: songMaterial(s), p: songProfile(s), basic: all.find((x) => x.of === s.id) }));
+    ? pieces.filter((p) => !p.of).map((p) => ({ id: p.id, title: p.title, by: p.by ?? '', custom: p.custom, m: pieceMaterial(p), p: pieceProfile(p), basic: basicOf.get(p.id), hands: handsOf.get(p.id), guitar: p.guitar }))
+    : all.filter((s) => !s.of).map((s) => ({ id: s.id, title: s.title, by: s.by ?? '', custom: s.custom, m: songMaterial(s), p: songProfile(s), basic: all.find((x) => x.of === s.id), exercise: s.exercise }));
   const cur = currentId(inst);
   // the other instrument has other kinds and its own place in the list
-  if (view.inst !== inst) Object.assign(view, { level: null, kind: '', q: '', inst });
+  if (view.inst !== inst) Object.assign(view, { level: null, kind: '', q: '', inst, pick: '' });
   const open = piano ? 'piano' : 'song';
   const name = (c: string): string => chordName(c, piano);
   // a long list opens on the level of the song that is being learned; a short one shows everything
@@ -70,8 +76,27 @@ export const library: Screen = (root, params, ctx) => {
         ['strummed', L('Chords to strum', 'Akkorde zum Anschlagen')],
         ['picked', L('Picking', 'Zupfen')],
         ['melody', L('Tunes', 'Melodien')],
+        ['exercise', L('Exercises', 'Übungen')],
       ];
   const count = (lv: number): number => items.filter((it) => it.p.level === lv).length;
+  // what can be played now: every chord of it rings already; and what one chord more would open
+  const fresh = new Map(items.map((it) => [it.id, it.p.chords.length ? readiness(it.p).fresh : null]));
+  const ready = (it: Item): boolean => fresh.get(it.id)?.length === 0;
+  const oneMore = (it: Item): boolean => fresh.get(it.id)?.length === 1;
+  const opens = new Map<string, number>();
+  for (const it of items) if (oneMore(it)) opens.set(fresh.get(it.id)![0], (opens.get(fresh.get(it.id)![0]) ?? 0) + 1);
+  const key = [...opens].sort((a, b) => b[1] - a[1])[0];
+  const recent = store.recent[inst] ?? [];
+  /** begun and not finished, or due to be played again: the weakest first */
+  const needsWork = (it: Item): boolean => !finished(inst, it.id) && level(it.m) < 4 && it.m.lines.some((l) => l.bars.some((b) => store.skills.get(it.m.skill(b))));
+  const PICKS: [string, string, (it: Item) => boolean][] = [
+    ['', L('Everything', 'Alles'), () => true],
+    ['favs', L('Favourites', 'Favoriten'), (it) => store.isFav(inst, it.id)],
+    ['recent', L('Played lately', 'Zuletzt gespielt'), (it) => recent.includes(it.id)],
+    ['work', L('Needs work', 'Braucht Arbeit'), needsWork],
+    ['ready', L('Playable now', 'Jetzt spielbar'), ready],
+    ['one', L('One chord short', 'Ein Griff fehlt'), oneMore],
+  ];
 
   root.innerHTML = `<div class="page">
     <div><p class="kick">${piano ? L(`Piano · ${items.length} pieces`, `Klavier · ${items.length} ${items.length === 1 ? 'Stück' : 'Stücke'}`) : L(`Guitar · ${items.length} songs`, `Gitarre · ${items.length} ${items.length === 1 ? 'Song' : 'Songs'}`)}</p><h1>${L('What do you want to learn?', 'Was willst du lernen?')}</h1>
@@ -84,45 +109,52 @@ export const library: Screen = (root, params, ctx) => {
         ? `<div class="libbar">
         <div class="seg" role="group" aria-label="${L('Level', 'Stufe')}">${[0, 1, 2, 3, 4].map((lv) => `<button data-level="${lv}" aria-pressed="${view.level === lv}">${lv ? LEVELS[lv] : L('All', 'Alle')} <small>${lv ? count(lv) : items.length}</small></button>`).join('')}</div>
         <div class="seg" role="group" aria-label="${L('Kind', 'Art')}">${KINDS.map(([k, name]) => `<button data-kind="${k}" aria-pressed="${view.kind === k}">${name}</button>`).join('')}</div>
+        <div class="seg" role="group" aria-label="${L('Show', 'Zeigen')}">${PICKS.map(([k, name, f]) => `<button data-pick="${k}" aria-pressed="${view.pick === k}">${name}${k ? ` <small>${items.filter(f).length}</small>` : ''}</button>`).join('')}</div>
         <input id="q" type="search" placeholder="${L(`Search: title, ${piano ? 'composer' : 'artist'} or chord`, `Suche: Titel, ${piano ? 'Komponist' : 'Künstler'} oder Akkord`)}" aria-label="${L(`Search the ${piano ? 'pieces' : 'songs'}`, `${piano ? 'Stücke' : 'Songs'} durchsuchen`)}" value="${esc(view.q)}">
       </div>`
         : ''
     }
+    ${key ? `<p class="note keychord">${L(`The chord that opens most songs: <b>${esc(name(key[0]))}</b>, ${key[1]} ${key[1] === 1 ? 'song lacks' : 'songs lack'} only it.`, `Der Griff, der die meisten Songs öffnet: <b>${esc(name(key[0]))}</b>, ${key[1]} ${key[1] === 1 ? 'Song fehlt' : 'Songs fehlt'} nur er.`)} <a href="#/${piano ? 'keys' : 'chord'}/${encodeURIComponent(key[0])}">${L('Learn it now', 'Jetzt lernen')}</a></p>` : ''}
     <p class="note" id="shown" aria-live="polite"></p>
     <ul class="lib" id="list"></ul>
-    <div class="row"><a class="btn" href="#/import">${piano ? L('Add a melody of your own', 'Eigene Melodie hinzufügen') : L('Add a song from a tab', 'Song aus einer Tabulatur hinzufügen')}</a><span class="note" id="msg"></span></div>
+    <div class="row"><a class="btn" href="#/compose">${L('Make a chord progression of your own', 'Eine eigene Akkordfolge machen')}</a><a class="btn" href="#/import">${piano ? L('Add a melody of your own', 'Eigene Melodie hinzufügen') : L('Add a song from a tab', 'Song aus einer Tabulatur hinzufügen')}</a><span class="note" id="msg"></span></div>
   </div>`;
 
   const row = (it: Item): string => {
-    const here = it.id === cur || it.basic?.id === cur;
+    const here = it.id === cur || it.basic?.id === cur || it.hands?.id === cur;
     const fin = finished(inst, it.id);
     const names = it.p.chords.map(name);
     const why = it.p.reasons.filter((r) => !/^\d+ (chords?|Akkorde?)$/.test(r));
     return `<li${here ? ' class="cur"' : ''}>
-          <div><b>${esc(it.title)}</b>${it.by ? `<span class="by">${esc(byLine(it.by))}</span>` : ''}${grade(it.p)}
+          <div><b>${esc(it.title)}</b>${it.exercise ? `<span class="tag">${L('exercise', 'Übung')}</span>` : it.by ? `<span class="by">${esc(byLine(it.by))}</span>` : ''}${grade(it.p)}
             <small>${names.length ? `<span class="chs">${names.map(esc).join(' · ')}</span> ` : ''}${esc(cap(why.join(' · ')))}</small>
-            <small class="you">${it.p.chords.length || !piano ? esc(readiness(it.p).text) + ' ' : ''}${fin ? L('You play it at full speed.', 'Im vollen Tempo gespielt.') : L('Next: ' + describe(it.m).toLowerCase() + '.', 'Als Nächstes: ' + describe(it.m) + '.')}${it.basic ? ` <a href="#/${open}/${encodeURIComponent(it.basic.id)}">${L(`Basic version: the same chords, ${piano ? 'struck as a whole' : 'strummed'}`, `Einfache Fassung: dieselben Akkorde, ${piano ? 'als Ganzes angeschlagen' : 'angeschlagen'}`)}</a>` : ''}${it.guitar ? ` <span class="otherkey">${L(`On the guitar the song has ${it.guitar.map((c) => esc(chordName(c))).join(', ')}: here it is in the key that lies best under the hand.`, `Auf der Gitarre hat der Song ${it.guitar.map((c) => esc(chordName(c))).join(', ')}: Hier steht er in der Tonart, die am besten unter der Hand liegt.`)}</span>` : ''}</small></div>
+            <small class="you">${it.p.chords.length || !piano ? esc(readiness(it.p).text) + ' ' : ''}${fin ? L('You play it at full speed.', 'Im vollen Tempo gespielt.') : L('Next: ' + describe(it.m).toLowerCase() + '.', 'Als Nächstes: ' + describe(it.m) + '.')}${it.basic ? ` <a href="#/${open}/${encodeURIComponent(it.basic.id)}">${L(`Basic version: the same chords, ${piano ? 'struck as a whole' : 'strummed'}`, `Einfache Fassung: dieselben Akkorde, ${piano ? 'als Ganzes angeschlagen' : 'angeschlagen'}`)}</a>` : ''}${it.hands ? ` <a href="#/${open}/${encodeURIComponent(it.hands.id)}">${it.hands.id.endsWith('~together') ? L('Both hands together: a bass under the melody', 'Beide Hände zusammen: ein Bass unter der Melodie') : L('Both hands: the root in the left, then the chord', 'Beide Hände: der Grundton links, dann der Akkord')}</a>` : ''}${!piano && SING_ALONG[it.id] ? ` <a href="#/singalong/${encodeURIComponent(it.id)}">${L('Sing and play: the words under the chords', 'Singen und spielen: der Text unter den Akkorden')}</a>` : ''}${it.guitar ? ` <span class="otherkey">${L(`On the guitar the song has ${it.guitar.map((c) => esc(chordName(c))).join(', ')}: here it is in the key that lies best under the hand.`, `Auf der Gitarre hat der Song ${it.guitar.map((c) => esc(chordName(c))).join(', ')}: Hier steht er in der Tonart, die am besten unter der Hand liegt.`)}</span>` : ''}</small></div>
           ${here ? `<span class="tag up">${L("in today's session", 'in der heutigen Session')}</span>` : '<span></span>'}<span class="lvl">${pips(level(it.m))}<small>${fin ? L('done', 'erledigt') : L(`your level: ${level(it.m)} of 5`, `deine Stufe: ${level(it.m)} von 5`)}</small></span>
-          <span class="row">${it.custom ? `<button class="btn quiet" data-del="${esc(it.id)}">${L('Remove', 'Entfernen')}</button>` : ''}<a class="btn" href="#/${open}/${encodeURIComponent(it.id)}">${L('Open', 'Öffnen')}${icon('right')}</a></span>
+          <span class="row"><button class="btn quiet star" data-fav="${esc(it.id)}" aria-pressed="${store.isFav(inst, it.id)}" aria-label="${L(`Favourite: ${esc(it.title)}`, `Favorit: ${esc(it.title)}`)}">${store.isFav(inst, it.id) ? '★' : '☆'}</button>${it.custom ? `<button class="btn quiet" data-del="${esc(it.id)}">${L('Remove', 'Entfernen')}</button>` : ''}<a class="btn" href="#/${open}/${encodeURIComponent(it.id)}">${L('Open', 'Öffnen')}${icon('right')}</a></span>
         </li>`;
   };
 
   function list(): void {
     const q = view.q.trim().toLowerCase();
     const words = q.split(/\s+/).filter(Boolean);
+    const picked = PICKS.find(([k]) => k === view.pick)?.[2] ?? (() => true);
     const match = (it: Item): boolean => {
-      if (view.kind && it.p.kind !== view.kind) return false;
-      if (!words.length) return !view.level || it.p.level === view.level;
+      if (view.kind === 'exercise' ? !it.exercise : view.kind && it.p.kind !== view.kind) return false;
+      if (!picked(it)) return false;
+      // a pick of its own looks through every level, as a search does
+      if (!words.length) return !!view.pick || !view.level || it.p.level === view.level;
       // a search looks through every level: whoever types a name wants that song, whatever its level
       const hay = `${it.title} ${it.by}${it.by === 'Traditional' ? ' ' + byLine(it.by) : ''}`.toLowerCase();
       const chords = it.p.chords.map((c) => name(c).toLowerCase().replace('♯', '#').replace('♭', 'b'));
       return words.every((w) => hay.includes(w) || chords.includes(w));
     };
     const shown = items.filter(match);
+    // played lately: the latest first
+    if (view.pick === 'recent') shown.sort((a, b) => recent.indexOf(a.id) - recent.indexOf(b.id));
     let h = '';
     let lv = 0;
     for (const it of shown) {
-      if ((!view.level || words.length) && filters && it.p.level !== lv) {
+      if ((!view.level || words.length || view.pick) && view.pick !== 'recent' && filters && it.p.level !== lv) {
         lv = it.p.level;
         const n = shown.filter((x) => x.p.level === lv).length;
         h += `<li class="sep"><b>${LEVELS[lv]}</b><small>${L(`${n} ${piano ? 'pieces' : 'songs'}`, `${n} ${piano ? (n === 1 ? 'Stück' : 'Stücke') : n === 1 ? 'Song' : 'Songs'}`)}</small></li>`;
@@ -130,7 +162,16 @@ export const library: Screen = (root, params, ctx) => {
       h += row(it);
     }
     $('#list', root).innerHTML = h;
-    $('#shown', root).textContent = !filters ? '' : !shown.length ? L('Nothing found. Try another word, or another level.', 'Nichts gefunden. Versuch ein anderes Wort oder eine andere Stufe.') : words.length ? L(`${shown.length} found for "${view.q.trim()}", in every level.`, `${shown.length} gefunden für „${view.q.trim()}“, auf allen Stufen.`) : '';
+    $$('[data-fav]', root).forEach(
+      (b) =>
+        (b.onclick = () => {
+          const on = store.toggleFav(inst, b.dataset.fav!);
+          store.save();
+          b.setAttribute('aria-pressed', String(on));
+          b.textContent = on ? '★' : '☆';
+        }),
+    );
+    $('#shown', root).textContent = !filters ? '' : !shown.length ? (view.pick === 'favs' && !words.length ? L('No favourites yet: the star on a row makes one.', 'Noch keine Favoriten: Der Stern in einer Zeile macht einen.') : view.pick === 'recent' && !words.length ? L('Nothing played yet.', 'Noch nichts gespielt.') : L('Nothing found. Try another word, or another level.', 'Nichts gefunden. Versuch ein anderes Wort oder eine andere Stufe.')) : words.length ? L(`${shown.length} found for "${view.q.trim()}", in every level.`, `${shown.length} gefunden für „${view.q.trim()}“, auf allen Stufen.`) : '';
     $$('[data-del]', root).forEach(
       (b) =>
         (b.onclick = () => {
@@ -155,7 +196,18 @@ export const library: Screen = (root, params, ctx) => {
     (b) =>
       (b.onclick = () => {
         view.level = Number(b.dataset.level);
+        // a level asked for shows that level: a pick of its own (which looks through every level) gives way
+        view.pick = '';
         $$('[data-level]', root).forEach((x) => x.setAttribute('aria-pressed', String(x === b)));
+        $$('[data-pick]', root).forEach((x) => x.setAttribute('aria-pressed', String(x.dataset.pick === '')));
+        list();
+      }),
+  );
+  $$('[data-pick]', root).forEach(
+    (b) =>
+      (b.onclick = () => {
+        view.pick = b.dataset.pick ?? '';
+        $$('[data-pick]', root).forEach((x) => x.setAttribute('aria-pressed', String(x === b)));
         list();
       }),
   );

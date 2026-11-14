@@ -8,7 +8,7 @@ import './ui/practice';
 import { engine } from './audio/engine';
 import { browserLang, L, setLang } from './core/i18n';
 import { store } from './core/store';
-import { $, keys, stopAllLater, type Screen } from './ui/dom';
+import { $, applyScale, icon, keys, stopAllLater, type Screen } from './ui/dom';
 import { home, progress, settings } from './screens/home';
 import { tuner } from './screens/tuner';
 import { chordCheck, pianoLesson, songLesson } from './screens/learn';
@@ -18,6 +18,17 @@ import { basics, withIntro } from './screens/basics';
 import { changeDrill } from './screens/changes';
 import { keyCheck } from './screens/keys';
 import { session } from './screens/session';
+import { repertoirePage, takesPage } from './screens/repertoire';
+import { trendsPage } from './screens/trends';
+import { chordLibrary, droneTool, metronome, toolsPage } from './screens/tools';
+import { compose, jam } from './screens/compose';
+import { earTraining } from './screens/ear';
+import { strumTrainer } from './screens/strum';
+import { fileAtStart, fileState } from './core/progressfile';
+import { singAlong, singAlongList } from './screens/singalong';
+import { rhythmReading } from './screens/rhythm';
+import { hearingCheck } from './screens/check';
+import { slurTrainer } from './screens/slur';
 import { stride } from './screens/stride';
 import { holdTone, pitchMatch, singLesson, voiceRangeTest } from './screens/sing';
 
@@ -33,6 +44,22 @@ interface Route {
 const routes: Record<string, Route> = {
   '': { screen: home, nav: true, mode: 'learn', audio: false },
   progress: { screen: progress, nav: true, mode: 'learn', audio: false },
+  repertoire: { screen: repertoirePage, nav: true, mode: 'learn', audio: false },
+  takes: { screen: takesPage, nav: true, mode: 'learn', audio: false },
+  trends: { screen: trendsPage, nav: true, mode: 'learn', audio: false },
+  tools: { screen: toolsPage, nav: true, mode: 'learn', audio: false },
+  chords: { screen: chordLibrary, nav: true, mode: 'learn', audio: false },
+  metronome: { screen: metronome, mode: 'learn', audio: true },
+  drone: { screen: droneTool, mode: 'learn', audio: true },
+  compose: { screen: compose, nav: true, mode: 'learn', audio: false },
+  jam: { screen: jam, mode: 'learn', audio: true },
+  ear: { screen: withIntro('ear', earTraining), mode: 'learn', audio: true },
+  strum: { screen: withIntro('strumming', strumTrainer), mode: 'learn', audio: true },
+  singalong: { screen: singAlong, mode: 'learn', audio: true },
+  rhythm: { screen: rhythmReading, mode: 'learn', audio: true },
+  check: { screen: hearingCheck, mode: 'learn', audio: true },
+  slur: { screen: withIntro('slur', slurTrainer), mode: 'learn', audio: true },
+  singalongs: { screen: singAlongList, nav: true, mode: 'learn', audio: false },
   settings: { screen: settings, nav: true, mode: 'learn', audio: false },
   session: { screen: session, mode: 'learn', audio: true },
   tuner: { screen: withIntro('tuner', tuner), mode: 'learn', audio: true },
@@ -56,12 +83,27 @@ const routes: Record<string, Route> = {
 
 let cleanup: void | (() => void);
 
+/** Time spent on a screen that is played at: added to the day's practice when the screen is left. */
+let playingSince = 0;
+function countPlaying(): void {
+  if (!playingSince) return;
+  const secs = (performance.now() - playingSince) / 1000;
+  playingSince = 0;
+  // a screen left open while away from the instrument is not practice: at most half an hour at a time
+  store.logPractice(Math.min(secs, 1800), Date.now());
+  store.savePractice();
+}
+addEventListener('visibilitychange', () => {
+  if (document.hidden) countPlaying();
+  else if (document.body.hasAttribute('data-fit')) playingSince = performance.now();
+});
+
 /** Browsers only start audio after a click or key press, so the first visit to a listening screen stops here. */
 function gate(root: HTMLElement, then: () => void): () => void {
   root.innerHTML = `<div class="gate">
     <p class="kick">Noise Floor</p>
     <h1>${L('Ready to listen?', 'Bereit zum Zuhören?')}</h1>
-    <p id="gmsg">${store.settings.mic ? (store.settings.instrument === 'voice' ? L('The app needs your microphone to hear your voice. Nothing is recorded or sent anywhere.', 'Die App braucht dein Mikrofon, um deine Stimme zu hören. Nichts wird aufgenommen oder irgendwohin geschickt.') : L('The app needs your microphone to hear your instrument. Nothing is recorded or sent anywhere.', 'Die App braucht dein Mikrofon, um dein Instrument zu hören. Nichts wird aufgenommen oder irgendwohin geschickt.')) : L('The microphone is switched off in the settings. You can use the practice instrument.', 'Das Mikrofon ist in den Einstellungen ausgeschaltet. Du kannst das Übungsinstrument benutzen.')}</p>
+    <p id="gmsg">${store.settings.mic ? (store.settings.instrument === 'voice' ? L('The app needs your microphone to hear your voice. Nothing is sent anywhere; a take you sing to its end is kept in this browser for you to listen back to.', 'Die App braucht dein Mikrofon, um deine Stimme zu hören. Nichts wird irgendwohin geschickt; einen bis zum Ende gesungenen Durchgang behält dieser Browser für dich zum Anhören.') : L('The app needs your microphone to hear your instrument. Nothing is sent anywhere; a take you play to its end is kept in this browser for you to listen back to.', 'Die App braucht dein Mikrofon, um dein Instrument zu hören. Nichts wird irgendwohin geschickt; einen bis zum Ende gespielten Durchgang behält dieser Browser für dich zum Anhören.')) : L('The microphone is switched off in the settings. You can use the practice instrument.', 'Das Mikrofon ist in den Einstellungen ausgeschaltet. Du kannst das Übungsinstrument benutzen.')}</p>
     <button class="btn primary big" id="gstart">${L('Start listening', 'Zuhören starten')} <kbd>${L('Space', 'Leertaste')}</kbd></button>
   </div>`;
   let busy = false;
@@ -89,6 +131,7 @@ function gate(root: HTMLElement, then: () => void): () => void {
 
 function route(): void {
   stopAllLater();
+  countPlaying();
   cleanup?.();
   cleanup = undefined;
   const parts = location.hash.replace(/^#\/?/, '').split('/').filter(Boolean).map(decodeURIComponent);
@@ -99,6 +142,22 @@ function route(): void {
   const titles: Record<string, string> = {
     '': L('Today', 'Heute'),
     progress: L('Path', 'Weg'),
+    repertoire: L('Repertoire', 'Repertoire'),
+    takes: L('Recordings', 'Aufnahmen'),
+    trends: L('Over the weeks', 'Über die Wochen'),
+    tools: L('Tools', 'Werkzeuge'),
+    chords: L('Chord library', 'Griffbibliothek'),
+    metronome: L('Metronome', 'Metronom'),
+    drone: L('Drone', 'Bordunton'),
+    compose: L('Your own song', 'Dein eigener Song'),
+    jam: L('Play freely', 'Frei spielen'),
+    ear: L('By ear', 'Nach Gehör'),
+    strum: L('Strumming', 'Anschlagen'),
+    singalong: L('Sing and play', 'Singen und spielen'),
+    rhythm: L('Reading rhythm', 'Rhythmus lesen'),
+    check: L('Hearing check', 'Hörcheck'),
+    slur: L('Hammer-on and pull-off', 'Hammer-on und Pull-off'),
+    singalongs: L('Sing and play', 'Singen und spielen'),
     settings: L('Settings', 'Einstellungen'),
     session: L('Session', 'Session'),
     tuner: L('Tuner', 'Stimmgerät'),
@@ -131,6 +190,7 @@ function route(): void {
     return;
   }
   if (!overview) {
+    playingSince = performance.now();
     cleanup = r.screen(root, parts.slice(1));
     return;
   }
@@ -140,15 +200,17 @@ function route(): void {
     ['', L('Today', 'Heute')],
     ['songs', piano ? L('Pieces', 'Stücke') : L('Songs', 'Songs')],
     ['nf', L('Games', 'Spiele')],
+    ['tools', L('Tools', 'Werkzeuge')],
     ['basics', L('Basics', 'Grundlagen')],
-    ['progress', L('Path', 'Weg')],
-    ['settings', L('Settings', 'Einstellungen')],
+    ['progress', L('Progress', 'Fortschritt')],
   ];
-  const at = key === 'import' ? 'songs' : key;
+  // pages that belong to a section light up its entry
+  const at = key === 'import' ? 'songs' : key === 'repertoire' || key === 'trends' || key === 'takes' ? 'progress' : key === 'chords' || key === 'compose' || key === 'singalongs' ? 'tools' : key;
   const names: Record<string, string> = { guitar: L('Guitar', 'Gitarre'), piano: L('Piano', 'Klavier'), voice: L('Voice', 'Stimme') };
   root.innerHTML = `<header class="nav"><a class="brand" href="#/">Noise Floor</a>
       <nav aria-label="${L('Main', 'Hauptmenü')}">${items.map(([k, label]) => `<a href="#/${k}"${k === at ? ' aria-current="page"' : ''}>${label}</a>`).join('')}</nav>
       <div class="navr">
+        <a class="gear" href="#/settings"${at === 'settings' ? ' aria-current="page"' : ''} title="${L('Settings', 'Einstellungen')}" aria-label="${L('Settings', 'Einstellungen')}">${icon('gear')}</a>
         <div class="seg" role="group" aria-label="${L('Instrument', 'Instrument')}">${(['guitar', 'piano', 'voice'] as const).map((x) => `<button data-inst="${x}" aria-pressed="${x === inst}">${names[x]}</button>`).join('')}</div>
         <div class="seg lang" role="group" aria-label="${L('Language', 'Sprache')}">${(['en', 'de'] as const).map((x) => `<button data-lang="${x}" aria-pressed="${x === store.settings.lang}" lang="${x}" title="${x === 'en' ? 'English' : 'Deutsch'}">${x.toUpperCase()}</button>`).join('')}</div>
       </div>
@@ -173,9 +235,30 @@ function route(): void {
   cleanup = r.screen($('#view', root), parts.slice(1));
 }
 
+// a progress file chosen before: whether the browser still lets the app use it, and whether it is newer
+void fileAtStart().then(() => {
+  if (fileState().newer || fileState().status === 'ask') route();
+});
+
 // the language: the one chosen, or at first the browser's
 if (!store.settings.lang) store.settings.lang = browserLang();
 setLang(store.settings.lang);
+applyScale();
+
+// once the app has been opened, it opens without a network too (only in the built app: the files of the dev server change)
+if (import.meta.env.PROD && 'serviceWorker' in navigator) {
+  navigator.serviceWorker
+    .register('./sw.js')
+    .then(() => Promise.all([navigator.serviceWorker.ready, document.fonts.ready]))
+    .then(([reg]) => {
+      // the first visit loaded its files before the worker was there: it keeps them now, so that the app
+      // opens without a network from the first time on, not only from the second
+      const here = (u: string): boolean => new URL(u, location.href).origin === location.origin;
+      const urls = [new URL('./', location.href).href, location.href.split('#')[0], ...performance.getEntriesByType('resource').map((e) => e.name)].filter(here);
+      reg.active?.postMessage({ keep: [...new Set(urls)] });
+    })
+    .catch(() => undefined);
+}
 
 addEventListener('hashchange', route);
 

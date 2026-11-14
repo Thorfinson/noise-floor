@@ -49,3 +49,19 @@ export function decodeWav(bytes: Uint8Array): { sampleRate: number; samples: Flo
   }
   throw new Error('no sound in this WAV file');
 }
+
+/** Samples brought to another rate by straight lines between the old ones: for listening back, not for analysis. */
+export function resample(samples: Float32Array, from: number, to: number): Float32Array {
+  if (from === to) return samples;
+  const n = Math.max(1, Math.floor((samples.length * to) / from));
+  const out = new Float32Array(n);
+  const step = from / to;
+  for (let i = 0; i < n; i++) {
+    const x = i * step;
+    const k = Math.floor(x);
+    const a = samples[Math.min(k, samples.length - 1)];
+    const b = samples[Math.min(k + 1, samples.length - 1)];
+    out[i] = a + (b - a) * (x - k);
+  }
+  return out;
+}

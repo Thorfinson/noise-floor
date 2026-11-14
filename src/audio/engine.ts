@@ -200,6 +200,77 @@ export class AudioEngine {
     this.ticks.add(src);
   }
 
+  /**
+   * Plays a sound at a moment on the listener's clock, through the speakers only (the listener is not given
+   * it): the accompaniment under playing along. Cancelled with the ticks. volume 0 plays nothing.
+   */
+  playAt(at: number, samples: Float32Array, volume: number): void {
+    const ctx = this.ctx;
+    if (!ctx || volume <= 0 || !samples.length) return;
+    let when = at + (this.offset ?? ctx.currentTime - (this.listener?.time ?? 0));
+    let skip = 0;
+    // a sound that should have begun already starts where it would be by now
+    if (when < ctx.currentTime) {
+      skip = ctx.currentTime - when;
+      when = ctx.currentTime;
+    }
+    if (skip * ctx.sampleRate >= samples.length) return;
+    const buf = ctx.createBuffer(1, samples.length, ctx.sampleRate);
+    buf.getChannelData(0).set(samples);
+    const src = ctx.createBufferSource();
+    src.buffer = buf;
+    const gain = ctx.createGain();
+    gain.gain.value = volume;
+    src.connect(gain).connect(ctx.destination);
+    src.onended = () => this.ticks.delete(src);
+    src.start(when, skip);
+    this.ticks.add(src);
+  }
+
+  private droneSrc: { src: AudioBufferSourceNode; gain: GainNode } | null = null;
+
+  /**
+   * A drone: notes held as long as it is on, soft and even, through the speakers only. For singing against
+   * and for playing freely over. Several notes sound together (a root and its fifth). Empty stops it.
+   */
+  drone(midis: number[], volume = 0.4): void {
+    const ctx = this.ctx;
+    if (this.droneSrc) {
+      const old = this.droneSrc;
+      old.gain.gain.setTargetAtTime(0, ctx?.currentTime ?? 0, 0.08);
+      window.setTimeout(() => {
+        try {
+          old.src.stop();
+        } catch {
+          // already ended
+        }
+      }, 400);
+      this.droneSrc = null;
+    }
+    if (!ctx || !midis.length || volume <= 0) return;
+    // a few seconds of an even tone, its length whole periods of each note so that it loops without a seam
+    const sr = ctx.sampleRate;
+    const n = Math.round(4 * sr);
+    const buf = ctx.createBuffer(1, n, sr);
+    const out = buf.getChannelData(0);
+    const a4 = this.listener?.a4 ?? 440;
+    for (const m of midis) {
+      const f = a4 * Math.pow(2, (m - 69) / 12);
+      const cycles = Math.round((f * n) / sr);
+      const w = (2 * Math.PI * cycles) / n;
+      for (let i = 0; i < n; i++) out[i] += (0.12 * Math.sin(w * i) + 0.04 * Math.sin(2 * w * i) + 0.02 * Math.sin(3 * w * i)) / midis.length;
+    }
+    const src = ctx.createBufferSource();
+    src.buffer = buf;
+    src.loop = true;
+    const gain = ctx.createGain();
+    gain.gain.value = 0;
+    gain.gain.setTargetAtTime(volume, ctx.currentTime, 0.15);
+    src.connect(gain).connect(ctx.destination);
+    src.start();
+    this.droneSrc = { src, gain };
+  }
+
   private chimes = new Map<Chime, AudioBuffer>();
 
   /**

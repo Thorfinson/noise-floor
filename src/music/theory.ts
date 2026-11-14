@@ -23,9 +23,10 @@ export const noteName = (midi: number): string => NOTE_NAMES[((midi % 12) + 12) 
 export const centsBetween = (f: number, ref: number): number => 1200 * Math.log2(f / ref);
 
 /** The open string a pitch is nearest to: what the tuner takes a plucked string for. */
-export function nearestString(freq: number, a4 = 440): number {
+export function nearestString(freq: number, a4 = 440, offsets: number[] = [0, 0, 0, 0, 0, 0]): number {
+  const open = (i: number): number => midiToFreq(OPEN_STRINGS[i] + offsets[i], a4);
   let best = 0;
-  for (let i = 1; i < OPEN_STRINGS.length; i++) if (Math.abs(centsBetween(freq, midiToFreq(OPEN_STRINGS[i], a4))) < Math.abs(centsBetween(freq, midiToFreq(OPEN_STRINGS[best], a4)))) best = i;
+  for (let i = 1; i < OPEN_STRINGS.length; i++) if (Math.abs(centsBetween(freq, open(i))) < Math.abs(centsBetween(freq, open(best)))) best = i;
   return best;
 }
 
@@ -99,6 +100,14 @@ export const CHORDS: Record<string, Chord> = Object.fromEntries(
     chord('Cm', [-1, 3, 5, 5, 4, 3], [0, 1, 3, 4, 2, 1]),
     chord('C#m', [-1, 4, 6, 6, 5, 4], [0, 1, 3, 4, 2, 1]),
     chord('Db', [-1, 4, 6, 6, 6, 4], [0, 1, 2, 3, 4, 1]),
+    // power chords: the root, its fifth and the octave, on the low strings; no third, so neither major nor minor
+    chord('E5', [0, 2, 2, -1, -1, -1], [0, 1, 2, 0, 0, 0]),
+    chord('A5', [-1, 0, 2, 2, -1, -1], [0, 0, 1, 2, 0, 0]),
+    chord('D5', [-1, -1, 0, 2, 3, -1], [0, 0, 0, 1, 2, 0]),
+    chord('G5', [3, 5, 5, -1, -1, -1], [1, 3, 4, 0, 0, 0], 'G5', 1),
+    chord('C5', [-1, 3, 5, 5, -1, -1], [0, 1, 3, 4, 0, 0], 'C5', 1),
+    chord('F5', [1, 3, 3, -1, -1, -1], [1, 3, 4, 0, 0, 0], 'F5', 1),
+    chord('B5', [-1, 2, 4, 4, -1, -1], [0, 1, 3, 4, 0, 0], 'B5', 1),
   ].map((c) => [c.id, c]),
 );
 // the small shapes say so in the language shown
@@ -245,6 +254,7 @@ const MAKE: [RegExp, number[], number[], number[]][] = [
   [/^69$/, [0, 4, 7, 9], [1, 2, 3, 5], [0, 2, 4, 5]],
   [/^7$/, [0, 4, 7, 10], [1, 2, 3, 5], [0, 2, 4, 6]],
   [/^m$/, [0, 3, 7], [1, 3, 5], [0, 2, 4]],
+  [/^5$/, [0, 7, 12], [1, 3, 5], [0, 4, 7]],
   [/^$/, [0, 4, 7], [1, 3, 5], [0, 2, 4]],
 ];
 const ROOTS: Record<string, number> = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
@@ -256,6 +266,12 @@ const LETTERS = 'CDEFGAB';
  * hand moves from chord to chord. Chords the guitar has a small shape for are the same chord here.
  */
 export function pianoChord(id: string): KeyChord {
+  // keys struck together that are no chord of the list: a bass of the left hand with a key of the right
+  if (id.startsWith('keys:')) {
+    const midis = id.slice(5).split('+').map(Number);
+    const keys = midis.map((x) => noteName(x));
+    return { id, name: keys.join(' + '), midis, fingers: midis.map((_, i) => (i === 0 ? 5 : 1)), keys: keys.map((k) => k.replace(/-?\d+$/, '')) };
+  }
   const plain = id.replace(/-easy$/, '');
   const m = /^([A-G])([#b]?)(.*)$/.exec(plain);
   if (!m) throw new Error(`no chord called ${id}`);
@@ -270,6 +286,16 @@ export function pianoChord(id: string): KeyChord {
   });
   return { id: plain, name, midis: steps.map((s) => root + s), fingers, keys };
 }
+
+/** The id of keys struck together that are no chord: "keys:43+64", lowest first. */
+export const keysId = (midis: number[]): string => `keys:${[...midis].sort((a, b) => a - b).join('+')}`;
+
+/**
+ * Semitones above a key at which its own overtones lie (the 2nd to the 8th): a key of the right hand at one
+ * of these distances above a bass sounds inside the bass's own sound, and the microphone cannot tell the two
+ * apart (on real piano recordings: a fifth and an octave above, two octaves and a third or a fifth, the 7th).
+ */
+export const OVERTONE_STEPS = [12, 19, 24, 28, 31, 34, 36];
 
 /** The name of a key as a chord spells it, with its octave; as noteName has it for a key the chord does not have. */
 export function keyName(midi: number, chord?: string, octave = true): string {

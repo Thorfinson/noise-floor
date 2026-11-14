@@ -3,6 +3,9 @@ import { engine } from '../audio/engine';
 import type { Listener } from '../audio/listener';
 import { L } from '../core/i18n';
 import { store } from '../core/store';
+import { chordName, noteName } from '../music/theory';
+import { typeScale } from './draw';
+import { guitarA4 } from '../music/tuning';
 
 export const $ = <T extends Element = HTMLElement>(sel: string, root: ParentNode = document): T => root.querySelector(sel) as T;
 export const $$ = <T extends Element = HTMLElement>(sel: string, root: ParentNode = document): T[] => [...root.querySelectorAll(sel)] as T[];
@@ -24,6 +27,15 @@ export interface SessionCtx {
 
 /** A screen fills the root element and may return a function that cleans up when it is left. */
 export type Screen = (root: HTMLElement, params: string[], ctx?: SessionCtx) => void | (() => void);
+
+/** Everything larger, for reading from further away: the type of the whole app follows the setting. */
+export function applyScale(): void {
+  if (typeof document === 'undefined') return;
+  const s = typeScale();
+  // the stylesheet multiplies by --k: the whole page, or on a play screen what is read while playing
+  document.documentElement.style.setProperty('--k', String(s));
+  document.documentElement.dataset.scale = String(s);
+}
 
 export const go = (path: string): void => {
   location.hash = path;
@@ -67,7 +79,8 @@ export function learnRing(ring: number): void {
 export function hear(root: HTMLElement, handlers: Handlers, setup?: (l: Listener) => void): () => void {
   const l = engine.listener;
   if (!l) return () => undefined;
-  l.a4 = store.settings.a4;
+  // the guitar as written, wherever the capo sits and however far down it is tuned
+  l.a4 = guitarA4();
   l.voicing = 'guitar';
   l.buzzThreshold = store.settings.buzz;
   // at least what the settings ask for; more when this guitar is known to ring long
@@ -77,7 +90,22 @@ export function hear(root: HTMLElement, handlers: Handlers, setup?: (l: Listener
   Object.assign(l, handlers);
   const bars = $$('.mic .m i', root);
   const labels = $$('.mic-l', root);
-  labels.forEach((el) => (el.textContent = engine.micOn ? L('Hearing you', 'Hört dich') : L('Practice instrument only', 'Nur Übungsinstrument')));
+  const idle = engine.micOn ? L('Hearing you', 'Hört dich') : L('Practice instrument only', 'Nur Übungsinstrument');
+  labels.forEach((el) => (el.textContent = idle));
+  // what was heard last stays on show beside the meter: a note, a chord, a sung pitch. So a mistake of the
+  // app's ears can be told from a mistake of the hands.
+  let shown = '';
+  const heard = (what: string): void => {
+    if (what === shown) return;
+    shown = what;
+    labels.forEach((el) => {
+      el.textContent = L(`Heard: ${what}`, `Gehört: ${what}`);
+      el.classList.add('heard');
+    });
+  };
+  if (handlers.onNote) l.onNote = (e) => (heard(noteName(e.midi)), handlers.onNote!(e));
+  if (handlers.onChord) l.onChord = (e) => (e.best && e.score > 0.6 && heard(chordName(e.best, l.voicing === 'piano')), handlers.onChord!(e));
+  if (handlers.onPitch) l.onPitch = (e) => (heard(noteName(e.midi)), handlers.onPitch!(e));
   l.onLevel = (e) => {
     const lit = Math.max(0, Math.min(5, Math.round((e.db + 60) / 9)));
     bars.forEach((b, i) => b.classList.toggle('lit', i < lit));

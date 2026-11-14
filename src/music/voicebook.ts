@@ -12,6 +12,7 @@
  */
 import { L } from '../core/i18n';
 import { allPieces, noteTimes, type PianoNote, type PianoPiece } from './content';
+import { SUNG_SPLITS } from './lyrics';
 
 export interface SongToSing {
   id: string;
@@ -57,6 +58,18 @@ export function singable(p: PianoPiece): boolean {
   return Math.max(...midis) - Math.min(...midis) <= 17 && Math.max(0, ...leaps(p.phrases)) <= 9 && notes.length / seconds <= 3.4;
 }
 
+/** The played melody as it is sung: a held note repeated where the words have a syllable more (SUNG_SPLITS). */
+function sung(id: string, phrases: { midi: number; len?: number }[][]): { midi: number; len?: number }[][] {
+  const splits = SUNG_SPLITS[id];
+  if (!splits) return phrases;
+  return phrases.map((ph, k) =>
+    ph.flatMap((n, i) => {
+      const s = splits.find((x) => x.phrase === k && x.note === i);
+      return s ? s.into.map((len) => ({ midi: n.midi, ...(len !== 1 ? { len } : {}) })) : [n];
+    }),
+  );
+}
+
 let book: SongToSing[] | null = null;
 let madeFrom = -1;
 
@@ -77,7 +90,7 @@ export function voiceBook(): SongToSing[] {
       count: p.count,
       bar: p.bar,
       leads: p.leads,
-      phrases: p.phrases.map((ph) => ph.map((n) => ({ midi: n.midi, ...(n.len && n.len !== 1 ? { len: n.len } : {}) }))),
+      phrases: sung(`${p.id.replace(/~keys$/, '')}~voice`, p.phrases.map((ph) => ph.map((n) => ({ midi: n.midi, ...(n.len && n.len !== 1 ? { len: n.len } : {}) })))),
     }));
   return book;
 }

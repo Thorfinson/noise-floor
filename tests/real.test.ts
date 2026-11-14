@@ -11,10 +11,16 @@ import { Listener, type NoteEvent, type StringEvent } from '../src/audio/listene
 import { yin } from '../src/audio/yin';
 import { MuteGesture } from '../src/game/gesture';
 import { CHORD_PAIRS } from '../src/music/content';
-import { CHORDS, chordMidis, FOLLOW_AFTER, midiToFreq, nearestString, noteName, OPEN_STRINGS, STRING_NAMES } from '../src/music/theory';
+import { CHORDS, chordMidis, FOLLOW_AFTER, midiToFreq, nearestString, noteName, OPEN_STRINGS, OVERTONE_STEPS, STRING_NAMES } from '../src/music/theory';
 import { guitar, hasGuitar, hasPiano, haveGuitar, havePiano, haveSteel, mix, onStrings, piano, room, SR, steel, steelClips, type Loudness, type Played } from './real/clips';
 import { havePieces, pieces } from './real/pieces';
 import { haveVoices, loadTrack, measure, trackIds, type TrackResult } from './real/voices';
+import { judge, voiceBed } from './real/singalong';
+import { judgeChordBass, judgePair } from './real/twohands';
+import { haveSlides, hearLegato, joined, slides } from './real/legato';
+import { guitarCheckSet, pianoCheckSet } from './real/checkset';
+import { checkRecording } from '../src/core/checkrun';
+import { TOGETHER_GAPS } from '../src/music/content';
 
 /** The guitar in the recordings is tuned about 20 cents low. The tuner would have set the reference to match. */
 const GUITAR_A4 = 435;
@@ -600,5 +606,112 @@ describe.skipIf(!haveVoices())('the listener on real singing voices', () => {
   it('takes a held note with vibrato as held, and a semitone off hardly ever', () => {
     expect(sum('held') / notes).toBeGreaterThan(0.97);
     expect(sum('heldWrong') / (2 * notes)).toBeLessThan(0.025);
+  });
+});
+
+/**
+ * Playing and singing at once: the strummed pieces with a real singer of Vocadito mixed in as loud as the
+ * guitar (tests/real/singalong.ts). The voice covers a strum here and there, so the sing-along page measures
+ * nothing; a bar's chord is still heard in nearly every bar.
+ */
+describe.skipIf(!havePieces || !haveVoices())('chords heard with a voice singing over them', () => {
+  it('names the chord of most strums and of nearly every stretch with a voice as loud as the guitar', () => {
+    let right = 0;
+    let known = 0;
+    let named = 0;
+    let stretches = 0;
+    pieces.forEach((p, i) => {
+      const r = judge(p, voiceBed(p.samples.length, i), 1);
+      right += r.right;
+      known += r.known;
+      named += r.named;
+      stretches += r.stretches;
+    });
+    expect(right / known, `${right} of ${known} strums`).toBeGreaterThanOrEqual(0.85);
+    expect(named / stretches, `${named} of ${stretches} chords`).toBeGreaterThanOrEqual(0.92);
+  });
+});
+
+/**
+ * Both hands together on the piano (tests/real/twohands.ts): a bass key with a melody key is heard as the pair
+ * at every distance the app uses, and never named when only the right hand plays; a root under a whole chord
+ * is not heard, which is why the chords' version plays root, then chord.
+ */
+describe.skipIf(!havePiano)('both hands together on real piano notes', () => {
+  it('hears a bass with a melody key at the distances the app uses, and never the pair from one hand alone', () => {
+    let used = 0;
+    let heard = 0;
+    let falsePair = 0;
+    for (const bass of [43, 45, 47, 48, 50, 52, 53, 55])
+      for (const melody of [60, 62, 64, 65, 67, 69, 71, 72, 74, 76, 77, 79]) {
+        const gap = melody - bass;
+        if (gap % 12 === 0) continue;
+        if (judgePair(bass, melody, false) === 'pair') falsePair++;
+        if (gap < TOGETHER_GAPS[0] || gap > TOGETHER_GAPS[1] || OVERTONE_STEPS.includes(gap)) continue;
+        used++;
+        if (judgePair(bass, melody, true) === 'pair') heard++;
+      }
+    expect(used).toBeGreaterThan(30);
+    expect(heard / used, `${heard} of ${used} pairs`).toBeGreaterThanOrEqual(0.95);
+    expect(falsePair).toBe(0);
+  });
+
+  it('does not hear a root under a whole chord struck with it', () => {
+    let full = 0;
+    for (const [root, third, fifth] of [[60, 64, 67], [65, 69, 72], [67, 71, 74], [69, 72, 76]]) if (judgeChordBass(root - 12, [root, third, fifth], true) === 'full') full++;
+    expect(full).toBeLessThanOrEqual(1);
+  });
+});
+
+/**
+ * Notes that are not plucked (tests/real/legato.ts): the pitch tracking reaches the note of a real slide, and
+ * the second note of recorded notes joined without a new attack, as in a hammer-on or a pull-off.
+ */
+describe.skipIf(!haveSlides() || !haveSteel)('hammer-on, pull-off and slide', () => {
+  it('follows the pitch to the second note without a new pluck', () => {
+    const s = slides();
+    expect(s.filter((x) => x.reached).length, `${s.length} slides`).toBeGreaterThanOrEqual(s.length - 1);
+    const clips = steelClips.filter((c) => c.kind === 'normal');
+    let n = 0;
+    let reached = 0;
+    for (const c of clips)
+      for (const [how, step] of [['hammer', 2], ['pull', -2]] as const) {
+        const other = clips.find((x) => x.guitar === c.guitar && x.string === c.string && x.midi === c.midi + step);
+        if (!other) continue;
+        n++;
+        const r = hearLegato(joined(steel(c), steel(other), how));
+        if (r.pitches.filter((p) => p.t > 0.6 && p.t < 0.9 && p.midi === other.midi).length >= 3) reached++;
+      }
+    expect(n).toBeGreaterThan(100);
+    expect(reached / n, `${reached} of ${n}`).toBeGreaterThanOrEqual(0.95);
+  });
+});
+
+/**
+ * The hearing check (src/core/checkrun.ts) played with real recordings, as a player plays it: the six open
+ * strings of the nylon-string guitar, four chords strummed from its notes, a hit across dead strings; five
+ * keys and three chords of the grand piano (tests/real/checkset.ts).
+ */
+describe.skipIf(!haveGuitar || !havePiano || !haveSteel)('the hearing check on real recordings', () => {
+  it('hears every string, chord and the muted hit of a real guitar, and says when it is out of tune', () => {
+    const tuned = checkRecording(guitarCheckSet(), SR, 'guitar', GUITAR_A4);
+    expect(tuned.summary.right, tuned.run.outcomes.map((o) => `${o.item.want}:${o.heard}`).join(' ')).toBe(11);
+    expect(tuned.summary.advice).toEqual([]);
+    // the recorded guitar is some 20 cents low: against A = 440 the check says so
+    const at440 = checkRecording(guitarCheckSet(), SR, 'guitar', 440);
+    expect(at440.summary.right).toBe(11);
+    expect(at440.summary.centsOff).toBeLessThanOrEqual(-15);
+    expect(at440.summary.advice.join(' ')).toMatch(/cents low: tune it first/);
+  });
+
+  it('hears every key and chord of a real piano', () => {
+    const r = checkRecording(pianoCheckSet(), SR, 'piano', PIANO_A4);
+    expect(r.summary.right).toBe(8);
+  });
+
+  it('holds up in a living room, and tells an instrument that reaches the microphone too quietly', () => {
+    expect(checkRecording(room(guitarCheckSet(), 0.5, 0.7), SR, 'guitar', GUITAR_A4).summary.right).toBeGreaterThanOrEqual(10);
+    expect(checkRecording(room(pianoCheckSet(), 0.5, 0.7), SR, 'piano', PIANO_A4).summary.right).toBe(8);
+    expect(checkRecording(guitarCheckSet(0.05), SR, 'guitar', GUITAR_A4).summary.advice.join(' ')).toMatch(/reaches the microphone quietly/);
   });
 });

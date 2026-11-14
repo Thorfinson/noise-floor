@@ -5,9 +5,10 @@
  * Levels are never taken away. A skill that has not been confirmed for a week is marked rusty,
  * and rusty and low skills are sent more often in runs.
  */
+import { DAY_MS, dayOf } from './days';
 import { L } from './i18n';
 
-export type SkillKind = 'chord' | 'pair' | 'finger' | 'bar' | 'scale' | 'beat' | 'pitch' | 'tone' | 'sing';
+export type SkillKind = 'chord' | 'pair' | 'finger' | 'bar' | 'scale' | 'beat' | 'pitch' | 'tone' | 'sing' | 'ear';
 
 export interface SkillRecord {
   level: number;
@@ -21,7 +22,14 @@ export interface SkillRecord {
   strings?: number;
   /** on how many different days it was measured clean: one good day may be luck, three are not */
   days?: number;
+  /** the first clean measurement of the last day it was measured: what the hands can do from cold [day, value] */
+  cold?: [number, number];
+  /** the best value of each day it was measured, oldest first [day, value]: the course over weeks */
+  h?: [number, number][];
 }
+
+/** How many days of history a skill keeps. */
+const HISTORY = 120;
 
 export interface KindInfo {
   unit: string;
@@ -45,9 +53,14 @@ export const KINDS: Record<SkillKind, KindInfo> = {
   tone: { get unit() { return L('cents of wavering', 'Cent Schwankung'); }, steps: [40, 28, 20, 14, 9], lowerIsBetter: true, get describe() { return L('a tone held for five seconds, steadier', 'ein Ton fünf Sekunden gehalten, ruhiger'); } },
   // sung patterns in the game: how many notes a minute were found on pitch, one after the other
   sing: { get unit() { return L('notes a minute on pitch', 'Töne pro Minute getroffen'); }, steps: [30, 45, 60, 80, 100], lowerIsBetter: false, get describe() { return L('sung patterns: every note found, then more fluently', 'gesungene Muster: jeder Ton getroffen, dann flüssiger'); } },
+  // by ear: of a round of motifs, chords or intervals, how many were found at the first try without help, in %
+  ear: { get unit() { return L('% found by ear at the first try', '% nach Gehör beim ersten Versuch'); }, steps: [50, 65, 80, 90, 100], lowerIsBetter: false, get describe() { return L('heard, then played or sung back without looking: more of them at the first try', 'gehört, dann ohne Hinsehen nachgespielt oder nachgesungen: mehr davon beim ersten Versuch'); } },
 };
 
 export const RUST_AFTER_MS = 7 * 24 * 3600 * 1000;
+
+/** Days until a skill measured clean on so many days is to be confirmed again. */
+export const reviewGap = (days: number): number => [2, 2, 5, 12, 30, 60][Math.max(0, Math.min(5, days))];
 export const kindOf = (key: string): SkillKind => key.slice(0, key.indexOf(':')) as SkillKind;
 
 /** Level a single measurement is worth, 0 to 5 (the fifth bar level needs repeated proof, see record). */
@@ -91,10 +104,18 @@ export class Skills {
       return { key, before, after: before };
     }
     if (checked) rec.strings = 6;
-    rec.best = info.lowerIsBetter ? Math.min(rec.best, value) : Math.max(rec.best, value);
+    const better = (a: number, b: number): number => (info.lowerIsBetter ? Math.min(a, b) : Math.max(a, b));
+    rec.best = better(rec.best, value);
     // a new day on which it was measured clean (days in local time)
-    const day = (t: number): string => new Date(t).toDateString();
-    if (!rec.last || day(rec.last) !== day(now)) rec.days = (rec.days ?? (rec.last ? 1 : 0)) + 1;
+    const d = dayOf(now);
+    if (!rec.last || dayOf(rec.last) !== d) rec.days = (rec.days ?? (rec.last ? 1 : 0)) + 1;
+    // the first try of a day is the honest one: practice within a day flatters
+    if (!rec.cold || rec.cold[0] !== d) rec.cold = [d, value];
+    const h = (rec.h ??= []);
+    const lastDay = h[h.length - 1];
+    if (lastDay && lastDay[0] === d) lastDay[1] = better(lastDay[1], value);
+    else h.push([d, value]);
+    if (h.length > HISTORY) h.splice(0, h.length - HISTORY);
     rec.last = now;
     let level = levelFor(kind, value);
     if (kind === 'bar' && level === 5) {
@@ -104,6 +125,17 @@ export class Skills {
     }
     rec.level = Math.max(rec.level, level);
     return { key, before, after: rec.level };
+  }
+
+  /**
+   * Is a skill due to be confirmed again? The more days it has been measured clean on, the longer it keeps:
+   * after one day it comes back after two, then after five, twelve, thirty and sixty days. Spaced like this,
+   * what is learned is kept far better than when it is played often within a few days and then left.
+   */
+  due(key: string, now: number): boolean {
+    const rec = this.data[key];
+    if (!rec || rec.level < 1 || !rec.last) return false;
+    return now - rec.last >= reviewGap(rec.days ?? 1) * DAY_MS;
   }
 
   rusty(key: string, now: number): boolean {

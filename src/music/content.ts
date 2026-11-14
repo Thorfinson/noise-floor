@@ -3,7 +3,8 @@ import { L } from '../core/i18n';
 import { store } from '../core/store';
 import { pianoBook } from './pianobook';
 import { SONGBOOK } from './songbook';
-import { CHORDS, midiToTab as place, OPEN_STRINGS, pianoChord, type Chord } from './theory';
+import { EXERCISES } from './exercises';
+import { CHORDS, midiToTab as place, OPEN_STRINGS, OVERTONE_STEPS, pianoChord, type Chord } from './theory';
 
 /** One step of a tab: a plucked note (with others struck at the same moment), or a strummed chord. */
 export interface TabNote {
@@ -52,6 +53,10 @@ export interface Song {
   custom?: boolean;
   /** a version of another song: the id of the full one */
   of?: string;
+  /** an exercise of the app's own (a riff, the pentatonic, a picking pattern), not a song: never chosen as the song of the session */
+  exercise?: boolean;
+  /** for the guitar only: the piano book and the voice leave it out */
+  guitarOnly?: boolean;
 }
 
 /** Bars of strums: one chord a bar, so many strums in each. */
@@ -115,6 +120,8 @@ export const SONGS: Song[] = [
     ]),
   },
   ...SONGBOOK,
+  // riffs, power chords, the pentatonic and picking patterns: the guitar beyond open chords
+  ...EXERCISES(),
 ];
 
 /**
@@ -201,6 +208,10 @@ export interface PianoNote {
   chord?: string;
   /** the chord whose keys are played one after the other from this note on: printed above it */
   over?: string;
+  /** a key for the left hand: the root of the chord, an octave under the right hand */
+  left?: boolean;
+  /** a key the left hand strikes together with this one: the root of the bar's chord, under the melody */
+  bass?: number;
 }
 
 /** A five-finger pattern in a hand position. The right thumb is finger 1 on the lowest key, the left on the highest. */
@@ -262,6 +273,8 @@ export interface PianoPiece {
   kind?: 'melody' | 'chords' | 'broken';
   /** a version of another piece: the id of the full one */
   of?: string;
+  /** the version for both hands: the left hand strikes the root of each chord under the right */
+  hands?: boolean;
   /** the part of the song a phrase begins: "Verse", "Chorus" */
   parts?: (string | undefined)[];
   /** a song that is played in another key here than on the guitar: the chords it has there, in order of appearance */
@@ -357,7 +370,162 @@ export const PIANO_PIECES: PianoPiece[] = [
 ];
 
 /** Every piece: the four the app began with, the piano book, and the player's own. */
-export const allPieces = (): PianoPiece[] => [...PIANO_PIECES, ...pianoBook(), ...store.pieces];
+/**
+ * A piece of chords for both hands: on the first beat of each bar, and wherever the chord changes, the left
+ * hand strikes the root of the chord an octave below the right hand, with the little finger; the right hand
+ * strikes the chord on the beats after it. Bass and chord in turn, the first way of playing with both hands
+ * that piano courses teach for songs with chords. Struck one after the other, each can be heard for what it
+ * is: a root struck together with its chord is drowned by it, since all its upper partials are the chord's.
+ */
+export function handsVersion(p: PianoPiece): PianoPiece | null {
+  if (p.kind !== 'chords' || p.of || p.custom) return null;
+  const bar = p.bar ?? p.beat * 4;
+  const phrases = p.phrases.map((ph, k) => {
+    const { at } = noteTimes(ph);
+    const lead = p.leads?.[k] ?? 0;
+    const barOf = (u: number): number => Math.floor((u - lead) / bar + 1e-6);
+    const out: PianoNote[] = [];
+    ph.forEach((n, i) => {
+      if (!n.chord) return void out.push({ ...n });
+      const first = i === 0 || ph[i - 1].chord !== n.chord || barOf(at[i]) !== barOf(at[i - 1]);
+      if (!first) return void out.push({ ...n });
+      const root = pianoChord(n.chord).midis[0] - 12;
+      const more = ph[i + 1]?.chord === n.chord && barOf(at[i + 1]) === barOf(at[i]);
+      const len = n.len ?? 1;
+      // the root takes this beat when the chord is struck again in the bar; otherwise the two share it, where
+      // both halves stay long enough to be heard (the listener needs some 0.45 s of a chord); where not, the
+      // right hand keeps the beat alone
+      if (more) out.push({ midi: root, fg: 5, left: true, ...(len !== 1 ? { len } : {}) });
+      else if ((len / 2) * p.noteDur >= 0.45) {
+        out.push({ midi: root, fg: 5, left: true, ...(len / 2 !== 1 ? { len: len / 2 } : {}) });
+        out.push({ ...n, ...(len / 2 !== 1 ? { len: len / 2 } : { len: undefined }) });
+      } else out.push({ ...n });
+    });
+    return out;
+  });
+  // a piece whose bars give the left hand no room is not one for both hands
+  if (!phrases.some((ph) => ph.some((n) => n.left))) return null;
+  return {
+    ...p,
+    id: `${p.id}~hands`,
+    get title() {
+      return L(`${p.title} · both hands`, `${p.title} · beide Hände`);
+    },
+    of: p.id,
+    hands: true,
+    hand: 'both hands',
+    phrases,
+  };
+}
+
+/**
+ * The chord of each bar of a melody, from the melody itself: I, IV or V of its key (vi where none of them
+ * holds the note on the first beat), the one that holds that note and most of the bar. Folk tunes and
+ * children's songs are made of these; a tune that leaves its key, or a bar none of them fits, gets none there.
+ * Returns, per bar, the chord (its root, 0 to 11, and its tones in semitones above it) or null.
+ */
+export function harmonize(notes: { u: number; len: number; midi: number }[], bar: number, lead: number, bars: number): ({ root: number; tones: number[] } | null)[] | null {
+  const major = [0, 2, 4, 5, 7, 9, 11];
+  let key = -1;
+  let fewest = Infinity;
+  for (let r = 0; r < 12; r++) {
+    const out = notes.filter((n) => !major.includes((((n.midi - r) % 12) + 12) % 12)).length;
+    if (out < fewest) {
+      fewest = out;
+      key = r;
+    }
+  }
+  // a tune with notes outside its key in more than one in ten is not one for three chords
+  if (fewest > notes.length / 10) return null;
+  const chords = [
+    { root: key, tones: [0, 4, 7] },
+    { root: (key + 7) % 12, tones: [0, 4, 7] },
+    { root: (key + 5) % 12, tones: [0, 4, 7] },
+    { root: (key + 9) % 12, tones: [0, 3, 7] },
+  ];
+  const holds = (c: { root: number; tones: number[] }, midi: number): boolean => c.tones.includes((((midi - c.root) % 12) + 12) % 12);
+  const out: ({ root: number; tones: number[] } | null)[] = [];
+  for (let b = 0; b < bars; b++) {
+    const from = lead + b * bar;
+    const inBar = notes.filter((n) => n.u >= from - 1e-6 && n.u < from + bar - 1e-6);
+    const first = inBar.find((n) => Math.abs(n.u - from) < 1e-6);
+    if (!first) {
+      out.push(null);
+      continue;
+    }
+    // the chords that hold the first note, the one holding the most of the bar first; I before V before IV before vi
+    const fits = chords.filter((c) => holds(c, first.midi));
+    if (!fits.length) {
+      out.push(null);
+      continue;
+    }
+    const weight = (c: { root: number; tones: number[] }): number => inBar.filter((n) => holds(c, n.midi)).reduce((s, n) => s + n.len, 0);
+    const best = fits.reduce((a, c) => (weight(c) > weight(a) + 1e-9 ? c : a), fits[0]);
+    out.push(best);
+  }
+  return out;
+}
+
+/**
+ * Both hands together: the melody in the right hand, and on the first beat of each bar the root of the bar's
+ * chord in the left, struck with it. Tested on real piano recordings before it was built: a bass key with a
+ * melody key is heard as the pair (68 of 82 pairs, never taken for the melody alone or another bass), except
+ * where the melody key lies among the bass's own overtones; there the left hand rests for that bar. A bass
+ * struck under a whole chord was not heard (0 of 8): that is why the chords' version plays root, then chord.
+ */
+/** How far above the bass the melody key may lie: the distances the real recordings were tested at and passed. */
+export const TOGETHER_GAPS = [13, 22];
+
+export function togetherVersion(p: PianoPiece): PianoPiece | null {
+  if ((p.kind ?? 'melody') !== 'melody' || p.of || p.custom || !p.bar || p.hand === 'left hand') return null;
+  const bar = p.bar;
+  const flat: { u: number; len: number; midi: number; k: number; i: number }[] = [];
+  let u = 0;
+  p.phrases.forEach((ph, k) => ph.forEach((n, i) => (flat.push({ u, len: n.len ?? 1, midi: n.midi, k, i }), (u += n.len ?? 1))));
+  const lead = p.leads?.[0] ?? 0;
+  const bars = Math.ceil((u - lead) / bar - 1e-6);
+  const roots = harmonize(flat, bar, lead, bars);
+  if (!roots) return null;
+  const bassAt = new Map<string, number>();
+  roots.forEach((chord, b) => {
+    if (chord === null) return;
+    const first = flat.find((n) => Math.abs(n.u - (lead + b * bar)) < 1e-6);
+    // the listener needs some 0.45 s of the pair
+    if (!first || first.len * p.noteDur < 0.45) return;
+    // the root between G2 and F♯3 under the right hand; where the melody key lies in its overtones, the chord's
+    // third (as a teacher writes C/E), then its fifth; where none will do, the left hand rests in this bar
+    for (const tone of chord.tones) {
+      const bass = 43 + ((chord.root + tone - 7 + 24) % 12);
+      const gap = first.midi - bass;
+      if (gap >= TOGETHER_GAPS[0] && gap <= TOGETHER_GAPS[1] && !OVERTONE_STEPS.includes(gap)) {
+        bassAt.set(`${first.k}:${first.i}`, bass);
+        break;
+      }
+    }
+  });
+  if (bassAt.size < 2) return null;
+  return {
+    ...p,
+    id: `${p.id}~together`,
+    get title() {
+      return L(`${p.title} · both hands together`, `${p.title} · beide Hände zusammen`);
+    },
+    of: p.id,
+    hands: true,
+    hand: 'both hands',
+    phrases: p.phrases.map((ph, k) => ph.map((n, i) => (bassAt.has(`${k}:${i}`) ? { ...n, bass: bassAt.get(`${k}:${i}`) } : { ...n }))),
+  };
+}
+
+let withHands: PianoPiece[] | null = null;
+/** Every piece: the built-in ones, the piano book, the versions for both hands, and the player's own. */
+export const allPieces = (): PianoPiece[] => {
+  if (!withHands) {
+    const book = [...PIANO_PIECES, ...pianoBook()];
+    withHands = [...book, ...book.map(handsVersion).filter((p): p is PianoPiece => !!p), ...book.map(togetherVersion).filter((p): p is PianoPiece => !!p)];
+  }
+  return [...withHands, ...store.pieces];
+};
 export const findPiece = (id: string | undefined): PianoPiece => allPieces().find((p) => p.id === id) ?? PIANO_PIECES[0];
 
 const sameAs = new WeakMap<PianoPiece, number[]>();
@@ -373,7 +541,7 @@ export function phraseKey(piece: PianoPiece, phrase: number): string {
 }
 
 /** Every key a step of a piece asks for: the one key of a note, or all keys of a chord. */
-export const stepKeys = (n: PianoNote): number[] => (n.chord ? pianoChord(n.chord).midis : [n.midi]);
+export const stepKeys = (n: PianoNote): number[] => (n.chord ? pianoChord(n.chord).midis : n.bass ? [n.bass, n.midi] : [n.midi]);
 
 /** Start of every note in note units, and the total length. */
 export function noteTimes(notes: { len?: number }[]): { at: number[]; total: number } {

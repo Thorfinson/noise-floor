@@ -197,6 +197,12 @@ export function pieceProfile(piece: PianoPiece): Profile {
       reasons.push(L(`a change about every ${each < 10 ? each.toFixed(1) : Math.round(each)} s at full speed`, `etwa alle ${each < 10 ? each.toFixed(1).replace('.', ',') : Math.round(each)} s ein Wechsel bei vollem Tempo`));
     }
   }
+  // both hands: the left strikes the root under every chord
+  if (piece.hands) {
+    points += 1;
+    const together = piece.phrases.some((ph) => ph.some((n) => n.bass));
+    reasons.unshift(together ? L('both hands together: a bass in the left on the bar, with the melody', 'beide Hände zusammen: ein Bass links auf dem Takt, mit der Melodie') : L('both hands: the root in the left, then the chord in the right', 'beide Hände: der Grundton links, dann der Akkord rechts'));
+  }
   // how much there is to learn: phrases that differ from each other
   const different = new Set(piece.phrases.map((_, i) => phraseKey(piece, i))).size;
   if (different > 6) {
@@ -257,7 +263,8 @@ export function finished(inst: Instrument, id: string): boolean {
 export function currentSong(): Song {
   const chosen = store.current.guitar;
   if (chosen && allSongs().some((s) => s.id === chosen)) return findSong(chosen);
-  const order = songsByDifficulty();
+  // the session's song is a song: exercises are chosen by the player, or come with their own stages
+  const order = songsByDifficulty().filter((s) => !s.exercise);
   return order.find((s) => !finished('guitar', s.id)) ?? order[0];
 }
 

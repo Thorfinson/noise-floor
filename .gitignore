@@ -12,6 +12,7 @@ tests/real/notes/
 tests/real/pieces/
 tests/real/chords/
 tests/real/vocadito/
+tests/real/legato/
 *.wav
 
 # what the browser checks write: screenshots and recordings

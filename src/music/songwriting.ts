@@ -35,6 +35,8 @@ export const STRUMS = {
   six: { slots: 'D..D..', beat: 3 },
   /** two slow beats of three, all six strummed: down, down-up, down, down-up */
   roll: { slots: 'DDUDDU', beat: 3 },
+  /** eight strokes down, short and even: how power chords are played */
+  chug: { slots: 'DDDDDDDD', beat: 2 },
 } as const;
 
 /**

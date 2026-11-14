@@ -13,6 +13,8 @@ export type SimTarget =
   | { kind: 'note'; midi: number; piano?: boolean; string?: number; detune?: number; voice?: boolean }
   /** wrong: the chord "Wrong note" plays instead, where the screen knows a likely mistake (another chord of the piece) */
   | { kind: 'chord'; id: string; piano?: boolean; wrong?: string }
+  /** a stroke across muted strings: rhythm alone */
+  | { kind: 'mute' }
   | null;
 
 let target: SimTarget = null;
@@ -29,6 +31,10 @@ export function simPlay(what: 'right' | 'wrong' | 'muted' | 'buzz' | 'damp'): vo
     return;
   }
   if (!t) return;
+  if (t.kind === 'mute') {
+    engine.simMute();
+    return;
+  }
   if (t.kind === 'chord') {
     if (t.piano) {
       // the wrong chord on the piano: of four plain ones, the one that has least in common with the right one

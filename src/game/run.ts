@@ -64,7 +64,9 @@ function piecePool(piece: PianoPiece): Phrase[] {
   const out: Phrase[] = [];
   const seen = new Set<string>();
   const struck: string[] = [];
-  piece.phrases.forEach((keys, i) => {
+  piece.phrases.forEach((all, i) => {
+    // the game is played with the right hand: the left hand's roots of a piece for both hands are left out
+    const keys = all.filter((k) => !k.left);
     if (keys.every((k) => k.chord)) {
       for (const k of keys) if (k.chord !== struck[struck.length - 1]) struck.push(k.chord!);
       return;

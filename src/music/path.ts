@@ -8,10 +8,14 @@
  */
 import { L } from '../core/i18n';
 import { store, type Instrument } from '../core/store';
-import { CHORD_PAIRS, FINGER_PATTERNS, KEY_CHORDS, KEY_CHORDS_ON, KEY_PAIRS, PIANO_PATTERNS, PIANO_SCALES } from './content';
+import { allPieces, CHORD_PAIRS, FINGER_PATTERNS, KEY_CHORDS, KEY_CHORDS_ON, KEY_PAIRS, PIANO_PATTERNS, PIANO_SCALES } from './content';
 import { chordKey, chordWeight, finished, LEVELS, pairKey, pieceProfile, piecesByDifficulty, songProfile, songsByDifficulty } from './difficulty';
 import { chordName, CHORDS, noteName } from './theory';
 import { songsToSing, voiceProfile } from './voicebook';
+import { STRUM_PATTERNS, strumKey } from './strums';
+import { RHYTHM_LEVELS, rhythmKey } from './rhythms';
+import { PENTATONIC, PICKING, POWER_SONGS, RIFFS } from './exercises';
+import type { Song } from './content';
 import { VOICE_PATTERNS } from '../game/run';
 
 export interface PathItem {
@@ -69,6 +73,15 @@ const SHORT = (): Record<string, string> => ({
   vsongs4: L('Hard songs', 'Schwere Songs'),
   vfine: L('Nearer, steadier', 'Genauer, ruhiger'),
   vscale: L('The scale', 'Die Tonleiter'),
+  ear: L('By ear', 'Nach Gehör'),
+  strums: L('Strumming', 'Schlagmuster'),
+  bothhands: L('Both hands', 'Beide Hände'),
+  together: L('Together', 'Zusammen'),
+  riffs: L('Riffs, power chords', 'Riffs, Powerchords'),
+  pent: L('Pentatonic', 'Pentatonik'),
+  picking: L('Picking', 'Zupfmuster'),
+  rhythm: L('Rhythm', 'Rhythmus'),
+  slurs: L('Slurs', 'Bindungen'),
 });
 /** The levels as they stand before a plural noun in German: "der leichten Stücke". */
 const LEVEL_ADJ_DE = ['', 'leichten', 'mittleren', 'anspruchsvollen', 'schweren'];
@@ -90,6 +103,34 @@ function stage(id: string, title: string, goal: string, items: PathItem[], side 
   const done = items.filter((i) => i.state === 'done').length;
   const first = items.find((i) => i.state === 'work') ?? items.find((i) => i.state === 'new');
   return { id, title, goal, items, done, state: side ? 'side' : done === items.length && items.length > 0 ? 'done' : 'ahead', next: first ? first.label : '', nextHref: first?.href, short: SHORT()[id] ?? title };
+}
+
+/** Beside the path: reading rhythm, level by level, on the guitar (muted strings) or the piano (one key). */
+function rhythmStage(piano: boolean, now: number): Stage {
+  return stage(
+    'rhythm',
+    L('Reading rhythm', 'Rhythmus lesen'),
+    L('Every level of note values in time at 72 beats a minute: quarters and halves, eighths, rests, dotted quarters, off the beat, sixteenths.', 'Jede Stufe der Notenwerte im Takt bei 72 Schlägen pro Minute: Viertel und Halbe, Achtel, Pausen, punktierte Viertel, gegen den Schlag, Sechzehntel.'),
+    RHYTHM_LEVELS().map((l) => skillItem(rhythmKey(l.n, piano), l.name, 3, (v) => `${Math.round(v)} bpm`, now, `#/rhythm/${l.n}`)),
+    true,
+  );
+}
+
+/** Beside the path: playing by ear, on the guitar or the piano. Months, not days; never in the way. */
+function earStage(piano: boolean, now: number): Stage {
+  const pct = (v: number): string => L(`${Math.round(v)}% at the first try`, `${Math.round(v)} % beim ersten Versuch`);
+  const p = piano ? 'p.' : '';
+  return stage(
+    'ear',
+    L('By ear', 'Nach Gehör'),
+    L('Motifs from your songs played back, chords told apart, and sung before they are played: 80% of a round at the first try, without looking.', 'Motive aus deinen Songs nachgespielt, Akkorde unterschieden, und gesungen, bevor sie gespielt werden: 80 % einer Runde beim ersten Versuch, ohne hinzusehen.'),
+    [
+      skillItem(`ear:${p}motif`, L('Motifs played back', 'Motive nachgespielt'), 3, pct, now, '#/ear/motif'),
+      skillItem(`ear:${p}chords`, L('Chords told apart', 'Akkorde unterschieden'), 3, pct, now, '#/ear/chords'),
+      skillItem(`ear:${p}sing`, L('Sung, then played', 'Erst gesungen, dann gespielt'), 3, pct, now, '#/ear/sing'),
+    ],
+    true,
+  );
 }
 
 export function learningPath(inst: Instrument, now = Date.now()): Stage[] {
@@ -127,6 +168,7 @@ export function learningPath(inst: Instrument, now = Date.now()): Stage[] {
     stages.push(songStage(2, L('Moderate songs: wider, with leaps', 'Mittlere Songs: weiter, mit Sprüngen')));
     stages.push(songStage(3, L('Demanding songs: wide leaps, quicker', 'Anspruchsvolle Songs: weite Sprünge, schneller')));
     stages.push(songStage(4, L('Hard songs: wide, quick, notes outside the key', 'Schwere Songs: weit, schnell, Töne außerhalb der Tonart')));
+    stages.push(stage('ear', L('By ear: intervals and a second voice', 'Nach Gehör: Intervalle und eine zweite Stimme'), L('Intervals sung from a given note, and a second voice a third below a tune: 80% at the first try.', 'Intervalle von einem gegebenen Ton aus gesungen, und eine zweite Stimme eine Terz unter einer Melodie: 80 % beim ersten Versuch.'), [skillItem('ear:v.interval', L('Intervals sung', 'Intervalle gesungen'), 3, (v) => L(`${Math.round(v)}% at the first try`, `${Math.round(v)} % beim ersten Versuch`), now, '#/ear'), skillItem('ear:v.harmony', L('A second voice', 'Eine zweite Stimme'), 3, (v) => L(`${Math.round(v)}% of its notes`, `${Math.round(v)} % ihrer Töne`), now, `#/sing/${encodeURIComponent(songsToSing()[0]?.id ?? '')}/2`)], true));
     stages.push(stage('vfine', L('Nearer and steadier', 'Genauer und ruhiger'), L('Tones sung back within 18 cents, a tone held within 14: where most listeners no longer hear a difference. A matter of months.', 'Töne auf 18 Cent genau nachgesungen, ein Ton auf 14 Cent ruhig gehalten: Dort hören die meisten keinen Unterschied mehr. Eine Sache von Monaten.'), [skillItem('pitch:match', L('Tones sung back', 'Nachgesungene Töne'), 4, cents, now, '#/match'), skillItem('tone:steady', L('A tone held steady', 'Ein ruhig gehaltener Ton'), 4, cents, now, '#/hold')], true));
     stages.push(stage('vscale', L('The sung scale', 'Die gesungene Tonleiter'), L('Eight notes up, each held on pitch: the Mute at the end of a voice run.', 'Acht Töne hinauf, jeder sauber gehalten: die Stille am Ende einer Stimmrunde.'), [skillItem('scale:v.major', L('Major scale, sung', 'Dur-Tonleiter, gesungen'), 1, secs, now, '#/run/sing')], true));
   } else if (inst === 'piano') {
@@ -160,6 +202,30 @@ export function learningPath(inst: Instrument, now = Date.now()): Stage[] {
     stages.push(pieceStage(3, L('Demanding pieces: black keys, broken chords, quicker', 'Anspruchsvolle Stücke: schwarze Tasten, gebrochene Akkorde, schneller')));
     stages.push(pieceStage(4, L('Hard pieces: many chords, quick and wide', 'Schwere Stücke: viele Akkorde, schnell und weit')));
     stages.push(stage('scales', L('Scales', 'Tonleitern'), L('Every key ringing on, thumb passing under.', 'Jede Taste klingt weiter, mit Daumenuntersatz.'), PIANO_SCALES.map((s) => skillItem(`scale:${s.id}`, s.name, 1, secs, now, '#/run/keys/1')), true));
+    // both hands: the easiest pieces of chords in their version for both hands
+    const two = allPieces()
+      .filter((p) => p.hands && p.id.endsWith('~hands'))
+      .map((p) => ({ p, prof: pieceProfile(p) }))
+      .sort((a, b) => a.prof.points - b.prof.points)
+      .slice(0, SONGS_PER_STAGE);
+    stages.push(stage('bothhands', L('Both hands: root and chord', 'Beide Hände: Grundton und Akkord'), L('Five pieces of chords with both hands at full speed: the root in the left on the bar, the chord in the right after it.', 'Fünf Stücke aus Akkorden mit beiden Händen im vollen Tempo: der Grundton links auf dem Takt, der Akkord rechts danach.'), two.map(({ p }): PathItem => ({ label: p.title, state: finished('piano', p.id) ? 'done' : begun.has(p.id) ? 'work' : 'new', rusty: false, note: L('root and chord', 'Grundton und Akkord'), href: `#/piano/${encodeURIComponent(p.id)}` })), true));
+    // both hands together: the easiest melodies with a bass struck under them on the bar
+    const together = allPieces()
+      .filter((p) => p.id.endsWith('~together'))
+      .map((p) => ({ p, prof: pieceProfile(p) }))
+      .sort((a, b) => a.prof.points - b.prof.points)
+      .slice(0, SONGS_PER_STAGE);
+    stages.push(
+      stage(
+        'together',
+        L('Both hands together: bass and melody', 'Beide Hände zusammen: Bass und Melodie'),
+        L('Five melodies at full speed with a bass in the left hand on the bar, struck with the melody key: the step from one hand after the other to both at once.', 'Fünf Melodien im vollen Tempo mit einem Bass links auf dem Takt, zusammen mit der Melodietaste angeschlagen: der Schritt von einer Hand nach der anderen zu beiden zugleich.'),
+        together.map(({ p, prof }): PathItem => ({ label: p.title, state: finished('piano', p.id) ? 'done' : Object.keys(store.skills.data).some((k) => k.startsWith(`bar:${p.id}:`)) ? 'work' : 'new', rusty: false, note: LEVELS[prof.level], href: `#/piano/${encodeURIComponent(p.id)}` })),
+        true,
+      ),
+    );
+    stages.push(rhythmStage(true, now));
+    stages.push(earStage(true, now));
     stages.push(stage('morekeys', L('Chords with black keys and sevenths', 'Akkorde mit schwarzen Tasten und Septimen'), L('A black key in the middle, a fourth key, a shape that starts on a black key: they come with the songs that need them.', 'Eine schwarze Taste in der Mitte, eine vierte Taste, ein Griff, der auf einer schwarzen Taste beginnt: Sie kommen mit den Songs, die sie brauchen.'), KEY_CHORDS_ON.map(chord), true));
   } else {
     const chord = (id: string): PathItem => skillItem(`chord:${id}`, CHORDS[id].name, 1, (b) => L(`${secs(b)} from cold`, `${secs(b)} aus dem Stand`), now, `#/chord/${encodeURIComponent(id)}`);
@@ -175,7 +241,7 @@ export function learningPath(inst: Instrument, now = Date.now()): Stage[] {
      * Shown are the ones that are done, then the ones begun, then the easiest that are still new.
      */
     const songStage = (level: number, title: string): Stage => {
-      const pool = songs.filter((x) => x.prof.level === level && !x.s.of);
+      const pool = songs.filter((x) => x.prof.level === level && !x.s.of && !x.s.exercise);
       const fin = pool.filter((x) => finished('guitar', x.s.id));
       const begun = pool.filter((x) => !fin.includes(x) && (x.s.id === store.current.guitar || Object.keys(store.skills.data).some((k) => k.startsWith(`bar:${x.s.id}:`))));
       const fresh = pool.filter((x) => !fin.includes(x) && !begun.includes(x));
@@ -196,6 +262,31 @@ export function learningPath(inst: Instrument, now = Date.now()): Stage[] {
     stages.push(songStage(3, L('Demanding songs: the F chord, quick changes, picking', 'Anspruchsvolle Songs: der F-Akkord, schnelle Wechsel, Zupfen')));
     stages.push(songStage(4, L('Hard songs: barre chords one after the other', 'Schwere Songs: Barré-Akkorde, einer nach dem anderen')));
     stages.push(stage('barre', L('The barre ladder', 'Die Barré-Leiter'), L('From the small barre of F over the small shapes to the full F♯m and Bm. A matter of months: a few tries a day.', 'Vom kleinen Barré des F über die kleinen Griffe bis zum vollen F♯m und Bm. Eine Sache von Monaten: ein paar Versuche am Tag.'), BARRE_LADDER.map(chord), true));
+    // the guitar beyond open chords: riffs and power chords, the pentatonic, picking patterns
+    const piece = (s: Song): PathItem => ({ label: s.title, state: finished('guitar', s.id) ? 'done' : Object.keys(store.skills.data).some((k) => k.startsWith(`bar:${s.id}:`)) ? 'work' : 'new', rusty: false, note: LEVELS[songProfile(s).level].toLowerCase(), href: `#/song/${encodeURIComponent(s.id)}` });
+    stages.push(stage('riffs', L('Riffs and power chords', 'Riffs und Powerchords'), L('The four riffs on the low strings, and five songs in power chords, clean at full speed: where rock guitar begins.', 'Die vier Riffs auf den tiefen Saiten und fünf Songs in Powerchords, sauber im vollen Tempo: Da beginnt die Rockgitarre.'), [...RIFFS(), ...POWER_SONGS().slice(0, 5)].map(piece), true));
+    stages.push(stage('pent', L('The minor pentatonic', 'Die Moll-Pentatonik'), L('The scale at the fifth fret up and down, and three licks in it, clean at full speed: the notes of almost every blues and rock solo.', 'Die Tonleiter im fünften Bund hinauf und hinab und drei Licks darin, sauber im vollen Tempo: die Töne fast jedes Blues- und Rocksolos.'), PENTATONIC().map(piece), true));
+    stages.push(stage('picking', L('Picking patterns', 'Zupfmuster'), L('Five patterns of the right hand over open chords, clean at full speed: the thumb on the bass, the fingers on the thin strings.', 'Fünf Muster der rechten Hand über offenen Akkorden, sauber im vollen Tempo: der Daumen auf dem Bass, die Finger auf den dünnen Saiten.'), PICKING().map(piece), true));
+    stages.push(
+      stage(
+        'strums',
+        L('Strumming patterns', 'Schlagmuster'),
+        L('Each pattern in time at 72 beats a minute with a change of chord: first on muted strings, then on one chord, then with a change.', 'Jedes Muster im Takt bei 72 Schlägen pro Minute mit Akkordwechsel: erst abgedämpft, dann auf einem Akkord, dann mit Wechsel.'),
+        STRUM_PATTERNS().map((p) => skillItem(strumKey(p.id), p.name, 3, (v) => `${Math.round(v)} bpm`, now, `#/strum/${p.id}`)),
+        true,
+      ),
+    );
+    stages.push(
+      stage(
+        'slurs',
+        L('Hammer-on and pull-off', 'Hammer-on und Pull-off'),
+        L('Six patterns, every note sounding through four rounds at 80 beats a minute: notes the left hand makes sound without a pluck.', 'Sechs Muster, jeder Ton klingt durch vier Runden bei 80 Schlägen pro Minute: Töne, die die linke Hand ohne Zupfen zum Klingen bringt.'),
+        [1, 2, 3, 4, 5, 6].map((n) => skillItem(`finger:slur-${n}`, L(`Pattern ${n}`, `Muster ${n}`), 2, (v) => `${Math.round(v)} bpm`, now, `#/slur/${n}`)),
+        true,
+      ),
+    );
+    stages.push(rhythmStage(false, now));
+    stages.push(earStage(false, now));
     stages.push(stage('fingers', L('Independent fingers', 'Unabhängige Finger'), L('Each pattern clean at 100 beats a minute, one finger per fret.', 'Jedes Muster sauber bei 100 Schlägen pro Minute, ein Finger pro Bund.'), FINGER_PATTERNS.map((p) => skillItem(`finger:${p.id}`, p.name, 3, (b) => `${Math.round(b)} bpm`, now, '#/run/fingers')), true));
   }
   const here = stages.find((s) => s.state === 'ahead');

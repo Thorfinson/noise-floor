@@ -1,7 +1,9 @@
 /** What the app measures, named as a person would say it, in the language shown. */
+import { RHYTHM_LEVELS } from './rhythms';
 import { L } from '../core/i18n';
 import { PATTERNS } from '../game/stride';
 import { allPieces, allSongs, FINGER_PATTERNS, PIANO_PATTERNS, PIANO_SCALES } from './content';
+import { STRUM_PATTERNS } from './strums';
 import { chordName, CHORDS } from './theory';
 import { voiceBook } from './voicebook';
 
@@ -14,6 +16,12 @@ export function skillLabel(key: string): string {
   if (kind === 'sing') {
     const name = { step: L('a step', 'ein Schritt'), third: L('a third', 'eine Terz'), chord: 'do-mi-sol', up: L('five up', 'fünf aufwärts'), down: L('five down', 'fünf abwärts'), thirds: L('thirds', 'Terzen') }[a0] ?? a0;
     return L(`Sung: ${name}`, `Gesungen: ${name}`);
+  }
+  if (kind === 'ear') {
+    const what = a0.replace(/^[pv]\./, '');
+    const where = a0.startsWith('p.') ? L(' on the piano', ' am Klavier') : '';
+    const name = { motif: L('Motifs played back', 'Motive nachgespielt'), chords: L('Chords told apart', 'Akkorde unterschieden'), sing: L('Sung, then played', 'Erst gesungen, dann gespielt'), interval: L('Intervals sung', 'Intervalle gesungen'), harmony: L('A second voice', 'Eine zweite Stimme') }[what] ?? what;
+    return L(`By ear: ${name.toLowerCase()}${where}`, `Nach Gehör: ${name}${where}`);
   }
   if (kind === 'scale' && a0 === 'v.major') return L('Sung major scale', 'Gesungene Dur-Tonleiter');
   if (kind === 'beat' && a0.startsWith('v.')) {
@@ -30,9 +38,21 @@ export function skillLabel(key: string): string {
   if (kind === 'chord') return keys ? L(`${chordName(a, true)} on the piano`, `${chordName(a, true)} am Klavier`) : (CHORDS[a]?.name ?? a);
   if (kind === 'pair') return a.split('>').map((c) => (keys ? chordName(c, true) : (CHORDS[c]?.name ?? c))).join(' → ') + (keys ? L(' on the piano', ' am Klavier') : '');
   if (kind === 'scale') return PIANO_SCALES.find((s) => s.id === a)?.name ?? L(`${a} scale`, `Tonleiter ${a}`);
+  if (kind === 'beat' && a.startsWith('read-')) {
+    const lv = RHYTHM_LEVELS().find((l) => l.n === Number(a.slice(5)));
+    return L(`Reading rhythm${keys ? ' on the piano' : ''}: ${lv?.name.toLowerCase() ?? a}`, `Rhythmus lesen${keys ? ' am Klavier' : ''}: ${lv?.name ?? a}`);
+  }
+  if (kind === 'beat' && a.startsWith('strum-')) {
+    const name = STRUM_PATTERNS().find((p) => p.id === a.slice(6))?.name ?? a;
+    return L(`Strumming: ${name.toLowerCase()}`, `Schlagmuster: ${name}`);
+  }
   if (kind === 'beat') {
     const beat = PATTERNS.find((p) => p.id === a)?.name;
     return L(`In time${keys ? ' on the piano' : ''}: ${beat?.toLowerCase() ?? a}`, `Im Takt${keys ? ' am Klavier' : ''}: ${beat ?? a}`);
+  }
+  if (kind === 'finger' && a.startsWith('slur-')) {
+    const n = Number(a.slice(5));
+    return L(`Hammer-on and pull-off ${n}`, `Hammer-on und Pull-off ${n}`);
   }
   if (kind === 'finger') {
     const left = a.endsWith('-left');

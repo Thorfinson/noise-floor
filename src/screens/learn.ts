@@ -5,18 +5,28 @@
  */
 import type { ChordEvent, NoteEvent, StringResult, ThudEvent } from '../audio/listener';
 import { engine } from '../audio/engine';
+import { backing } from '../audio/backing';
 import { mixInto, strum, tone } from '../audio/synth';
 import { L } from '../core/i18n';
 import { Take, TEMPOS, type TakeStep } from '../core/playalong';
-import { store } from '../core/store';
+import { loadTake, saveTake, TAKE_MAX, TAKE_RATE, takeMeta } from '../core/takes';
+import { encodeWav, resample } from '../audio/wav';
+import { dayMonth } from '../core/i18n';
+import { store, type Instrument, type TakeMeta } from '../core/store';
 import { barKey, findPiece, findSong, noteTimes, phraseKey, shapeOf, songLines, stepKeys, stepMidis, type PianoNote, type PianoPiece, type Song, type TabNote } from '../music/content';
-import { barreStrings, changeTip, chordMidis, chordName, chordNotes, CHORDS, isBlackKey, keyName, keysAlike, keyTip, noteName, pianoChord, STRING_FULL, STRING_NAMES, stringName, strumIs, type Chord } from '../music/theory';
-import { $, cap, esc, hear, icon, keys, later, learnRing, micMeter, pianoEars, stopTimer, type Screen, type SessionCtx } from '../ui/dom';
+import { enlist, REVIEW_DAYS, reviewed, reviewKey, reviewLines } from '../music/review';
+import { barreStrings, changeTip, chordMidis, chordName, chordNotes, CHORDS, isBlackKey, keyName, keysAlike, keysId, keyTip, noteName, pianoChord, STRING_FULL, STRING_NAMES, stringName, strumIs, type Chord } from '../music/theory';
+import { $, $$, cap, esc, hear, icon, keys, later, learnRing, micMeter, pianoEars, stopTimer, type Screen, type SessionCtx } from '../ui/dom';
+import { melodyWords } from '../music/accompany';
+import { guitarA4, guitarSetup } from '../music/tuning';
+import { SING_ALONG } from '../music/lyrics';
 import { chordBox, chordMarks, fretboard, keyboard, keyRange, LEARN, noteStrip, playhead, tabLine, type Drawn, type KeyMark, type Mark, type StepLook } from '../ui/draw';
+import { staffLine } from '../ui/staff';
 import { practiceBar, setSimTarget, type SimTarget } from '../ui/practice';
 import { skillLabel } from './home';
 
-export const frame = (where: string, stage: string, bar: string, ctx?: SessionCtx, up: [string, string] = ['#/', L('Home', 'Start')]): string => `<header class="top"><div><a class="btn quiet" href="${ctx ? '#/' : up[0]}">${icon(ctx ? 'x' : 'left')}${ctx ? L('End session', 'Session beenden') : up[1]}</a></div>${ctx ? `<div class="c">${ctx.rail}</div><span id="where" hidden></span>` : `<div class="c" id="where">${where}</div>`}<div class="r">${micMeter()}</div></header>
+
+export const frame = (where: string, stage: string, bar: string, ctx?: SessionCtx, up: [string, string] = ['#/', L('Home', 'Start')]): string => `<header class="top"><div><a class="btn quiet" href="${ctx ? '#/' : up[0]}">${icon(ctx ? 'x' : 'left')}${ctx ? L('End session', 'Session beenden') : up[1]}</a></div>${ctx ? `<div class="c">${ctx.rail}</div><span id="where" hidden></span>` : `<div class="c" id="where">${where}${store.settings.instrument === 'guitar' && guitarSetup() ? ` · ${guitarSetup()}` : ''}</div>`}<div class="r">${micMeter()}</div></header><p class="sideways">${L('Turn the phone on its side: a line of music needs the width.', 'Dreh das Telefon quer: Eine Zeile Musik braucht die Breite.')}</p>
   <div class="stage">${stage}</div>${practiceBar()}<footer class="bar">${bar}</footer>`;
 
 export const nextStep = (ctx?: SessionCtx): string => (ctx ? `<button class="btn" id="nextstep">${ctx.after === L('the summary', 'die Zusammenfassung') ? L('Finish', 'Abschließen') : L('Next step', 'Nächster Schritt')}${icon('right')}</button>` : '');
@@ -47,6 +57,10 @@ interface Step {
   key?: PianoNote;
   /** piano: the chord whose keys are being played one after the other at this step */
   over?: string;
+  /** piano: a key for the left hand */
+  left?: boolean;
+  /** piano: a key of the left hand together with the right's (both hands together) */
+  both?: boolean;
 }
 
 interface Line {
@@ -143,7 +157,9 @@ export function pieceMaterial(piece: PianoPiece): Material {
     const steps = notes.map((n, i): Step => {
       if (n.over) over = n.over;
       if (n.chord) over = undefined;
-      return { midis: n.chord ? [] : [n.midi], chord: n.chord, at: at[i], bar: k, key: n, ...(over && !n.chord ? { over } : {}) };
+      // a key of the left hand struck with the melody's is judged as the two keys together, as a chord is
+      if (n.bass) return { midis: [], chord: keysId([n.bass, n.midi]), at: at[i], bar: k, key: n, both: true };
+      return { midis: n.chord ? [] : [n.midi], chord: n.chord, at: at[i], bar: k, key: n, ...(over && !n.chord && !n.left ? { over } : {}), ...(n.left ? { left: true } : {}) };
     });
     return { steps, bars: [k], units: total, clicks, tab: [], from: 0 };
   });
@@ -177,8 +193,13 @@ export function describe(m: Material): string {
   return s.stage === 0 ? L(`Two ${m.unit}s, starting at ${m.unit} ${line + 1}`, `Zwei ${unitDe(m, true)}, ab ${unitDe(m)} ${line + 1}`) : s.stage === 1 ? L(`With the click at ${s.tempo}%, from ${m.unit} ${line + 1}`, `Mit Klick bei ${s.tempo}%, ab ${unitDe(m)} ${line + 1}`) : L('The whole thing at full speed', 'Das Ganze in vollem Tempo');
 }
 
+/** Words under the notes of a melody (K): asked for once, they stay while the app is open. */
+const wordsOn = { on: false };
+
 interface Mode {
   stop: () => void;
+  /** a take is being played with the click */
+  running: () => boolean;
   note: (e: NoteEvent) => void;
   chord: (e: ChordEvent) => void;
   /** a hit after which nothing rang */
@@ -189,11 +210,38 @@ interface Mode {
 
 function lesson(root: HTMLElement, m: Material, wanted: string | undefined, ctx?: SessionCtx): () => void {
   const n = m.lines.length;
+  const inst: Instrument = m.piano ? 'piano' : 'guitar';
   let line = Math.min(n - 1, store.progress[m.id] ?? 0);
   const first = suggest(m, line);
-  let stage = wanted === '1' ? 0 : wanted === '2' ? 1 : wanted === '3' ? 2 : first.stage;
-  let tempo = first.tempo;
+  /**
+   * A visit to an old song: two lines, cold, at full speed and with no run-up. After a visit that fell apart
+   * the next one plays them with the click at 85%.
+   */
+  let review: { lines: number[]; relearn: boolean } | null = wanted === 'review' ? { lines: reviewLines(inst, m.id), relearn: !!store.reviews[reviewKey(inst, m.id)]?.relearn } : null;
+  if (review) line = review.lines[0];
+  let stage = review ? (review.relearn ? 1 : 2) : wanted === '1' ? 0 : wanted === '2' ? 1 : wanted === '3' ? 2 : first.stage;
+  let tempo = review?.relearn ? 85 : first.tempo;
   let mode: Mode | null = null;
+  /** bars played round and round, with one bar counted in, until the player stops it */
+  let loop: { from: number; to: number } | null = null;
+  /** clean runs of the loop in a row: after three the tempo rises by 5% (when the setting says so) */
+  let loopClean = 0;
+  /** "bar 3" or "bars 3–4", or the phrases of the piano */
+  const barsSaid = (r: { from: number; to: number }): string =>
+    m.piano
+      ? r.from === r.to
+        ? L(`phrase ${r.from + 1}`, `Phrase ${r.from + 1}`)
+        : L(`phrases ${r.from + 1}–${r.to + 1}`, `Phrasen ${r.from + 1}–${r.to + 1}`)
+      : r.from === r.to
+        ? L(`bar ${r.from + 1}`, `Takt ${r.from + 1}`)
+        : L(`bars ${r.from + 1}–${r.to + 1}`, `Takte ${r.from + 1}–${r.to + 1}`);
+  /** the last bar there is: of the song, or the last phrase of the piece */
+  const lastBar = Math.max(...m.lines.flatMap((l) => l.bars));
+  /** a performance: the whole thing at full speed with no marks while it is played, and the player judges first */
+  let perform = false;
+  /** by ear: on the first rung the notes are hidden and the line is heard first; T shows them */
+  let byEar = false;
+  let revealed = false;
   // counted over the whole visit, for the guided session
   let linesDone = 0;
   let takes = 0;
@@ -204,6 +252,8 @@ function lesson(root: HTMLElement, m: Material, wanted: string | undefined, ctx?
   /** piano: a lesson of chords only has no single keys to listen for */
   const chordsOnly = m.piano && m.lines.every((l) => l.steps.every((s) => s.chord));
   const strummed = [...new Set(m.lines.flatMap((l) => l.steps.map((s) => s.chord).filter((c): c is string => !!c)))];
+  /** the words of a melody that is also sung, a syllable for each step; null for anything else */
+  const melody = strummed.length ? null : melodyWords(m.id, m.lines.reduce((s, l) => s + l.steps.length, 0));
   const fingers = m.piano ? L('Fingers: 1 thumb · 2 index · 3 middle · 4 ring · 5 little finger', 'Finger: 1 Daumen · 2 Zeigefinger · 3 Mittelfinger · 4 Ringfinger · 5 kleiner Finger') : L('Fingers: 1 index · 2 middle · 3 ring · 4 little finger', 'Finger: 1 Zeigefinger · 2 Mittelfinger · 3 Ringfinger · 4 kleiner Finger');
 
   root.innerHTML = frame(
@@ -216,9 +266,21 @@ function lesson(root: HTMLElement, m: Material, wanted: string | undefined, ctx?
      <svg class="fit" id="rowA" viewBox="0 0 1180 ${m.piano ? 180 : 186}" role="img" aria-label="${L(`${m.piano ? 'The notes of this phrase, read left to right' : 'Tablature of this line, read left to right'}, with a marker on the one to play`, `${m.piano ? 'Die Noten dieser Phrase, von links nach rechts gelesen' : 'Tabulatur dieser Zeile, von links nach rechts gelesen'}, mit einer Markierung auf dem, was jetzt dran ist`)}"></svg>
      <svg class="fit" id="rowB" viewBox="0 0 1180 ${m.piano ? 180 : 186}" role="img" aria-label="${L('What comes next', 'Was danach kommt')}" hidden></svg>
      <svg class="fit" id="hands" viewBox="0 0 1180 ${m.piano ? 226 : 224}" role="img" aria-label="${m.piano ? L('Keyboard: the highlighted key is the one to play, with its finger number', 'Tastatur: die hervorgehobene Taste ist die, die du spielst, mit ihrer Fingernummer') : L('Fretboard: numbered dots show where your fingers go, the vibrating string is the one to pluck', 'Griffbrett: nummerierte Punkte zeigen, wo deine Finger hinkommen, die schwingende Saite ist die, die du zupfst')}"></svg>
-     <div class="foot"><p class="fbk info" id="fbk"></p><p class="legend">${fingers}</p></div>`,
+     <div class="foot"><p class="fbk info" id="fbk"></p><p class="legend">${fingers}</p></div>
+     <div class="takebox" id="takebox" hidden>
+       <div class="selfrate" id="selfrate" hidden role="group" aria-label="${L('How many slips did you hear?', 'Wie viele Patzer hast du gehört?')}"><span>${L('Slips you heard:', 'Gehörte Patzer:')}</span>${['0', '1', '2', '3+'].map((v, i) => `<button class="btn" data-rate="${i}">${v} <kbd>${i}</kbd></button>`).join('')}</div>
+       <div class="barmap" id="barmap" role="group" aria-label="${L('The recording, bar by bar: pick one to hear it', 'Die Aufnahme, Takt für Takt: wähl einen, um ihn zu hören')}"></div>
+       <div class="row"><button class="btn" id="listen">${L('Listen back', 'Anhören')} <kbd>P</kbd></button><button class="btn quiet" id="firsttake" hidden>${L('Your first recording', 'Deine erste Aufnahme')}</button><button class="btn quiet" id="savetake">${L('Save as a file', 'Als Datei speichern')}</button><span class="note" id="takenote"></span></div>
+     </div>`,
     `<div class="grp"><button class="btn quiet" id="prev">${icon('left')}${L('Previous', 'Zurück')} <kbd>←</kbd></button><button class="btn" id="again">${L('Again', 'Nochmal')} <kbd>R</kbd></button><button class="btn" id="hearit">${L('Hear it', 'Anhören')} <kbd>H</kbd></button><button class="btn quiet" id="next">${L('Next', 'Weiter')} <kbd>→</kbd>${icon('right')}</button>${nextStep(ctx)}</div>
-     <div class="grp" id="tempobox" hidden><button class="btn quiet" id="slower">${L('Slower', 'Langsamer')} <kbd>−</kbd></button><b id="tempo"></b><button class="btn quiet" id="faster">${L('Faster', 'Schneller')} <kbd>+</kbd></button><button class="btn" id="pause"><span>${L('Pause', 'Pause')}</span> <kbd>${L('Space', 'Leertaste')}</kbd></button></div>
+     <div class="grp" id="tempobox" hidden><button class="btn quiet" id="slower" title="${L('Slower by 5%', 'Um 5 % langsamer')}" aria-label="${L('Slower by 5%', 'Um 5 % langsamer')}">−5 % <kbd>−</kbd></button><b id="tempo"></b><button class="btn quiet" id="faster" title="${L('Faster by 5%, up to 125%', 'Um 5 % schneller, bis 125 %')}" aria-label="${L('Faster by 5%', 'Um 5 % schneller')}">+5 % <kbd>+</kbd></button><button class="btn" id="pause"><span>${L('Pause', 'Pause')}</span> <kbd>${L('Space', 'Leertaste')}</kbd></button><button class="btn quiet tog" id="loopbtn" aria-pressed="false" title="${L('The bars on show go round and round with the click, one bar counted in, until L again.', 'Die gezeigten Takte laufen mit dem Klick im Kreis, ein Takt eingezählt, bis wieder L.')}">${L('Loop', 'Schleife')} <kbd>L</kbd></button></div>
+     <details class="more" id="more"><summary class="btn quiet">${L('More', 'Mehr')}</summary><div class="morepanel">
+       <p class="k">${L('Loop', 'Schleife')}</p><div class="row"><button class="btn quiet" id="widenl">${L('Take in the bar before', 'Takt davor dazu')} <kbd>[</kbd></button><button class="btn quiet" id="widenr">${L('Take in the bar after', 'Takt danach dazu')} <kbd>]</kbd></button></div>
+       <p class="k">${L('Playing along', 'Mitspielen')}</p><div class="row"><button class="btn quiet tog" id="backbtn" aria-pressed="false">${L('Backing: bass and chords', 'Begleitung: Bass und Akkorde')} <kbd>A</kbd></button>${melody ? `<button class="btn quiet tog" id="wordsbtn" aria-pressed="${wordsOn.on}">${L('Words under the notes', 'Text unter den Noten')} <kbd>K</kbd></button>` : ''}${SING_ALONG[m.id] ? `<a class="btn quiet" href="#/singalong/${encodeURIComponent(m.id)}">${L('Sing and play: the words under the chords', 'Singen und spielen: der Text unter den Akkorden')}</a>` : ''}</div><p class="note">${L('Headphones only: through speakers the microphone would hear the backing as your playing.', 'Nur mit Kopfhörern: Über Lautsprecher würde das Mikrofon die Begleitung als dein Spiel hören.')}</p>
+       ${m.piano ? `<p class="k">${L('The music', 'Die Noten')}</p><div class="row"><button class="btn quiet tog" id="staffbtn" aria-pressed="false">${L('On the staff', 'Als Notenzeile')} <kbd>S</kbd></button><button class="btn quiet" id="namesbtn"></button></div><p class="note">${L('The staff as in printed music, with the left hand on its own staff below. The names under the notes are a help to leave away: by default they go once a phrase sits.', 'Die Notenzeile wie in gedruckten Noten, die linke Hand auf einem eigenen System darunter. Die Namen unter den Noten sind eine Hilfe zum Weglassen: Von selbst verschwinden sie, sobald eine Phrase sitzt.')}</p>` : ''}
+       <p class="k">${L('Learning a line', 'Eine Zeile lernen')}</p><div class="row"><button class="btn quiet tog" id="earbtn" aria-pressed="false">${L('By ear: notes hidden', 'Nach Gehör: Töne verdeckt')} <kbd>E</kbd></button><button class="btn quiet tog" id="imagbtn" aria-pressed="false">${L('Rest the hands: listen and imagine', 'Hände ausruhen: zuhören und vorstellen')} <kbd>I</kbd></button></div><p class="note">${L('On rung 1 the line is played first and the notes stay hidden; T shows them.', 'Auf Stufe 1 wird die Zeile zuerst vorgespielt, und die Töne bleiben verdeckt; T zeigt sie.')}</p>
+       <p class="k">${L('Full speed', 'Volles Tempo')}</p><div class="row"><button class="btn quiet tog" id="perfbtn" aria-pressed="false">${L('Performance: no marks, recorded', 'Vortrag: ohne Markierungen, aufgenommen')} <kbd>V</kbd></button></div><p class="note">${L('The whole thing from the top. You say how it went before the app does, then listen back bar by bar.', 'Das Ganze von vorn. Du sagst, wie es lief, bevor die App es tut; dann hörst du es Takt für Takt an.')}</p>
+     </div></details>
      <p class="auto" id="auto"></p>`,
     ctx,
     ['#/songs', m.piano ? L('Pieces', 'Stücke') : L('Songs', 'Songs')],
@@ -239,16 +301,30 @@ function lesson(root: HTMLElement, m: Material, wanted: string | undefined, ctx?
     if (l) l.expected = midis.length ? midis : null;
   };
 
-  function drawLine(el: Element, li: number, look: (i: number) => StepLook): Drawn {
+  function drawLine(el: Element, li: number, look: (i: number) => StepLook, hidden = false): Drawn {
     const l = m.lines[li];
+    // the words of the line, a syllable under each note, when asked for (K) and when nothing is hidden
+    const from = m.lines.slice(0, li).reduce((s, x) => s + x.steps.length, 0);
+    const said = melody && wordsOn.on && !hidden ? melody.slice(from, from + l.steps.length) : undefined;
+    // the piano's music as note blocks, or on the staff: with the names of the notes until the phrase sits
+    const names = store.settings.noteNames === 'on' || (store.settings.noteNames === 'auto' && store.skills.level(m.skill(l.bars[0])) < 2);
     const d = m.piano
-      ? noteStrip(
-          l.steps.map((s) => s.key!),
-          look,
-          LEARN,
-        )
-      : tabLine({ bars: l.tab, look, name: (id) => shapeOf(id).name }, LEARN);
+      ? store.settings.notation === 'staff'
+        ? staffLine(
+            l.steps.map((s) => s.key!),
+            look,
+            LEARN,
+            { names, fingers: true },
+          )
+        : noteStrip(
+            l.steps.map((s) => s.key!),
+            look,
+            LEARN,
+            said,
+          )
+      : tabLine({ bars: hidden ? l.tab.map((b) => ({ ...b, chord: b.chord ? '?' : undefined })) : l.tab, look, name: (id) => (hidden ? '?' : shapeOf(id).name), words: said }, LEARN, true);
     el.innerHTML = d.svg;
+    el.setAttribute('viewBox', `0 0 1180 ${d.height}`);
     return d;
   }
 
@@ -317,10 +393,17 @@ function lesson(root: HTMLElement, m: Material, wanted: string | undefined, ctx?
       const k = cur.key!;
       // the chord before this step: of the step before, or at the start of a phrase what the phrase before ended on
       const was = prev ? chordAt(prev) : cur.bar > 0 ? m.endOf(cur.bar - 1) : undefined;
+      if (cur.both) {
+        const [bass, top] = pianoChord(cur.chord!).midis;
+        return { h1: L(`Both hands: <em>${keyName(bass)}</em> left, <em>${keyName(top)}</em> right, together.`, `Beide Hände: <em>${keyName(bass)}</em> links, <em>${keyName(top)}</em> rechts, zusammen.`), sub: L('The left little finger on the bass, struck at the same moment as the melody key.', 'Der linke kleine Finger auf dem Bass, im selben Moment angeschlagen wie die Melodietaste.') };
+      }
       if (cur.chord) {
         const c = pianoChord(cur.chord);
         const keysOf = c.keys;
-        if (was && was !== cur.chord) return { h1: L(`Change to <em>${c.name}</em>.`, `Wechsle zu <em>${c.name}</em>.`), sub: keyTip(was, cur.chord) };
+        // after the left hand's root, the chord of the right is the same chord: no change to speak of
+        const fromLeft = !!prev?.left;
+        if (was && was !== cur.chord && !fromLeft) return { h1: L(`Change to <em>${c.name}</em>.`, `Wechsle zu <em>${c.name}</em>.`), sub: keyTip(was, cur.chord) };
+        if (fromLeft) return { h1: L(`Now the right hand: <em>${c.name}</em>.`, `Jetzt die rechte Hand: <em>${c.name}</em>.`), sub: L(`${keysOf.join(', ')}, struck together, while the left lets its key go.`, `${keysOf.join(', ')}, zusammen angeschlagen, während die linke ihre Taste loslässt.`) };
         return {
           h1: was ? L(`<em>${c.name}</em> once more.`, `<em>${c.name}</em> noch einmal.`) : L(`Play <em>${c.name}</em>: all its keys at once.`, `Spiel <em>${c.name}</em>: alle Tasten zugleich.`),
           sub: was && upcoming ? upcoming : L(
@@ -329,6 +412,7 @@ function lesson(root: HTMLElement, m: Material, wanted: string | undefined, ctx?
           ),
         };
       }
+      if (cur.left) return { h1: L(`Left hand: <em>${keyName(k.midi)}</em>, little finger.`, `Linke Hand: <em>${keyName(k.midi)}</em>, kleiner Finger.`), sub: cur.chord ? '' : L('The root of the chord the right hand strikes next, an octave lower. Then the right hand.', 'Der Grundton des Akkords, den die rechte Hand als Nächstes anschlägt, eine Oktave tiefer. Dann die rechte Hand.') };
       const begins = !!k.over && was !== k.over;
       return {
         h1: L(`Play <em>${keyName(k.midi, cur.over)}</em>${k.fg ? ` with finger ${k.fg}` : ''}.`, `Spiel <em>${keyName(k.midi, cur.over)}</em>${k.fg ? ` mit Finger ${k.fg}` : ''}.`),
@@ -361,7 +445,7 @@ function lesson(root: HTMLElement, m: Material, wanted: string | undefined, ctx?
 
   const where = (li: number): void => {
     const part = m.partOf(m.lines[li].bars[0]);
-    $('#where', root).innerHTML = `<b>${esc(m.title)}</b>${m.by ? ` · ${esc(m.by)}` : ''} · ${part && part !== 'All' ? `${esc(part.toLowerCase())} · ` : ''}${L(`${m.unit} ${li + 1} of ${n}`, `${unitDe(m)} ${li + 1} von ${n}`)}`;
+    $('#where', root).innerHTML = `<b>${esc(m.title)}</b>${m.by ? ` · ${esc(m.by)}` : ''} · ${part && part !== 'All' ? `${esc(part.toLowerCase())} · ` : ''}${L(`${m.unit} ${li + 1} of ${n}`, `${unitDe(m)} ${li + 1} von ${n}`)}${!m.piano && guitarSetup() ? ` · ${guitarSetup()}` : ''}`;
   };
   /**
    * A model to listen to before playing: the line as it should sound, a little slower than full speed.
@@ -370,22 +454,107 @@ function lesson(root: HTMLElement, m: Material, wanted: string | undefined, ctx?
   let modelUntil = 0;
   let modelTimer = 0;
   const modelPlaying = (): boolean => performance.now() < modelUntil;
+  /** K: the words of the melody under its notes, or not; the choice stays while the app is open. */
+  function toggleWords(): void {
+    if (!melody) return;
+    wordsOn.on = !wordsOn.on;
+    $('#wordsbtn', root)?.setAttribute('aria-pressed', String(wordsOn.on));
+    setStage(stage);
+  }
+
+  /** The model of these steps (u: their place in note units), at this many seconds a unit. */
+  function modelSound(parts: { s: Step; u: number }[], unit: number, sr: number): Float32Array {
+    const ring = m.piano ? 1.2 : 1.8;
+    const a4 = m.piano ? store.settings.pianoA4 : guitarA4();
+    const from = parts[0].u;
+    const out = new Float32Array(Math.ceil(((parts[parts.length - 1].u - from + 1) * unit + ring) * sr));
+    parts.forEach(({ s, u }, i) => {
+      const sound = s.chord ? (m.piano ? strum(pianoChord(s.chord).midis, sr, ring, { a4, piano: true, amp: 0.2 }, 5) : strum(chordNotes(shapeOf(s.chord)), sr, ring, { a4 })) : s.midis.reduce((mix, midi) => (mixInto(mix, tone({ sr, midi, dur: ring, piano: m.piano, a4, seed: i + 1 }), 0), mix), new Float32Array(Math.ceil(ring * sr)));
+      mixInto(out, sound, (u - from) * unit * sr);
+    });
+    return out;
+  }
+
+  /**
+   * Resting the hands (I): the app plays the line on show and shows each step while it sounds, on the tab
+   * and on the fretboard or keys; nothing listens and nothing is measured. Followed in the head, the eyes
+   * open and then closed, it is practice of its own: small but measured in studies of mental practice, and
+   * it spares sore fingertips. I again, or any move to another line or rung, ends it.
+   */
+  let imagining = 0;
+  function stopImagine(): void {
+    if (!imagining) return;
+    cancelAnimationFrame(imagining);
+    imagining = 0;
+    stopModel();
+    $('#imagbtn', root).setAttribute('aria-pressed', 'false');
+  }
+  function imagine(): void {
+    const actx = engine.ctx;
+    if (!actx) return;
+    if (imagining) {
+      stopImagine();
+      go(line);
+      return;
+    }
+    mode?.stop();
+    stopModel();
+    const all = m.lines[line].steps;
+    if (!all.length) return;
+    // at the tempo practised at; on the first rung a little slower than full speed, as H plays it
+    const unit = stage === 1 ? (m.noteDur * 100) / tempo : m.noteDur / 0.75;
+    const seconds = engine.demo(modelSound(all.map((s) => ({ s, u: s.at })), unit, actx.sampleRate));
+    const startAt = performance.now();
+    const from = all[0].at;
+    $('#imagbtn', root).setAttribute('aria-pressed', 'true');
+    $('#h1', root).innerHTML = L('Listen, and play it in your head.', 'Hör zu, und spiel es im Kopf.');
+    $('#sub', root).textContent = L('Watch where each note goes. Then I once more, with your eyes closed.', 'Schau, wohin jeder Ton geht. Dann noch einmal I, mit geschlossenen Augen.');
+    say('info', L('Nothing is listened to or measured now: the hands rest.', 'Jetzt wird nichts gehört und nichts gemessen: Die Hände ruhen.'));
+    setSimTarget(null);
+    expect([]);
+    let shown = -1;
+    const tick = (): void => {
+      const u = from + (performance.now() - startAt) / 1000 / unit;
+      let k = 0;
+      while (k + 1 < all.length && all[k + 1].at <= u) k++;
+      if (k !== shown) {
+        shown = k;
+        const d = drawLine(rowA, line, (i) => (i < k ? 'done' : i === k ? 'cur' : 'up'));
+        drawChord(all[k]);
+        hands.removeAttribute('hidden');
+        drawHands(all[k], k > 0 ? all[k - 1] : null, line);
+        playhead(rowA, d.x(all[k].at));
+      }
+      if ((performance.now() - startAt) / 1000 < seconds) imagining = requestAnimationFrame(tick);
+      else {
+        stopImagine();
+        go(line);
+        say('info', L('Once more with your eyes closed (I), or play it now.', 'Noch einmal mit geschlossenen Augen (I), oder spiel es jetzt.'));
+      }
+    };
+    imagining = requestAnimationFrame(tick);
+  }
+
   function hearIt(): void {
     const ctx = engine.ctx;
-    const l = m.lines[line];
-    if (!ctx || stage !== 0) return;
+    if (!ctx) return;
+    // during a take it pauses the take: the model is heard between tries, never over one
+    if (mode?.running()) mode.toggle();
     const sr = ctx.sampleRate;
-    const unit = m.noteDur / 0.75;
-    const ring = m.piano ? 1.2 : 1.8;
-    const a4 = m.piano ? store.settings.pianoA4 : store.settings.a4;
-    const out = new Float32Array(Math.ceil((l.units * unit + ring) * sr));
-    l.steps.forEach((s, i) => {
-      const sound = s.chord ? (m.piano ? strum(pianoChord(s.chord).midis, sr, ring, { a4, piano: true, amp: 0.2 }, 5) : strum(chordNotes(shapeOf(s.chord)), sr, ring, { a4 })) : s.midis.reduce((mix, midi) => (mixInto(mix, tone({ sr, midi, dur: ring, piano: m.piano, a4, seed: i + 1 }), 0), mix), new Float32Array(Math.ceil(ring * sr)));
-      mixInto(out, sound, s.at * unit * sr);
-    });
-    const seconds = engine.demo(out);
+    // what is on show: the bars of the loop, or the line
+    const lines = loop ? m.lines.filter((l) => l.bars.some((b) => b >= loop!.from && b <= loop!.to)) : [m.lines[line]];
+    const parts: { s: Step; u: number }[] = [];
+    let u0 = 0;
+    for (const l of lines) {
+      for (const s of l.steps) if (!loop || (s.bar >= loop.from && s.bar <= loop.to)) parts.push({ s, u: u0 + s.at });
+      u0 += l.units;
+    }
+    if (!parts.length) return;
+    // on the first rung a little slower than full speed; with the click at the tempo it is practised at
+    const unit = stage === 0 && !loop ? m.noteDur / 0.75 : (m.noteDur * 100) / tempo;
+    const seconds = engine.demo(modelSound(parts, unit, sr));
     modelUntil = performance.now() + seconds * 1000 + 400;
-    say('info', L(`Listen: this is how the ${m.unit} goes, a little slower than full speed.`, `Hör zu: So klingt die ${unitDe(m)}, ein wenig langsamer als im vollen Tempo.`));
+    say('info', stage === 0 && !loop ? L(`Listen: this is how the ${m.unit} goes, a little slower than full speed.`, `Hör zu: So klingt die ${unitDe(m)}, ein wenig langsamer als im vollen Tempo.`) : L(`Listen: ${loop ? barsSaid(loop) : `the ${m.unit}`} at ${tempo}%. Then Space to play.`, `Hör zu: ${loop ? barsSaid(loop) : `die ${unitDe(m)}`} bei ${tempo}%. Dann Leertaste zum Spielen.`));
     clearTimeout(modelTimer);
     modelTimer = window.setTimeout(() => say('info', L('Now you. Take your time.', 'Jetzt du. Lass dir Zeit.')), seconds * 1000 + 400);
   }
@@ -413,19 +582,25 @@ function lesson(root: HTMLElement, m: Material, wanted: string | undefined, ctx?
       const done = at >= all.length;
       const cur = all[Math.min(at, all.length - 1)];
       const prev = at > 0 ? all[at - 1] : null;
-      const text = instruction(cur, prev, done ? '' : ahead(all, at, line));
+      // by ear nothing gives the next note away: not the tab, not the fretboard, not the words
+      const hidden = byEar && !revealed && !done;
+      const text = hidden
+        ? { h1: cur.chord ? L('The next chord, by ear.', 'Der nächste Akkord, nach Gehör.') : L(`The next ${m.piano ? 'key' : 'note'}, by ear.`, `Der nächste ${m.piano ? 'Ton' : 'Ton'}, nach Gehör.`), sub: L('H plays the line again; T shows it.', 'H spielt die Zeile noch einmal; T zeigt sie.') }
+        : instruction(cur, prev, done ? '' : ahead(all, at, line));
       where(line);
       const bars = m.lines[line].bars;
-      const count = done ? '' : ` · ${cur.chord ? (m.piano ? L(`chord ${at + 1} of ${all.length}`, `Akkord ${at + 1} von ${all.length}`) : L(`strum ${at + 1} of ${all.length}`, `Anschlag ${at + 1} von ${all.length}`)) : m.piano ? L(`key ${at + 1} of ${all.length}`, `Taste ${at + 1} von ${all.length}`) : L(`note ${at + 1} of ${all.length}`, `Ton ${at + 1} von ${all.length}`)}`;
+      const count = done ? '' : ` · ${cur.chord && !cur.both ? (m.piano ? L(`chord ${at + 1} of ${all.length}`, `Akkord ${at + 1} von ${all.length}`) : L(`strum ${at + 1} of ${all.length}`, `Anschlag ${at + 1} von ${all.length}`)) : m.piano ? L(`key ${at + 1} of ${all.length}`, `Taste ${at + 1} von ${all.length}`) : L(`note ${at + 1} of ${all.length}`, `Ton ${at + 1} von ${all.length}`)}`;
       $('#eb', root).textContent = L(
         `${ctx ? `${ctx.label} · ${m.title} · ` : ''}${cap(m.unit)} ${line + 1} of ${n}${m.piano ? '' : ` · bar${bars.length > 1 ? `s ${bars[0] + 1}–${bars[bars.length - 1] + 1}` : ` ${bars[0] + 1}`}`}${count} · the app waits for you`,
         `${ctx ? `${ctx.label} · ${m.title} · ` : ''}${unitDe(m)} ${line + 1} von ${n}${m.piano ? '' : ` · ${bars.length > 1 ? `Takte ${bars[0] + 1}–${bars[bars.length - 1] + 1}` : `Takt ${bars[0] + 1}`}`}${count} · die App wartet auf dich`,
       );
       $('#h1', root).innerHTML = done ? L(`${cap(m.unit)} done.`, `${unitDe(m)} geschafft.`) : text.h1;
       $('#sub', root).textContent = done ? '' : text.sub;
-      drawChord(cur);
-      drawLine(rowA, line, (i) => (i < at ? 'done' : i === at ? 'cur' : 'up'));
-      drawHands(done ? null : cur, prev, line);
+      if (hidden) $('#cbox', root)?.toggleAttribute('hidden', true);
+      else drawChord(cur);
+      drawLine(rowA, line, (i) => (i < at ? 'done' : hidden ? 'hide' : i === at ? 'cur' : 'up'), hidden);
+      hands.toggleAttribute('hidden', hidden);
+      if (!hidden) drawHands(done ? null : cur, prev, line);
       expect(done ? [] : cur.midis);
       setSimTarget(done ? null : target(cur));
     }
@@ -515,9 +690,10 @@ function lesson(root: HTMLElement, m: Material, wanted: string | undefined, ctx?
     const one = m.piano ? (strums ? L('chord', 'Akkord') : L('key', 'Taste')) : strums ? L('strum', 'Anschlag') : L('note', 'Ton');
     const each = m.piano ? (strums ? 'Akkord für Akkord' : 'Taste für Taste') : strums ? 'Anschlag für Anschlag' : 'Ton für Ton';
     const what = line === 0 ? `${L(`Play the ${m.unit} from left to right, one ${one} at a time: the app waits for each and moves the marker on. A clean ${m.unit} brings the next.`, `Spiel die ${unitDe(m)} von links nach rechts, ${each}: Die App wartet jeweils und rückt die Markierung weiter. Ist die ${unitDe(m)} sauber, kommt die nächste.`)} ` : '';
+    // on the first line what to do, on the others how to read it: one sentence or two, never a paragraph
     say(
       'info',
-      what +
+      what ||
       (m.piano
         ? chordsOnly
           ? L('Read left to right: each block is one chord, all its keys at once.', 'Lies von links nach rechts: Jeder Block ist ein Akkord, alle Tasten zugleich.')
@@ -527,8 +703,11 @@ function lesson(root: HTMLElement, m: Material, wanted: string | undefined, ctx?
           : L('Tab: a line is a string, lowest at the bottom. A number is a fret, 0 is open.', 'Tabulatur: Eine Linie ist eine Saite, die tiefste unten. Eine Zahl ist ein Bund, 0 heißt leer.')),
     );
     draw();
+    // by ear the line is heard before anything else
+    if (byEar && !revealed) timer = window.setTimeout(hearIt, 500);
     return {
       stop: () => stopTimer(timer),
+      running: () => false,
       toggle: () => undefined,
       // A string that was struck but did not ring: the commonest fault of all, and worth saying so.
       // (It is reported a moment later than a note would be, so it may follow a "wrong note" for the same pluck.)
@@ -545,6 +724,7 @@ function lesson(root: HTMLElement, m: Material, wanted: string | undefined, ctx?
         // the single notes inside a strum are not notes of their own
         if (!cur || cur.chord || e.time < strumT + 0.3) return;
         if (cur.midis.includes(e.midi)) hit(e.time, cur);
+        else if (byEar && !revealed) slip(cur, L(`Heard ${noteName(e.midi)}: not the next one. Listen again (H) and try ${e.midi > cur.midis[0] ? 'lower' : 'higher'}.`, `Gehört: ${noteName(e.midi)}, nicht der nächste. Hör noch einmal hin (H) und versuch es ${e.midi > cur.midis[0] ? 'tiefer' : 'höher'}.`), e.time);
         else
           slip(
             cur,
@@ -560,21 +740,25 @@ function lesson(root: HTMLElement, m: Material, wanted: string | undefined, ctx?
         if (strumHit(e, cur.chord)) {
           strumT = e.time;
           hit(e.time, cur);
-        } else if (e.best && e.best !== cur.chord && e.score > 0.7 && e.margin > 0.1) slip(cur, L(`Heard ${chordName(e.best, m.piano)}. This one is ${nameOf(cur.chord)}.`, `Gehört: ${chordName(e.best, m.piano)}. Gefragt ist ${nameOf(cur.chord)}.`));
+        } else if (e.best && e.best !== cur.chord && e.score > 0.7 && e.margin > 0.1) slip(cur, byEar && !revealed ? L(`Heard ${chordName(e.best, m.piano)}: not this one. Listen again (H).`, `Gehört: ${chordName(e.best, m.piano)}, nicht dieser. Hör noch einmal hin (H).`) : L(`Heard ${chordName(e.best, m.piano)}. This one is ${nameOf(cur.chord)}.`, `Gehört: ${chordName(e.best, m.piano)}. Gefragt ist ${nameOf(cur.chord)}.`));
       },
     };
   }
 
   /** Rungs 2 and 3: play with the click. One line at a time, or the whole piece from this line on. */
   function clickMode(): Mode {
-    const whole = stage === 2;
-    if (whole) tempo = 100;
-    const idxs = whole ? m.lines.map((_, i) => i).slice(line) : [line];
+    const whole = stage === 2 && !review && !loop;
+    if (stage === 2) tempo = 100;
+    // the lines a loop runs through: every line one of its bars is in
+    const looped = loop ? m.lines.map((_, i) => i).filter((i) => m.lines[i].bars.some((b) => b >= loop!.from && b <= loop!.to)) : null;
+    const idxs = review ? review.lines : looped ?? (whole ? m.lines.map((_, i) => i).slice(line) : [line]);
     const rows = [rowA, rowB];
     // a note is only reported some 0.15 s after it was played, a strum after 0.25 s
     const grace = strummed.length ? 0.36 : 0.22;
     let take: Take | null = null;
     let flat: Step[] = [];
+    /** where each step lies, in note units from the start of the first of the lines */
+    let gu: number[] = [];
     let lineStart: number[] = [];
     let stepBase: number[] = [];
     let drawn: (Drawn | null)[] = [null, null];
@@ -588,18 +772,24 @@ function lesson(root: HTMLElement, m: Material, wanted: string | undefined, ctx?
     let latency = 0;
     let played = tempo;
     let shown = '';
-    rowB.toggleAttribute('hidden', !whole || idxs.length < 2);
-    hands.toggleAttribute('hidden', whole);
+    let recFrom = -1;
+    rowB.toggleAttribute('hidden', idxs.length < 2);
+    // two lines on show leave no room for the fretboard; the chord picture stays
+    hands.toggleAttribute('hidden', whole || idxs.length > 1 || (!!review && !review.relearn));
     $('#tempobox', root).hidden = false;
-    $<HTMLButtonElement>('#slower', root).disabled = whole;
-    $<HTMLButtonElement>('#faster', root).disabled = whole;
+    $<HTMLButtonElement>('#slower', root).disabled = whole || !!review;
+    $<HTMLButtonElement>('#faster', root).disabled = whole || !!review;
     $('#auto', root).hidden = true;
-    $('#hearit', root).hidden = true;
+    // the model can be heard between takes on every rung; during a take, asking for it pauses the take
+    $('#hearit', root).hidden = false;
 
     /** the bar a take is limited to, after one that fell apart there; null for a whole line */
     let spot: number | null = null;
     let spotting = false;
+    /** the bars a take is limited to: the one that fell apart, or the loop; null for the lines as they are */
+    let range: { from: number; to: number } | null = null;
     let uShift = 0;
+    const inRange = (s: Step): boolean => !range || (s.bar >= range.from && s.bar <= range.to);
 
     function cancel(): void {
       cancelAnimationFrame(raf);
@@ -617,47 +807,77 @@ function lesson(root: HTMLElement, m: Material, wanted: string | undefined, ctx?
       unit = (m.noteDur * 100) / tempo;
       beat = m.beat * unit;
       start = engine.now() + 0.5;
-      // a line that begins with an upbeat starts that much before the click the count leads up to
-      const upbeat = spot === null || whole ? (m.lines[idxs[0]].clicks[0]?.u ?? 0) : 0;
-      t0 = start + m.count * beat - upbeat * unit;
-      const vol = store.settings.click;
-      const low = store.settings.clickSound === 'click';
-      for (let k = 0; k < m.count; k++) engine.tick(start + k * beat, k === 0, vol, low);
-      // a note played on the click arrives a little after it: through the speakers and back through the microphone
-      latency = engine.micOn ? (store.settings.latency >= 0 ? store.settings.latency : engine.latencyEstimate()) : 0;
+      range = loop ? { ...loop } : spot !== null && !whole ? { from: spot, to: spot } : null;
+      spotting = !loop && range !== null;
       flat = [];
+      gu = [];
       lineStart = [];
       stepBase = [];
-      const steps: TakeStep[] = [];
-      // a take of one bar only: the bar that fell apart, alone, with the click running through it
-      const first = m.lines[idxs[0]];
-      const inBar = spot === null || whole ? [] : first.steps.filter((s) => s.bar === spot);
-      spotting = inBar.length > 0;
-      uShift = spotting ? inBar[0].at : 0;
-      const uEnd = spotting ? (first.steps.find((s) => s.at > inBar[inBar.length - 1].at)?.at ?? first.units) : 0;
+      const clicks: { u: number; accent: boolean }[] = [];
       let u0 = 0;
       for (const li of idxs) {
         const l = m.lines[li];
         lineStart.push(u0);
         stepBase.push(flat.length);
-        for (const c of l.clicks) if (!spotting || (c.u >= uShift - 1e-6 && c.u < uEnd - 1e-6)) engine.tick(t0 + (u0 + c.u - uShift) * unit, c.accent, vol, low);
+        for (const c of l.clicks) clicks.push({ u: u0 + c.u, accent: c.accent });
         for (const s of l.steps) {
           flat.push(s);
-          // in a take of one bar the steps before it count as played, the ones after it never come
-          steps.push({ midis: s.midis, chord: s.chord, t: spotting ? (s.bar === spot ? t0 + (s.at - uShift) * unit + latency : s.at < uShift ? -1e9 : 1e9) : t0 + (u0 + s.at) * unit + latency, bar: s.bar });
+          gu.push(u0 + s.at);
         }
         u0 += l.units;
       }
-      endT = spotting ? t0 + (uEnd - uShift) * unit : t0 + u0 * unit;
+      // a take of some bars only: they alone, with the click running through them and one bar counted in
+      const inside = flat.map((s, i) => (inRange(s) ? i : -1)).filter((i) => i >= 0);
+      if (range && !inside.length) range = null;
+      uShift = range ? gu[inside[0]] : 0;
+      const after = range ? flat.findIndex((s, i) => i > inside[inside.length - 1] && !inRange(s)) : -1;
+      const uEnd = range ? (after >= 0 ? gu[after] : u0) : u0;
+      // a line that begins with an upbeat starts that much before the click the count leads up to
+      const upbeat = range ? 0 : (m.lines[idxs[0]].clicks[0]?.u ?? 0);
+      t0 = start + m.count * beat - upbeat * unit;
+      const vol = store.settings.click;
+      const low = store.settings.clickSound === 'click';
+      for (let k = 0; k < m.count; k++) engine.tick(start + k * beat, k === 0, vol, low);
+      for (const c of clicks) if (c.u >= uShift - 1e-6 && c.u < uEnd - 1e-6) engine.tick(t0 + (c.u - uShift) * unit, c.accent, vol, low);
+      // a note played on the click arrives a little after it: through the speakers and back through the microphone
+      latency = engine.micOn ? (store.settings.latency >= 0 ? store.settings.latency : engine.latencyEstimate()) : 0;
+      // in a take of some bars the steps before them count as played, the ones after them never come
+      const steps: TakeStep[] = flat.map((s, i) => ({ midis: s.midis, chord: s.chord, t: inRange(s) ? t0 + (gu[i] - uShift) * unit + latency : gu[i] < uShift ? -1e9 : 1e9, bar: s.bar }));
+      endT = t0 + (uEnd - uShift) * unit;
       take = new Take(steps);
-      if (spotting) steps.forEach((s, i) => (s.t === -1e9 ? (take!.state[i] = 'hit') : undefined));
+      steps.forEach((s, i) => (s.t === -1e9 ? (take!.state[i] = 'hit') : undefined));
+      // under headphones: a bass and the chords with it
+      if (store.settings.backing && engine.ctx) {
+        const chords: { u: number; id: string }[] = [];
+        let was: string | undefined;
+        flat.forEach((s, i) => {
+          const id = chordAt(s);
+          if (id && id !== was && gu[i] >= uShift - 1e-6 && gu[i] < uEnd - 1e-6) chords.push({ u: gu[i] - uShift, id });
+          if (id) was = id;
+        });
+        // a stretch that starts inside a chord takes that chord along from its first beat
+        const before = flat.filter((_, i) => gu[i] < uShift - 1e-6).map(chordAt).filter(Boolean).pop();
+        if (before && (!chords.length || chords[0].u > 1e-6)) chords.unshift({ u: 0, id: before });
+        const sound = backing({ chords, clicks: clicks.filter((c) => c.u >= uShift - 1e-6 && c.u < uEnd - 1e-6).map((c) => ({ u: c.u - uShift, accent: c.accent })), units: uEnd - uShift, unit, sr: engine.ctx.sampleRate, a4: m.piano ? store.settings.pianoA4 : guitarA4() });
+        engine.playAt(t0, sound, 0.9);
+      }
+      // the whole piece, or a loop, is recorded, to be listened to afterwards
+      recFrom = whole && engine.micOn && store.settings.recordTakes ? engine.now() : -1;
+      if (recFrom >= 0) engine.record(TAKE_MAX);
+      if (whole) $('#takebox', root).hidden = true;
       shown = '';
       $('#tempo', root).textContent = `${tempo}%`;
       $('#pause span', root).textContent = L('Pause', 'Pause');
       say(
         'info',
-        spotting
+        loop
+          ? L(`The loop, ${barsSaid(loop)}, at ${tempo}%. One bar is counted in; it goes round until you stop it (L).`, `Die Schleife, ${barsSaid(loop)}, bei ${tempo}%. Ein Takt wird eingezählt; sie läuft, bis du sie anhältst (L).`)
+          : spotting
           ? L(`Only ${m.piano ? 'this phrase' : `bar ${spot! + 1}`} this time: that is where it fell apart.`, `Diesmal nur ${m.piano ? 'diese Phrase' : `Takt ${spot! + 1}`}: Dort ging es schief.`)
+          : review
+            ? review.relearn
+              ? L(`An old ${m.piano ? 'piece' : 'song'} again: two ${m.unit}s with the click at ${tempo}%, as last time they slipped.`, `${m.piano ? 'Ein altes Stück' : 'Ein alter Song'} wieder: zwei ${unitDe(m, true)} mit Klick bei ${tempo}%, weil sie letztes Mal verrutscht sind.`)
+              : L(`An old ${m.piano ? 'piece' : 'song'}, from cold: two ${m.unit}s at full speed, no run-up. Whatever comes out is fine; it shows what has stayed.`, `${m.piano ? 'Ein altes Stück' : 'Ein alter Song'}, aus dem Stand: zwei ${unitDe(m, true)} im vollen Tempo, ohne Anlauf. Was herauskommt, ist in Ordnung; es zeigt, was geblieben ist.`)
           : whole
             ? L('Play each one as the marker reaches it, from here to the end.', 'Spiel immer dann, wenn die Markierung ankommt, von hier bis zum Ende.')
             : L(`Play each one as the marker reaches it. It moves on when the ${m.unit} was clean.`, `Spiel immer dann, wenn die Markierung ankommt. Es geht weiter, wenn die ${unitDe(m)} sauber war.`),
@@ -667,7 +887,7 @@ function lesson(root: HTMLElement, m: Material, wanted: string | undefined, ctx?
 
     function render(k: number, due: number, counting: number): void {
       const tk = take!;
-      const look = (g: number): StepLook => (tk.state[g] === 'hit' ? 'done' : tk.state[g] === 'miss' ? 'miss' : g === due ? 'cur' : 'up');
+      const look = (g: number): StepLook => (range && !inRange(flat[g]) ? 'off' : perform ? (g === due ? 'cur' : 'up') : tk.state[g] === 'hit' ? 'done' : tk.state[g] === 'miss' ? 'miss' : g === due ? 'cur' : 'up');
       for (const r of [0, 1]) {
         if (r === 1 && rowB.hasAttribute('hidden')) continue;
         const kk = k % 2 === r ? k : k + 1;
@@ -682,7 +902,7 @@ function lesson(root: HTMLElement, m: Material, wanted: string | undefined, ctx?
       const step = flat[due >= 0 ? due : flat.length - 1];
       const prev = due > 0 ? flat[due - 1] : null;
       where(idxs[k]);
-      $('#eb', root).textContent = `${ctx ? `${ctx.label} · ${m.title} · ` : ''}${whole ? L('Full speed, to the end', 'Volles Tempo, bis zum Ende') : L(`${cap(m.unit)} ${idxs[k] + 1} of ${n} · with the click at ${tempo}%`, `${unitDe(m)} ${idxs[k] + 1} von ${n} · mit Klick bei ${tempo}%`)}`;
+      $('#eb', root).textContent = `${ctx ? `${ctx.label} · ${m.title} · ` : ''}${loop ? L(`Loop · ${barsSaid(loop)} · ${tempo}%${loopClean ? ` · ${loopClean} clean in a row` : ''}`, `Schleife · ${barsSaid(loop)} · ${tempo}%${loopClean ? ` · ${loopClean} sauber in Folge` : ''}`) : perform ? L('Performance · no marks while you play · full speed', 'Vortrag · keine Markierungen beim Spielen · volles Tempo') : review ? L(`Played again from cold · ${cap(m.unit)}s ${idxs.map((x) => x + 1).join(' and ')} · ${tempo}%`, `Wiederholen aus dem Stand · ${unitDe(m, true)} ${idxs.map((x) => x + 1).join(' und ')} · ${tempo}%`) : whole ? L('Full speed, to the end', 'Volles Tempo, bis zum Ende') : L(`${cap(m.unit)} ${idxs[k] + 1} of ${n} · with the click at ${tempo}%`, `${unitDe(m)} ${idxs[k] + 1} von ${n} · mit Klick bei ${tempo}%`)}`;
       const id = chordAt(step);
       // the chord that comes after this one: the next step that is played over another
       const after = chordAt(flat.slice(Math.max(0, due) + 1).find((s) => chordAt(s) !== id)) ?? m.chordOf(step.bar + 1);
@@ -725,6 +945,39 @@ function lesson(root: HTMLElement, m: Material, wanted: string | undefined, ctx?
       const r = tk.result();
       cancelAnimationFrame(raf);
       rows.forEach((row) => playhead(row, null));
+      // what was recorded, with where each bar lies in it
+      const rec = recFrom >= 0 ? engine.recorded() : null;
+      // the whole piece at full speed: its bars as a row to look at, and with a recording to listen to
+      if (whole) {
+        const zero = recFrom >= 0 ? recFrom : t0;
+        const starts = new Map<number, number>();
+        flat.forEach((s, i) => inRange(s) && !starts.has(s.bar) && starts.set(s.bar, t0 + (gu[i] - uShift) * unit - zero));
+        const order = [...starts.entries()].sort((a, b) => a[1] - b[1]);
+        const kept = rec && rec.samples.length > rec.sampleRate ? rec : null;
+        const meta = { t: Date.now(), secs: kept ? kept.samples.length / kept.sampleRate : 0, tempo: played, bars: order.map(([bar, from], k) => ({ bar, from: Math.max(0, from), to: order[k + 1]?.[1] ?? endT - zero, clean: r.cleanBars.includes(bar) })) };
+        showTake(kept ? { samples: kept.samples, rate: kept.sampleRate, meta } : { samples: new Float32Array(0), rate: 48000, meta }, !!perform);
+        if (kept) void saveTake(inst, m.id, kept.samples, kept.sampleRate, meta);
+      }
+      recFrom = -1;
+      if (loop) {
+        // the loop is practice that counts: clean bars are measured, and three clean runs in a row speed it up
+        const now = Date.now();
+        const changes = r.cleanBars.map((b) => store.skills.record(m.skill(b), played, now));
+        const clean = r.hits === r.total && r.strays === 0;
+        loopClean = clean ? loopClean + 1 : 0;
+        let up = '';
+        if (loopClean >= 3 && store.settings.autoTempo && tempo < 125) {
+          tempo = Math.min(125, tempo + 5);
+          loopClean = 0;
+          up = L(` Three clean in a row: now ${tempo}%.`, ` Dreimal sauber in Folge: jetzt ${tempo}%.`);
+        }
+        store.save();
+        say(clean ? 'good' : 'info', `${clean ? icon('check') : ''}${L(`${r.hits} of ${r.total} on the click at ${played}%.`, `${r.hits} von ${r.total} auf dem Klick bei ${played}%.`)}${levelNews(changes)}${up}${!clean && !up ? L(' Round it goes again.', ' Sie läuft noch einmal.') : ''}`);
+        take = null;
+        setSimTarget(null);
+        timer = later(1800, begin, L(`the loop again, at ${tempo}%`, `die Schleife noch einmal, bei ${tempo}%`));
+        return;
+      }
       if (spotting) {
         // the bar alone is practice, not a measurement: say how it went and play the line again
         const idx = flat.map((s, i) => (s.bar === spot ? i : -1)).filter((i) => i >= 0);
@@ -746,7 +999,13 @@ function lesson(root: HTMLElement, m: Material, wanted: string | undefined, ctx?
       const timing = r.hits < 3 ? '' : ms < 30 ? L(' Right on the click.', ' Genau auf dem Klick.') : L(` Mostly ${ms} ms ${r.offset > 0 ? 'late' : 'early'}.`, ` Meist ${ms} ms ${r.offset > 0 ? 'zu spät' : 'zu früh'}.`);
       let then: string;
       let leave = false;
-      if (whole) {
+      const visit = !!review;
+      if (review) {
+        // a visit is a measurement of what has stayed, not practice: say how it went and leave it there
+        then = reviewed(inst, m.id, clean);
+        leave = !!ctx;
+        review = null;
+      } else if (whole) {
         store.progress[m.id] = 0;
         leave = !!ctx;
         then = clean
@@ -757,14 +1016,14 @@ function lesson(root: HTMLElement, m: Material, wanted: string | undefined, ctx?
         fails = 0;
         const wrapped = line === n - 1;
         store.progress[m.id] = (line + 1) % n;
-        if (wrapped && tempo < 100) tempo = TEMPOS[TEMPOS.indexOf(tempo) + 1] ?? 100;
+        if (wrapped && tempo < 100) tempo = TEMPOS.find((x) => x > tempo) ?? 100;
         leave = !!ctx && linesDone >= 2;
         then = leave ? L('That is it for today.', 'Das war’s für heute.') : wrapped ? L(`Through to the end. From the top at ${tempo}%.`, `Durch bis zum Ende. Von vorn bei ${tempo}%.`) : L(`Next ${m.unit}.`, `Nächste ${unitDe(m)}.`);
       } else {
         if (r.hits < 0.6 * r.total) fails++;
         const slower = fails >= 2 && tempo > TEMPOS[0];
         if (slower) {
-          tempo = TEMPOS[Math.max(0, TEMPOS.indexOf(tempo) - 1)];
+          tempo = [...TEMPOS].reverse().find((x) => x < tempo) ?? TEMPOS[0];
           fails = 0;
         }
         leave = !!ctx && takes >= 6;
@@ -779,21 +1038,47 @@ function lesson(root: HTMLElement, m: Material, wanted: string | undefined, ctx?
               ? L(`First only ${m.piano ? 'the phrase' : `bar ${spot + 1}`}, where it fell apart.`, `Erst nur ${m.piano ? 'die Phrase' : `Takt ${spot + 1}`}, wo es schiefging.`)
               : L('Once more.', 'Noch einmal.');
       }
+      // played clean all through for the first time: it joins the repertoire and starts coming back
+      if (enlist(inst, m.id)) then += L(` New in your repertoire: it comes back in ${REVIEW_DAYS[0]} days, from cold.`, ` Neu in deinem Repertoire: Es kommt in ${REVIEW_DAYS[0]} Tagen wieder, aus dem Stand.`);
       store.save();
-      say(clean ? 'good' : 'info', `${clean ? icon('check') : ''}${L(`${r.hits} of ${r.total} on the click at ${played}%.${r.strays ? ` ${r.strays} extra.` : ''}`, `${r.hits} von ${r.total} auf dem Klick bei ${played}%.${r.strays ? ` ${r.strays} zu viel.` : ''}`)}${timing}${levelNews(changes)} ${then}`);
+      // after a performance the player says first how it went; the app's verdict waits for that
+      const verdict = (): void => {
+        say(clean ? 'good' : 'info', `${clean ? icon('check') : ''}${L(`${r.hits} of ${r.total} on the click at ${played}%.${r.strays ? ` ${r.strays} extra.` : ''}`, `${r.hits} von ${r.total} auf dem Klick bei ${played}%.${r.strays ? ` ${r.strays} zu viel.` : ''}`)}${timing}${levelNews(changes)} ${then}`);
+        $('#h1', root).innerHTML = clean ? L('Clean.', 'Sauber.') : L(`${r.hits} of ${r.total}.`, `${r.hits} von ${r.total}.`);
+      };
+      const wasPerform = perform;
       render(Math.max(0, idxs.length - 1), -1, 0);
-      $('#h1', root).innerHTML = clean ? L('Clean.', 'Sauber.') : L(`${r.hits} of ${r.total}.`, `${r.hits} von ${r.total}.`);
       take = null;
       setSimTarget(null);
-      if (leave) timer = later(3200, ctx!.next, ctx!.after);
-      // the take of one bar belongs to this visit of the line: it starts here, not from scratch
-      else if (!whole) timer = later(2600, () => (clean ? go(line + 1) : spot !== null ? begin() : go(line)), clean ? L(`the next ${m.unit}`, `die nächste ${unitDe(m)}`) : spot !== null ? L(`bar ${spot + 1} alone`, `Takt ${spot + 1} allein`) : L(`the same ${m.unit} again`, `noch einmal dieselbe ${unitDe(m)}`));
-      else $('#pause span', root).textContent = L('Play', 'Spielen');
+      /** what comes after the verdict: nothing moves on before the player has said how it went */
+      const onward = (): void => {
+        if (leave) timer = later(3200, ctx!.next, ctx!.after);
+        else if (visit) $('#pause span', root).textContent = L('Play', 'Spielen');
+        // the take of one bar belongs to this visit of the line: it starts here, not from scratch
+        else if (!whole) timer = later(2600, () => (clean ? go(line + 1) : spot !== null ? begin() : go(line)), clean ? L(`the next ${m.unit}`, `die nächste ${unitDe(m)}`) : spot !== null ? L(`bar ${spot + 1} alone`, `Takt ${spot + 1} allein`) : L(`the same ${m.unit} again`, `noch einmal dieselbe ${unitDe(m)}`));
+        else $('#pause span', root).textContent = L('Play', 'Spielen');
+      };
+      if (wasPerform) {
+        $('#h1', root).innerHTML = L('How did it go?', 'Wie lief es?');
+        say('info', L('Before the app says how it heard it: how many slips did you hear yourself? (0 to 3)', 'Bevor die App sagt, wie sie es gehört hat: Wie viele Patzer hast du selbst gehört? (0 bis 3)'));
+        selfRate(r.bars.length - r.cleanBars.length, () => {
+          verdict();
+          onward();
+        });
+      } else {
+        verdict();
+        onward();
+      }
     }
 
     begin();
     return {
-      stop: cancel,
+      stop: () => {
+        cancel();
+        if (recFrom >= 0) engine.recorded();
+        recFrom = -1;
+      },
+      running: () => !!take,
       toggle: () => {
         if (take) {
           cancel();
@@ -804,7 +1089,7 @@ function lesson(root: HTMLElement, m: Material, wanted: string | undefined, ctx?
       },
       note: (e) => {
         if (!take || take.nearest(e.time)?.chord) return;
-        if (take.note(e.midi, e.time) === null && e.time > t0 - beat / 2 && e.time < endT) say('bad', L(`Heard ${noteName(e.midi)} where it does not belong.`, `Gehört: ${noteName(e.midi)}, an einer Stelle, an der nichts zu spielen ist.`));
+        if (take.note(e.midi, e.time) === null && e.time > t0 - beat / 2 && e.time < endT && !perform) say('bad', L(`Heard ${noteName(e.midi)} where it does not belong.`, `Gehört: ${noteName(e.midi)}, an einer Stelle, an der nichts zu spielen ist.`));
       },
       thud: () => undefined,
       chord: (e) => {
@@ -824,7 +1109,13 @@ function lesson(root: HTMLElement, m: Material, wanted: string | undefined, ctx?
     $('#st1s', root).textContent = L(`${m.unit} by ${m.unit}, ${s === 1 ? tempo : suggest(m, line).tempo}%`, `${unitDe(m)} für ${unitDe(m)}, ${s === 1 ? tempo : suggest(m, line).tempo}%`);
     $('#st2s', root).textContent = L('start to end', 'von Anfang bis Ende');
     // what the rung on show does, and what comes after it: the captions of the rungs are hidden on small screens
-    $('#rungnote', root).textContent = [
+    $('#rungnote', root).textContent = review
+      ? L(`A visit from cold: two ${m.unit}s at full speed, measured as they come. Then 1, 2 or 3 to practise on.`, `Ein Besuch aus dem Stand: zwei ${unitDe(m, true)} im vollen Tempo, gemessen, wie sie kommen. Danach 1, 2 oder 3 zum Üben.`)
+      : loop
+        ? L(`The loop goes round until L ends it. [ and ] take in the bar before or after.${store.settings.autoTempo ? ' Three clean runs in a row: 5% faster.' : ''}`, `Die Schleife läuft, bis L sie beendet. [ und ] nehmen den Takt davor oder danach dazu.${store.settings.autoTempo ? ' Dreimal sauber in Folge: 5 % schneller.' : ''}`)
+        : perform
+          ? L('A performance: no marks while you play, and a recording to listen to. You say first how it went.', 'Ein Vortrag: keine Markierungen beim Spielen, und eine Aufnahme zum Anhören. Du sagst zuerst, wie es lief.')
+          : [
       L(`Waits for every ${m.piano ? 'key' : 'note and strum'}, no clock. When the ${m.unit}s sit: 2, with the click.`, `Wartet auf jeden ${m.piano ? 'Ton' : 'Ton und Anschlag'}, ohne Uhr. Sitzen die ${m.piano ? 'Phrasen' : 'Zeilen'}: weiter mit 2, mit Klick.`),
       L(`In time with the click, ${m.unit} by ${m.unit}; the tempo rises when it goes well. Then: 3.`, `Im Takt mit dem Klick, ${unitDe(m)} für ${unitDe(m)}; das Tempo steigt, wenn es gut geht. Danach: 3.`),
       L(`The whole ${m.piano ? 'piece' : 'song'} at full speed, from here to the end.`, `${m.piano ? 'Das ganze Stück' : 'Der ganze Song'} im vollen Tempo, von hier bis zum Ende.`),
@@ -841,16 +1132,172 @@ function lesson(root: HTMLElement, m: Material, wanted: string | undefined, ctx?
   }
 
   function go(li: number): void {
+    stopImagine();
     stopModel();
+    // moving to another line leaves a visit to an old song, a loop and a performance: from here on it is practice
+    review = null;
+    loop = null;
+    perform = false;
+    // a new line by ear is hidden again
+    revealed = false;
+    extras();
     line = (li + n) % n;
     setStage(stage);
   }
 
+  /** The player picks a rung: that is practice, whatever the lesson was opened for. */
+  function pick(s: number): void {
+    stopImagine();
+    review = null;
+    loop = null;
+    perform = false;
+    extras();
+    setStage(s);
+  }
+
+  /** The tempo by hand: in steps of 5%, from 25% up to 125% (beyond the song's own speed, to have room to spare), as Yousician has it. */
   function setTempo(step: number): void {
-    if (stage !== 1) return;
-    tempo = TEMPOS[Math.max(0, Math.min(TEMPOS.length - 1, TEMPOS.indexOf(tempo) + step))];
+    if ((stage !== 1 && !loop) || review) return;
+    tempo = Math.max(25, Math.min(125, Math.round(tempo / 5) * 5 + 5 * step));
     fails = 0;
+    loopClean = 0;
+    setStage(stage === 2 ? 1 : stage);
+  }
+
+  /** The buttons say what is switched on. */
+  function extras(): void {
+    $('#loopbtn', root).setAttribute('aria-pressed', String(!!loop));
+    $<HTMLButtonElement>('#widenl', root).disabled = !loop || loop.from === 0;
+    $<HTMLButtonElement>('#widenr', root).disabled = !loop || loop.to === lastBar;
+    $('#backbtn', root).setAttribute('aria-pressed', String(store.settings.backing));
+    $('#perfbtn', root).setAttribute('aria-pressed', String(perform));
+    $('#earbtn', root).setAttribute('aria-pressed', String(byEar));
+    if (m.piano) {
+      $('#staffbtn', root).setAttribute('aria-pressed', String(store.settings.notation === 'staff'));
+      $('#namesbtn', root).textContent = { auto: L('Note names: until it sits', 'Notennamen: bis es sitzt'), on: L('Note names: always', 'Notennamen: immer'), off: L('Note names: never', 'Notennamen: nie') }[store.settings.noteNames];
+    }
+  }
+
+  /** S: the piano's music on the staff, or as note blocks; kept for next time. */
+  function toggleStaff(): void {
+    if (!m.piano) return;
+    store.settings.notation = store.settings.notation === 'staff' ? 'strip' : 'staff';
+    store.save();
+    extras();
+    setStage(stage);
+  }
+
+  /** E: by ear on the first rung, or back to reading. */
+  function toggleEar(): void {
+    byEar = !byEar;
+    revealed = false;
+    extras();
+    pick(0);
+  }
+
+  /** L: the bars on show go round and round with the click; L again ends it. */
+  function toggleLoop(): void {
+    review = null;
+    perform = false;
+    loopClean = 0;
+    if (loop) {
+      loop = null;
+      setStage(1);
+    } else {
+      const bars = m.lines[line].bars;
+      loop = { from: bars[0], to: bars[bars.length - 1] };
+      setStage(1);
+    }
+    extras();
+  }
+
+  /** [ and ]: the loop takes in the bar before it, or the bar after it. */
+  function widen(side: number): void {
+    if (!loop) return toggleLoop();
+    if (side < 0) loop.from = Math.max(0, loop.from - 1);
+    else loop.to = Math.min(lastBar, loop.to + 1);
+    loopClean = 0;
     setStage(1);
+    extras();
+  }
+
+  /** B: the accompaniment, on or off. It is kept for next time. */
+  function toggleBacking(): void {
+    store.settings.backing = !store.settings.backing;
+    store.save();
+    extras();
+    say('info', store.settings.backing ? L('Backing on: a bass and the chords under the click, from the next take. Headphones only: through speakers the microphone would hear it as your playing.', 'Begleitung an: ein Bass und die Akkorde unter dem Klick, ab dem nächsten Durchgang. Nur mit Kopfhörern: Über Lautsprecher würde das Mikrofon sie als dein Spiel hören.') : L('Backing off.', 'Begleitung aus.'));
+  }
+
+  /** V: a performance of the whole thing, or back to practice. */
+  function togglePerform(): void {
+    perform = !perform;
+    review = null;
+    loop = null;
+    // a performance is the whole thing, from the top
+    if (perform) line = 0;
+    setStage(perform ? 2 : stage);
+    extras();
+  }
+
+  /** The recording on show: the one just made, or one that was kept. */
+  let heardTake: { samples: Float32Array; rate: number; meta: TakeMeta } | null = null;
+  /** the bars of the last take at full speed, recorded or not */
+  let shownTake: { samples: Float32Array; rate: number; meta: TakeMeta } | null = null;
+  /** the player is asked for their count of slips: what to do with the answer */
+  let rating: ((n: number) => void) | null = null;
+
+  function paintBars(hidden: boolean): void {
+    const t = shownTake;
+    if (!t) return;
+    $('#barmap', root).innerHTML = t.meta.bars.map((b, k) => `<button class="bm${hidden ? '' : b.clean ? ' ok' : ' bad'}" data-k="${k}" aria-label="${esc(barsSaid({ from: b.bar, to: b.bar }))}${hidden ? '' : b.clean ? L(': clean', ': sauber') : L(': not clean', ': nicht sauber')}">${b.bar + 1}</button>`).join('');
+    $$<HTMLButtonElement>('#barmap [data-k]', root).forEach((el) => (el.onclick = () => {
+      const b = t.meta.bars[Number(el.dataset.k)];
+      if (t.samples.length) playBack(t.samples, t.rate, Math.max(0, b.from - 0.15), b.to + 0.4, barsSaid({ from: b.bar, to: b.bar }));
+    }));
+  }
+
+  /** Shows the recording just made under the music, as a row of bars to pick from. */
+  function showTake(t: { samples: Float32Array; rate: number; meta: TakeMeta }, hideVerdict: boolean): void {
+    // without a recording (no microphone, or recording switched off) the bars are there to look at, not to hear
+    const audible = t.samples.length > 0;
+    heardTake = audible ? t : null;
+    shownTake = t;
+    $('#takebox', root).hidden = false;
+    paintBars(hideVerdict);
+    const first = takeMeta(inst, m.id, 'first');
+    $('#firsttake', root).hidden = !first;
+    $('#listen', root).hidden = !audible;
+    $('#savetake', root).hidden = !audible;
+    $('#takenote', root).textContent = !audible ? (store.settings.recordTakes ? L('Nothing was recorded: the microphone is off.', 'Nichts wurde aufgenommen: Das Mikrofon ist aus.') : L('Recording is switched off in the settings.', 'Das Aufnehmen ist in den Einstellungen ausgeschaltet.')) : first ? L(`Your first recording of it is from ${dayMonth(first.t)}, at ${first.tempo}%.`, `Deine erste Aufnahme davon ist vom ${dayMonth(first.t)}, bei ${first.tempo}%.`) : L('Kept in this browser as your first recording of it.', 'In diesem Browser als deine erste Aufnahme davon gespeichert.');
+  }
+
+  /** The player's count of slips, asked for before the app's verdict is shown, and kept beside it. */
+  function selfRate(app: number, then: () => void): void {
+    $('#selfrate', root).hidden = false;
+    rating = (n) => {
+      rating = null;
+      $('#selfrate', root).hidden = true;
+      store.ratings.push({ t: Date.now(), self: n, app });
+      store.save();
+      paintBars(false);
+      then();
+      const same = Math.min(n, 3) === Math.min(app, 3);
+      $('#takenote', root).textContent = same ? L(`You heard it as the app did: ${app === 0 ? 'no slips' : `slips in ${app} ${app === 1 ? 'bar' : 'bars'}`}.`, `Du hast es gehört wie die App: ${app === 0 ? 'keine Patzer' : `Patzer in ${app} ${app === 1 ? 'Takt' : 'Takten'}`}.`) : L(`You counted ${n === 3 ? '3 or more' : n}; the app heard slips in ${app} ${app === 1 ? 'bar' : 'bars'}. Listen back to the red ones to hear what it heard.`, `Du hast ${n === 3 ? '3 oder mehr' : n} gezählt; die App hörte Patzer in ${app} ${app === 1 ? 'Takt' : 'Takten'}. Hör dir die roten an, um zu hören, was sie gehört hat.`);
+    };
+    $$<HTMLButtonElement>('#selfrate [data-rate]', root).forEach((b) => (b.onclick = () => rating?.(Number(b.dataset.rate))));
+  }
+
+  /** Plays part of a recording through the speakers; what the microphone hears of it meanwhile is not playing. */
+  function playBack(samples: Float32Array, rate: number, from = 0, to = Infinity, what = ''): void {
+    const ctx = engine.ctx;
+    if (!ctx) return;
+    if (mode?.running()) mode.toggle();
+    let part = samples.subarray(Math.floor(from * rate), Math.min(samples.length, Math.floor(to * rate)));
+    if (rate !== ctx.sampleRate) part = resample(part, rate, ctx.sampleRate);
+    const seconds = engine.demo(part);
+    modelUntil = performance.now() + seconds * 1000 + 300;
+    say('info', what ? L(`Listening back: ${what}.`, `Zum Anhören: ${what}.`) : L('Listening back to your take.', 'Dein Durchgang zum Anhören.'));
   }
 
   const stopHear = hear(
@@ -882,9 +1329,25 @@ function lesson(root: HTMLElement, m: Material, wanted: string | undefined, ctx?
     ArrowRight: () => go(line + 1),
     r: () => go(line),
     h: hearIt,
-    '1': () => setStage(0),
-    '2': () => setStage(1),
-    '3': () => setStage(2),
+    '1': () => (rating ? rating(1) : pick(0)),
+    '2': () => (rating ? rating(2) : pick(1)),
+    '3': () => (rating ? rating(3) : pick(2)),
+    '0': () => rating?.(0),
+    l: toggleLoop,
+    '[': () => widen(-1),
+    ']': () => widen(1),
+    a: toggleBacking,
+    v: togglePerform,
+    e: toggleEar,
+    s: toggleStaff,
+    i: imagine,
+    k: toggleWords,
+    t: () => {
+      if (!byEar || revealed) return;
+      revealed = true;
+      setStage(stage);
+    },
+    p: () => heardTake && playBack(heardTake.samples, heardTake.rate),
     '-': () => setTempo(-1),
     '+': () => setTempo(1),
     '=': () => setTempo(1),
@@ -896,10 +1359,46 @@ function lesson(root: HTMLElement, m: Material, wanted: string | undefined, ctx?
   $('#slower', root).onclick = () => setTempo(-1);
   $('#faster', root).onclick = () => setTempo(1);
   $('#pause', root).onclick = () => mode?.toggle();
-  RUNGS().forEach((_, i) => ($('#st' + i, root).onclick = () => setStage(i)));
+  $('#loopbtn', root).onclick = toggleLoop;
+  $('#widenl', root).onclick = () => widen(-1);
+  $('#widenr', root).onclick = () => widen(1);
+  $('#backbtn', root).onclick = toggleBacking;
+  $('#perfbtn', root).onclick = togglePerform;
+  $('#earbtn', root).onclick = toggleEar;
+  $('#imagbtn', root).onclick = imagine;
+  const wb = root.querySelector<HTMLButtonElement>('#wordsbtn');
+  if (wb) wb.onclick = toggleWords;
+  if (m.piano) {
+    $('#staffbtn', root).onclick = toggleStaff;
+    $('#namesbtn', root).onclick = () => {
+      const order = ['auto', 'on', 'off'] as const;
+      store.settings.noteNames = order[(order.indexOf(store.settings.noteNames) + 1) % 3];
+      store.save();
+      extras();
+      setStage(stage);
+    };
+  }
+  $('#listen', root).onclick = () => heardTake && playBack(heardTake.samples, heardTake.rate);
+  $('#firsttake', root).onclick = async () => {
+    const first = await loadTake(inst, m.id, 'first');
+    if (first) playBack(first, TAKE_RATE, 0, Infinity, L(`your first recording, from ${dayMonth(takeMeta(inst, m.id, 'first')!.t)}`, `deine erste Aufnahme, vom ${dayMonth(takeMeta(inst, m.id, 'first')!.t)}`));
+  };
+  $('#savetake', root).onclick = () => {
+    const t = heardTake;
+    if (!t) return;
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([encodeWav(t.samples, t.rate)], { type: 'audio/wav' }));
+    a.download = `${m.id}-${new Date(t.meta.t).toISOString().slice(0, 10)}.wav`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+    $('#takenote', root).textContent = L('Saved to your downloads folder, to keep or to send.', 'In deinem Download-Ordner gespeichert, zum Behalten oder Verschicken.');
+  };
+  RUNGS().forEach((_, i) => ($('#st' + i, root).onclick = () => pick(i)));
   if (ctx) $('#nextstep', root).onclick = ctx.next;
+  extras();
   setStage(stage);
   return () => {
+    stopImagine();
     mode?.stop();
     stopModel();
     stopHear();
@@ -915,6 +1414,7 @@ export const songLesson: Screen = (root, [id, rung], ctx) => {
     store.current.guitar = song.id;
     store.save();
   }
+  store.opened('guitar', song.id);
   return lesson(root, songMaterial(song), rung, ctx);
 };
 
@@ -925,6 +1425,7 @@ export const pianoLesson: Screen = (root, [id, rung], ctx) => {
     store.current.piano = piece.id;
     store.save();
   }
+  store.opened('piano', piece.id);
   return lesson(root, pieceMaterial(piece), rung, ctx);
 };
 
@@ -1008,9 +1509,10 @@ export const chordCheck: Screen = (root, ids, ctx) => {
     `<div class="grp"><button class="btn" id="again">${L('Start over', 'Von vorn')} <kbd>R</kbd></button><button class="btn" id="back">${icon('left')}${L('Back a string', 'Eine Saite zurück')} <kbd>←</kbd></button><button class="btn" id="fwd"><span id="fwdl"></span> <kbd>→</kbd></button>${nextStep(ctx)}</div>${
       ctx
         ? `<p class="auto">${ids.includes('stay') ? L('Optional. A barre takes weeks, not minutes: a few tries a day do more than one long fight.', 'Freiwillig. Ein Barré braucht Wochen, nicht Minuten: Ein paar Versuche am Tag bringen mehr als ein langer Kampf.') : L('No clock. A string that will not ring after three tries is left for next time.', 'Keine Uhr. Eine Saite, die nach drei Versuchen nicht klingt, bleibt fürs nächste Mal.')}</p>`
-        : `<nav class="chords" aria-label="${L('Chord', 'Akkord')}">${Object.values(CHORDS)
+        : `<nav class="chords" aria-label="${L('Chord', 'Akkord')}">${[...new Set(['Em', 'Am', 'E', 'A', 'D', 'C', 'G', 'Dm', 'F', chord.id])]
+            .map((id) => CHORDS[id])
             .map((c) => `<a href="#/chord/${encodeURIComponent(c.id)}" aria-current="${c.id === chord.id}">${c.name}</a>`)
-            .join('')}</nav>`
+            .join('')}<a href="#/chords">${L('All chords…', 'Alle Griffe …')}</a></nav>`
     }`,
     ctx,
   );
@@ -1027,7 +1529,7 @@ export const chordCheck: Screen = (root, ids, ctx) => {
       ? chordBox(chord, 70, 76, 260, LEARN, false, marks, 62)
       : [0, 1, 2, 3, 4, 5].map((k) => `<line x1="${70 + k * 52}" x2="${70 + k * 52}" y1="76" y2="386" stroke="${LEARN.faint}" stroke-width="1.5"/><line x1="70" x2="330" y1="${76 + k * 62}" y2="${76 + k * 62}" stroke="${k ? LEARN.line : LEARN.text}" stroke-width="${k ? 1.5 : 4}"/>`).join('') + `<text x="200" y="250" class="cn" text-anchor="middle" style="font-size:64px" fill="${LEARN.faint}">?</text>`;
     STRING_NAMES.forEach((n, i) => {
-      const x = 70 + i * 52;
+      const x = 70 + (store.settings.leftHanded ? 5 - i : i) * 52;
       const m = marks[i];
       svg += `<text x="${x}" y="40" class="sn" fill="${m === 'now' ? LEARN.now : midis[i] === null ? LEARN.faint : LEARN.text}">${n}</text>`;
       const y = 418;

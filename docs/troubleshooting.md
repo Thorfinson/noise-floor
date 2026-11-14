@@ -9,6 +9,7 @@
 
 ## It hears the wrong thing
 
+- **Run the hearing check first** (**Tools → Hearing check**): two minutes, and it says what is wrong: a loud room, an instrument that reaches the microphone too quietly or too loudly, a guitar or piano out of tune, notes heard an octave off. It can save the recording and a report to send to whoever helps.
 - **Guitar out of tune?** Tune first: the session starts with it. A string far off can be picked by hand in the tuner with ← →.
 - **Piano not at 440 Hz?** The piano session measures it; or enter it under **Settings → Piano: pitch of its A**.
 - **Clean strings called muted or buzzing?** **Settings → Buzz tolerance** and **How long a string must ring**. The chord check also learns how long your guitar rings.
@@ -25,7 +26,7 @@ The click is a high tick on purpose, above the range the listener analyses, so i
 
 ## Browsers
 
-It is built and tested with Microsoft Edge on Windows; Chrome uses the same engine and should behave the same. Firefox and Safari have the Web Audio API and the microphone too, but are not tested. Phones and tablets are not tested either; the screens are laid out for a laptop or desktop.
+It is built and tested with Microsoft Edge on Windows; Chrome uses the same engine and should behave the same. Firefox and Safari have the Web Audio API and the microphone too, but are not tested. The browser checks lay the app out at three tablet sizes (1024 by 768, 1180 by 820 and 768 by 1024) and on a phone standing and lying (390 by 844, with touch), and play a lesson there by tapping alone. What no browser check can tell is how the microphone of your phone or tablet hears your instrument: run **Tools → Hearing check** on it. On a phone, turn it on its side to play: a line of music needs the width.
 
 ## Start over
 

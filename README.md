@@ -8,13 +8,16 @@
 
 ## What it is
 
-- **Three tracks: guitar, piano and voice.** Each has its own daily session of about ten minutes, its own songs, games, handbook and path. Switch at the top right.
+- **Three tracks: guitar, piano and voice.** Each has its own daily session of about a quarter of an hour (or five minutes, which count as fully), its own songs, games, tools, handbook and path. Switch at the top right.
 - **The app leads.** Press Space and the session takes you through it: tune up, check today's chords string by string, a short game, two lines of a song. On the piano the app first adopts your piano's pitch; with the voice it first finds your range.
-- **Learning is calm.** One task at a time: first the app waits for every note, then you play with the click, then the whole song at full speed.
+- **Learning is calm.** One task at a time: first the app waits for every note, then you play with the click, then the whole song at full speed. Hear it first on every rung, loop a few bars, set the tempo in steps of 5 % from 25 % to 125 %, play over a soft backing (headphones), or play it as a performance and listen back to your recording, bar by bar.
+- **What you learned comes back.** A song played clean all through joins your repertoire and returns after 3, 10, 30, 90 and 180 days, two lines from cold; chords are confirmed again at growing gaps. **Progress** shows the path, your repertoire, and the course of every skill over the weeks.
+- **Beyond the notes.** Play motifs of your song back by ear before seeing its tab; strum patterns on muted strings first, then with chords; riffs, power chords, the minor pentatonic and picking patterns on the guitar; both hands and the staff on the piano; words, intervals and a second voice for singing; play freely over a drone, and make chord progressions of your own. Read rhythms in note values, practise hammer-on and pull-off, sing over your own chords with the words over them, and play with a capo or tuned down.
 - **The games are not.** At a lighthouse, noise comes in over the sea, each piece carrying a phrase; play it clean and it bursts. In *Stepping stones* a wanderer crosses the water in time with the click. Both are painted like watercolours and fill the window.
 - **Levels are measured, never earned by time spent.** Every chord, change, pattern and line of a song gets a level from what the microphone heard: how fast all strings rang clean, how many clean changes a minute, at what share of full speed.
 - **Singing is measured fairly.** The voice is shown on a pitch lane, songs are moved into your range, a note counts within 50 cents of its pitch, by the middle of what you sang, in any octave.
-- **Songs free of copyright:** 69 for the guitar, 106 pieces for the piano, 43 to sing, each rated on four levels with the reasons spelled out. Traditional songs, spirituals, carols, Stephen Foster, and Bach, Beethoven, Mozart, Grieg, Joplin. Add your own as tab or note names.
+- **Songs free of copyright:** 69 for the guitar (plus 13 exercises and 6 songs in power chords), 110 pieces for the piano (21 also for both hands, 48 for both hands together), 43 to sing (34 with words, the nine instrumental themes in solfège), each rated on four levels with the reasons spelled out. Traditional songs, spirituals, carols, Stephen Foster, and Bach, Beethoven, Mozart, Grieg, Joplin. Add your own as tab, note names or a chord progression.
+- **A habit without pressure.** The week counts, not an unbroken chain of days; a plan of when you play, made once, goes into your calendar. Leave out steps you do not need, choose the next song among three, and keep your progress in a file of your own to take it to another computer.
 
 | | | |
 |---|---|---|
@@ -38,7 +41,7 @@ No instrument at hand? **Settings → Show the practice instrument** plays notes
 
 ## Privacy
 
-Everything runs in your browser. The microphone signal is analysed on the spot and never recorded, stored or sent anywhere; your levels and settings are kept in the browser's local storage on your computer, and **Settings → Backup** saves them to a file. There are no accounts, no tracking and no server.
+Everything runs in your browser. The microphone signal is analysed on the spot and never sent anywhere. When you play a song to its end at full speed, that take is recorded so that you can listen back; recordings, levels and settings stay in the browser on your computer (**Settings** turns recording off, and **Backup** saves your data to a file). There are no accounts, no tracking and no server. Once opened, the app also works offline.
 
 ## What it can hear
 
@@ -46,13 +49,13 @@ The listener was checked against recordings of real instruments and singers, not
 
 ## Songs
 
-Every song that comes with the app is in the public domain, and the app stores no lyrics. Songs of your own that may not be published can be kept on your computer only: see [Contributing](CONTRIBUTING.md#songs-you-keep-for-yourself).
+Every song that comes with the app is in the public domain; words come only with songs whose words are public domain too. Songs of your own that may not be published can be kept on your computer only: see [Contributing](CONTRIBUTING.md#songs-you-keep-for-yourself).
 
 ## Development
 
 ```
 npm test        # unit tests: listener, singing, play-along, game rules, skills, songbook, piano book, both languages
-npm run e2e     # browser checks in Microsoft Edge: the microphone path, the practice instrument, the voice, German
+npm run e2e     # browser checks in Microsoft Edge: the microphone path, the practice instrument, reading sizes, tablets, offline, the voice, German
 npm run build   # type check and production build
 npm run samples # once: fetch the recordings of real guitars, pianos and voices for the tests (about 680 MB)
 ```

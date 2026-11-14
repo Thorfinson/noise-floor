@@ -7,6 +7,7 @@ import { engine } from '../audio/engine';
 import { L } from '../core/i18n';
 import { store } from '../core/store';
 import { FOLLOW_AFTER, midiToFreq, nearestString, NOTE_NAMES, noteName, OPEN_STRINGS, STRING_FULL, STRING_NAMES, stringName } from '../music/theory';
+import { TUNINGS, tuningOf } from '../music/tuning';
 import { $, $$, hear, icon, keys, later, micMeter, stopTimer, type Screen } from '../ui/dom';
 import { keyboard, LEARN } from '../ui/draw';
 import { practiceBar, setSimTarget } from '../ui/practice';
@@ -166,6 +167,9 @@ function guitar(root: HTMLElement, head: string, ctx: Parameters<Screen>[2]): ()
   let state: 'ask' | 'low' | 'high' | 'ok' | 'other' = 'ask';
   /** when a pitch was last heard, to say so when nothing arrives at all */
   let lastHeard = performance.now();
+  /** the tuning tuned to: the one the lessons are set to, or one for playing of your own */
+  let tuning = tuningOf(store.settings.tuning);
+  const open = (i: number): number => OPEN_STRINGS[i] + tuning.strings[i];
 
   root.innerHTML = `${head}<div class="stage"><div class="tuner">
       <p class="eyebrow" id="eb"></p>
@@ -173,13 +177,24 @@ function guitar(root: HTMLElement, head: string, ctx: Parameters<Screen>[2]): ()
       ${NEEDLE()}
       <p class="sub" id="msg" aria-live="polite"></p>
       <div class="strings" id="strings" role="group" aria-label="${L('Strings', 'Saiten')}"></div>
+      <div class="row tuning"><label for="tuning">${L('Tuning', 'Stimmung')}</label><select id="tuning">${TUNINGS()
+        .map((t) => `<option value="${t.id}"${t.id === tuning.id ? ' selected' : ''}>${t.name}</option>`)
+        .join('')}</select><span class="note" id="tunnote"></span></div>
       <p class="legend" id="how">${L('Pluck any string: the app sees which one it is. To pick one yourself, click it or use <kbd>←</kbd> <kbd>→</kbd>.', 'Zupf irgendeine Saite: Die App erkennt, welche es ist. Um selbst eine zu wählen, klick sie an oder nimm <kbd>←</kbd> <kbd>→</kbd>.')}</p>
     </div></div>${practiceBar()}
     <footer class="bar"><div class="grp"><button class="btn" id="again">${L('Start over', 'Von vorn')} <kbd>R</kbd></button>${ctx ? `<button class="btn" id="skip">${icon('right')}<span id="skipl">${L('Skip tuning', 'Stimmen überspringen')}</span></button>` : ''}</div>
     <p class="auto">${L('Follow the string to its peg before you turn. If the dot does not move while you turn, it is the wrong peg.', 'Folge der Saite bis zu ihrem Wirbel, bevor du drehst. Wenn sich der Punkt beim Drehen nicht bewegt, ist es der falsche Wirbel.')}</p></footer>`;
 
   const tuned = (): number => done.filter(Boolean).length;
-  const target = (i: number): number => midiToFreq(OPEN_STRINGS[i], store.settings.a4);
+  const target = (i: number): number => midiToFreq(open(i), store.settings.a4);
+  const tunNote = (): void => {
+    $('#tunnote', root).textContent = [
+      store.settings.capo ? L(`Take the capo off to tune: the open strings are tuned.`, `Nimm den Kapodaster zum Stimmen ab: Gestimmt werden die leeren Saiten.`) : '',
+      tuning.lessons ? '' : L('The songs and lessons expect the guitar tuned as written: tune back before a lesson.', 'Songs und Lektionen erwarten die Gitarre wie notiert gestimmt: Stimm vor einer Lektion zurück.'),
+    ]
+      .filter(Boolean)
+      .join(' ');
+  };
 
   function draw(): void {
     const name = STRING_FULL[at];
@@ -196,11 +211,11 @@ function guitar(root: HTMLElement, head: string, ctx: Parameters<Screen>[2]): ()
           : state === 'high'
             ? L(`<em>${Name} string</em>: loosen it.`, `<em>${De}</em>: lockere sie.`)
             : L(`Pluck the <em>${name} string</em>.`, `Zupf die <em>${de}</em>.`);
-    $('#strings', root).innerHTML = STRING_NAMES.map((n, i) => `<button data-s="${i}" class="${done[i] ? 'ok' : ''}${!finished && i === at ? ' hit' : ''}" aria-pressed="${!finished && i === at}" aria-label="${L(`${STRING_FULL[i]} string${done[i] ? ', in tune' : ''}`, `${stringName(i)}${done[i] ? ', gestimmt' : ''}`)}">${n}${done[i] ? icon('check') : ''}</button>`).join('');
+    $('#strings', root).innerHTML = STRING_NAMES.map((n, i) => `<button data-s="${i}" class="${done[i] ? 'ok' : ''}${!finished && i === at ? ' hit' : ''}" aria-pressed="${!finished && i === at}" aria-label="${L(`${STRING_FULL[i]} string${done[i] ? ', in tune' : ''}`, `${stringName(i)}${done[i] ? ', gestimmt' : ''}`)}">${tuning.id === 'standard' ? n : NOTE_NAMES[open(i) % 12]}${done[i] ? icon('check') : ''}</button>`).join('');
     $$('#strings button', root).forEach((b) => (b.onclick = () => pick(Number(b.dataset.s))));
     const skipl = root.querySelector('#skipl');
     if (skipl) skipl.textContent = finished ? L('Next step', 'Nächster Schritt') : tuned() ? L('Go on with what is tuned', 'Mit dem Gestimmten weitermachen') : L('Skip tuning', 'Stimmen überspringen');
-    setSimTarget(finished ? null : { kind: 'note', midi: OPEN_STRINGS[at], string: at, detune: -35 });
+    setSimTarget(finished ? null : { kind: 'note', midi: open(at), string: at, detune: -35 });
   }
 
   /** Puts a string on show. */
@@ -216,7 +231,7 @@ function guitar(root: HTMLElement, head: string, ctx: Parameters<Screen>[2]): ()
     candCount = 0;
     state = 'ask';
     $<SVGCircleElement>('#dot', root).setAttribute('opacity', '0');
-    $('#msg', root).textContent = done[i] ? L(`Ticked off. Pluck it to check it again.`, `Abgehakt. Zupf sie, um sie noch einmal zu prüfen.`) : L(`It should sound like ${noteName(OPEN_STRINGS[i])}.`, `Sie sollte wie ${noteName(OPEN_STRINGS[i])} klingen.`);
+    $('#msg', root).textContent = done[i] ? L(`Ticked off. Pluck it to check it again.`, `Abgehakt. Zupf sie, um sie noch einmal zu prüfen.`) : L(`It should sound like ${noteName(open(i))}.`, `Sie sollte wie ${noteName(open(i))} klingen.`);
     draw();
   }
 
@@ -252,7 +267,7 @@ function guitar(root: HTMLElement, head: string, ctx: Parameters<Screen>[2]): ()
         lastHeard = performance.now();
         const centsTo = (i: number): number => 1200 * Math.log2(e.freq / target(i));
         // which string is this? The nearest one, unless the player has picked one by hand
-        const heard = locked ? at : nearestString(e.freq, store.settings.a4);
+        const heard = locked ? at : nearestString(e.freq, store.settings.a4, tuning.strings);
         if (heard !== at) {
           // a ticked string that is still in tune has nothing new to say: it may simply be ringing on
           if (done[heard] && Math.abs(centsTo(heard)) <= 10) return;
@@ -306,12 +321,25 @@ function guitar(root: HTMLElement, head: string, ctx: Parameters<Screen>[2]): ()
     (l) => {
       l.pitchTracking = true;
       l.noteDetection = false;
+      // the tuner hears the strings as they sound, capo or not
+      l.a4 = store.settings.a4;
     },
   );
   function restart(): void {
     done.fill(false);
     show(0, false);
   }
+  $<HTMLSelectElement>('#tuning', root).onchange = (e) => {
+    tuning = tuningOf((e.target as HTMLSelectElement).value);
+    // a tuning the lessons work in becomes the guitar's; the others are for this tuner only
+    if (tuning.lessons) {
+      store.settings.tuning = tuning.id;
+      store.save();
+    }
+    tunNote();
+    restart();
+  };
+  tunNote();
   const step = (d: number): void => pick((at + d + 6) % 6);
   const stopKeys = keys({ r: restart, ArrowLeft: () => step(-1), ArrowRight: () => step(1) });
   // The first screen of a session is where a microphone that hears nothing shows: say so instead of waiting for ever.

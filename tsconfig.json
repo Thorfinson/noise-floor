@@ -24,5 +24,8 @@
     "src",
     "tests",
     "scripts"
+  ],
+  "exclude": [
+    "tests/e2e/out"
   ]
 }

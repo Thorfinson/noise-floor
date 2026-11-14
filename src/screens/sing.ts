@@ -12,6 +12,10 @@ import { TEMPOS } from '../core/playalong';
 import { centsOff, fitTo, heldRange, Hold, median, PITCH_LAG, steadiness, type Frame } from '../core/singing';
 import { store } from '../core/store';
 import { noteTimes } from '../music/content';
+import { enlist, REVIEW_DAYS, reviewed, reviewKey, reviewLines } from '../music/review';
+import { LYRICS, shown, sungWords } from '../music/lyrics';
+import { secondVoice } from '../music/harmony';
+import { saveTake, TAKE_MAX } from '../core/takes';
 import { noteName } from '../music/theory';
 import { findSongToSing, sungPhraseKey, type SongToSing } from '../music/voicebook';
 import { $, cap, esc, hear, icon, keys, later, stopTimer, voiceEars, type Screen, type SessionCtx } from '../ui/dom';
@@ -40,7 +44,7 @@ export function placeFor(s: SongToSing): number {
 }
 
 /** "a little higher" and the like, for a voice that is near the note but not on it. */
-function direction(off: number): string {
+export function direction(off: number): string {
   const a = Math.abs(off);
   if (a <= 15) return L('right on it', 'genau drauf');
   if (off < 0) return a < 60 ? L('a little higher', 'etwas höher') : a < 250 ? L('higher', 'höher') : L('much higher', 'viel höher');
@@ -48,7 +52,7 @@ function direction(off: number): string {
 }
 
 /** A tone the app sings for the player to hear: the voice of the practice instrument, without vibrato. */
-function model(midis: { midi: number; at: number; len: number }[], unit: number): Float32Array | null {
+export function model(midis: { midi: number; at: number; len: number }[], unit: number): Float32Array | null {
   const ctx = engine.ctx;
   if (!ctx) return null;
   const sr = ctx.sampleRate;
@@ -62,7 +66,7 @@ function model(midis: { midi: number; at: number; len: number }[], unit: number)
  * The parts every singing screen shares: the listener set for a voice, the readings of the voice as frames,
  * and whether a model the app is singing is to be ignored (the microphone hears it too).
  */
-function voiceListener(root: HTMLElement, onFrame: (f: Frame) => void, onOnset?: (t: number) => void): { stop: () => void; quiet: (seconds: number) => void; listening: () => boolean } {
+export function voiceListener(root: HTMLElement, onFrame: (f: Frame) => void, onOnset?: (t: number) => void): { stop: () => void; quiet: (seconds: number) => void; listening: () => boolean } {
   let until = 0;
   // a reading an octave away from the one just before is the pitch tracker slipping, not the voice: a voice
   // cannot jump that far in a fiftieth of a second. Moved back, unless it stays there (then the voice did jump).
@@ -561,7 +565,9 @@ function sungLines(s: SongToSing, shift: number): SungLine[] {
       const bars = bar > 0 ? (c - lead) / bar : -1;
       clicks.push({ u: c, accent: bar > 0 ? Math.abs(bars - Math.round(bars)) < 1e-6 : clicks.length === 0 });
     }
-    return { notes: ph.map((n, i) => ({ midi: n.midi + shift, at: at[i], len: n.len ?? 1 })), units: total, clicks, phrase: k };
+    // the words, where the song has words free to sing, otherwise its notes in solfège: one syllable under each note
+    const words = sungWords(s.id, k, s.phrases).words;
+    return { notes: ph.map((n, i) => ({ midi: n.midi + shift, at: at[i], len: n.len ?? 1, ...(words[i] ? { word: shown(words[i]) } : {}) })), units: total, clicks, phrase: k };
   });
 }
 
@@ -577,14 +583,26 @@ export const singLesson: Screen = (root, [id, rung], ctx) => {
     store.current.voice = song.id;
     store.save();
   }
+  store.opened('voice', song.id);
   const shift = placeFor(song);
-  const lines = sungLines(song, shift);
+  const tune = sungLines(song, shift);
+  /** the second voice: a third below every note, in the key of the song */
+  const below = secondVoice(tune.flatMap((l) => l.notes.map((n) => n.midi)));
+  const voiced = tune.map((l, k) => ({ ...l, notes: l.notes.map((n, i) => ({ ...n, midi: below[tune.slice(0, k).reduce((s, x) => s + x.notes.length, 0) + i] })) }));
+  /** sung as the second voice while the app sings the tune: only with the click, and not measured as the tune */
+  let harmony = false;
+  /** how much help: 0 the model and the line, 1 the line only, 2 neither, only the first note */
+  let help = Math.max(0, Math.min(2, store.settings.voiceHelp | 0));
+  let lines = tune;
   const n = lines.length;
   const tol = store.settings.voiceTol;
   let line = Math.min(n - 1, store.progress[song.id] ?? 0);
   const level = (k: number): number => store.skills.level(sungPhraseKey(song, k));
-  let stage = rung === '1' ? 0 : rung === '2' ? 1 : rung === '3' ? 2 : level(line) < 1 ? 0 : lines.every((_, k) => level(k) >= 3) ? 2 : 1;
-  let tempo = stage === 1 ? (TEMPOS.find((t) => t >= 50 && t > (store.skills.get(sungPhraseKey(song, line))?.best ?? 0)) ?? 100) : 50;
+  /** a visit to an old song: two phrases from cold at full speed; after one that slipped, with the click at 85% */
+  let review: { lines: number[]; relearn: boolean } | null = rung === 'review' ? { lines: reviewLines('voice', song.id), relearn: !!store.reviews[reviewKey('voice', song.id)]?.relearn } : null;
+  if (review) line = review.lines[0];
+  let stage = review ? (review.relearn ? 1 : 2) : rung === '1' ? 0 : rung === '2' ? 1 : rung === '3' ? 2 : level(line) < 1 ? 0 : lines.every((_, k) => level(k) >= 3) ? 2 : 1;
+  let tempo = review?.relearn ? 85 : stage === 1 ? (TEMPOS.find((t) => t >= 50 && t > (store.skills.get(sungPhraseKey(song, line))?.best ?? 0)) ?? 100) : 50;
   let mode: { stop: () => void; frame: (f: Frame) => void; onset: (t: number) => void; toggle: () => void } | null = null;
   let linesDone = 0;
   let voice: number | null = null;
@@ -597,9 +615,13 @@ export const singLesson: Screen = (root, [id, rung], ctx) => {
        <div class="ladder" role="group" aria-label="${L('How to practise', 'Wie üben')}">${RUNGS().map((r, i) => `<button class="rung" id="st${i}" aria-pressed="false"><b>${i + 1}</b><span>${r}<small id="st${i}s"></small></span></button>`).join('')}</div>
      </div>
      <canvas class="lane" id="lane" role="img" aria-label="${L('Pitch lane, read left to right: each bar is a note to sing, higher bars are higher notes; the line is your voice', 'Tonhöhen-Spur, von links nach rechts zu lesen: jeder Balken ist ein Ton zum Singen, höhere Balken sind höhere Töne; die Linie ist deine Stimme')}"></canvas>
-     <div class="foot"><p class="fbk info" id="fbk"></p><p class="legend">${L('Sing on “la” or “loo”. Any octave counts.', 'Sing auf „la“ oder „lu“. Jede Oktave zählt.')}</p></div>`,
+     <div class="foot"><p class="fbk info" id="fbk"></p><p class="legend">${LYRICS[song.id] ? L('Sing the words, or on “la”. Any octave counts.', 'Sing den Text oder auf „la“. Jede Oktave zählt.') : L('No words: sing the names of the notes, do re mi (a tune in minor sits on la), or on “la”. Any octave counts.', 'Ohne Text: Sing die Namen der Töne, do re mi (eine Melodie in Moll steht auf la), oder auf „la“. Jede Oktave zählt.')}</p></div>`,
     `<div class="grp"><button class="btn quiet" id="prev">${icon('left')}${L('Previous', 'Zurück')} <kbd>←</kbd></button><button class="btn" id="again">${L('Again', 'Nochmal')} <kbd>R</kbd></button><button class="btn" id="hearit">${L('Hear it', 'Anhören')} <kbd>H</kbd></button><button class="btn quiet" id="next">${L('Next', 'Weiter')} <kbd>→</kbd>${icon('right')}</button>${nextStep(ctx)}</div>
      <div class="grp" id="tempobox" hidden><button class="btn quiet" id="slower">${L('Slower', 'Langsamer')} <kbd>−</kbd></button><b id="tempo"></b><button class="btn quiet" id="faster">${L('Faster', 'Schneller')} <kbd>+</kbd></button><button class="btn" id="pause"><span>${L('Pause', 'Pause')}</span> <kbd>${L('Space', 'Leertaste')}</kbd></button></div>
+     <details class="more" id="more"><summary class="btn quiet">${L('More', 'Mehr')}</summary><div class="morepanel">
+       <p class="k">${L('How much help', 'Wie viel Hilfe')}</p><div class="row"><button class="btn quiet" id="helpbtn"></button></div><p class="note">${L('Less help, step by step: first the model and the line, then the line only, then neither; once a phrase sits. What you sang is shown afterwards.', 'Weniger Hilfe, Schritt für Schritt: erst Vorbild und Linie, dann nur die Linie, dann keins von beidem; sobald eine Phrase sitzt. Was du gesungen hast, siehst du danach.')}</p>
+       <p class="k">${L('A second voice', 'Eine zweite Stimme')}</p><div class="row"><button class="btn quiet tog" id="harmbtn" aria-pressed="false">${L('Sing a third below', 'Eine Terz darunter singen')} <kbd>T</kbd></button></div><p class="note">${L('The app sings the tune, you the voice a third below it, with the click. Headphones only: through speakers the microphone would hear the app instead of you.', 'Die App singt die Melodie, du die Stimme eine Terz darunter, mit Klick. Nur mit Kopfhörern: Über Lautsprecher würde das Mikrofon die App statt dich hören.')}</p>
+     </div></details>
      <p class="auto" id="auto"></p>`,
     ctx,
     ['#/songs', L('Songs', 'Songs')],
@@ -617,15 +639,16 @@ export const singLesson: Screen = (root, [id, rung], ctx) => {
   /** "Hear it": the line sung by the app, a little slower than full speed. */
   let modelUntil = 0;
   function hearIt(): void {
-    if (stage !== 0) return;
+    if (stage !== 0 && help === 0 && !harmony) return;
     const l = lines[line];
     const unit = song.noteDur / 0.75;
-    const sound = model(l.notes, unit);
+    // with less help the model gives the first note only: where to start
+    const sound = model(help > 0 ? l.notes.slice(0, 1).map((n) => ({ ...n, at: 0 })) : l.notes, unit);
     if (!sound) return;
     const secs = engine.demo(sound);
     ear.quiet(secs + 0.3);
     modelUntil = performance.now() + (secs + 0.3) * 1000;
-    say('info', L(`Listen: this is how the phrase goes.`, `Hör zu: so geht die Phrase.`));
+    say('info', help > 0 ? L('The first note: the rest is yours.', 'Der erste Ton: Der Rest ist deins.') : L(`Listen: this is how the phrase goes.`, `Hör zu: so geht die Phrase.`));
     window.setTimeout(() => performance.now() >= modelUntil - 50 && say('info', L('Now you.', 'Jetzt du.')), (secs + 0.3) * 1000);
   }
 
@@ -651,7 +674,7 @@ export const singLesson: Screen = (root, [id, rung], ctx) => {
       const cur = l.notes[Math.min(at, l.notes.length - 1)];
       where(line);
       $('#eb', root).textContent = `${ctx ? `${ctx.label} · ${song.title} · ` : ''}${L(`Phrase ${line + 1} of ${n} · the app waits for you`, `Phrase ${line + 1} von ${n} · die App wartet auf dich`)}`;
-      $('#h1', root).innerHTML = done ? L('Phrase done.', 'Phrase geschafft.') : L(`Sing <em>${noteName(cur.midi)}</em>.`, `Sing <em>${noteName(cur.midi)}</em>.`);
+      $('#h1', root).innerHTML = done ? L('Phrase done.', 'Phrase geschafft.') : L(`Sing <em>${noteName(cur.midi)}</em>${cur.word ? `: “${esc(cur.word)}”` : ''}.`, `Sing <em>${noteName(cur.midi)}</em>${cur.word ? `: „${esc(cur.word)}“` : ''}.`);
       const prev = at > 0 ? l.notes[at - 1] : null;
       $('#sub', root).textContent = done
         ? ''
@@ -667,7 +690,7 @@ export const singLesson: Screen = (root, [id, rung], ctx) => {
     }
     function paint(): void {
       const now = engine.listener?.time ?? 0;
-      lane.draw({ look: (i) => (i < at ? 'done' : i === at ? 'cur' : 'up'), at: null, trail: [], voice: voice === null ? null : lane.fold(voice), dotAt: Math.min(at, l.notes.length - 1), hold: fresh ? hold.progress(now) / hold.need : 0, tol });
+      lane.draw({ look: (i) => (i < at ? 'done' : i === at ? 'cur' : 'up'), at: null, trail: [], voice: voice === null ? null : lane.fold(voice), dotAt: Math.min(at, l.notes.length - 1), hold: fresh ? hold.progress(now) / hold.need : 0, tol, hide: (i) => help >= 2 && i >= at && i > 0, blind: help >= 2 });
     }
     function finish(): void {
       const written = (l.notes[l.notes.length - 1].at - l.notes[0].at) * song.noteDur;
@@ -733,9 +756,9 @@ export const singLesson: Screen = (root, [id, rung], ctx) => {
 
   /** Rungs 2 and 3: with the click. A note counts when the voice lay on it for most of its length. */
   function clickMode(): typeof mode {
-    const whole = stage === 2;
-    if (whole) tempo = 100;
-    const idxs = whole ? lines.map((_, i) => i).slice(line) : [line];
+    const whole = stage === 2 && !review;
+    if (stage === 2) tempo = 100;
+    const idxs = review ? review.lines : whole ? lines.map((_, i) => i).slice(line) : [line];
     // the lines one after the other, as one
     let u0 = 0;
     const notes: (LaneNote & { line: number })[] = [];
@@ -753,13 +776,14 @@ export const singLesson: Screen = (root, [id, rung], ctx) => {
     let t0 = 0;
     let latency = 0;
     let running = false;
+    let recFrom = -1;
     let heard: Frame[] = [];
     let trail: { u: number; midi: number }[] = [];
     const state: ('up' | 'done' | 'close' | 'miss')[] = notes.map(() => 'up');
     lane.set(notes, units);
     $('#tempobox', root).hidden = false;
-    $<HTMLButtonElement>('#slower', root).disabled = whole;
-    $<HTMLButtonElement>('#faster', root).disabled = whole;
+    $<HTMLButtonElement>('#slower', root).disabled = whole || !!review;
+    $<HTMLButtonElement>('#faster', root).disabled = whole || !!review;
     $('#auto', root).hidden = true;
     $('#hearit', root).hidden = true;
 
@@ -776,13 +800,20 @@ export const singLesson: Screen = (root, [id, rung], ctx) => {
       const low = store.settings.clickSound === 'click';
       for (let k = 0; k < count; k++) engine.tick(start + k * beat, k === 0, vol, low);
       for (const c of clicks) engine.tick(t0 + c.u * unit, c.accent, vol, low);
+      // the second voice: the app sings the tune at the same time, through the speakers (headphones!)
+      if (harmony) {
+        const melody = model(idxs.flatMap((li, k) => tune[li].notes.map((nt) => ({ ...nt, at: nt.at + idxs.slice(0, k).reduce((s, x) => s + tune[x].units, 0) }))), unit);
+        if (melody) engine.playAt(t0, melody, 0.55);
+      }
+      recFrom = whole && engine.micOn && store.settings.recordTakes ? engine.now() : -1;
+      if (recFrom >= 0) engine.record(TAKE_MAX);
       heard = [];
       trail = [];
       state.fill('up');
       running = true;
       $('#tempo', root).textContent = `${tempo}%`;
       $('#pause span', root).textContent = L('Pause', 'Pause');
-      say('info', whole ? L('Sing each note as the line reaches it, from here to the end.', 'Sing jeden Ton, wenn die Linie ihn erreicht, von hier bis zum Ende.') : L('Sing each note as the line reaches it.', 'Sing jeden Ton, wenn die Linie ihn erreicht.'));
+      say('info', review ? L('An old song, from cold: two phrases, no run-up. Whatever comes out is fine; it shows what has stayed.', 'Ein alter Song, aus dem Stand: zwei Phrasen, ohne Anlauf. Was herauskommt, ist in Ordnung; es zeigt, was geblieben ist.') : whole ? L('Sing each note as the line reaches it, from here to the end.', 'Sing jeden Ton, wenn die Linie ihn erreicht, von hier bis zum Ende.') : L('Sing each note as the line reaches it.', 'Sing jeden Ton, wenn die Linie ihn erreicht.'));
       raf = requestAnimationFrame(tick);
     }
     function cancel(): void {
@@ -790,6 +821,8 @@ export const singLesson: Screen = (root, [id, rung], ctx) => {
       stopTimer(timer);
       engine.clearTicks();
       running = false;
+      if (recFrom >= 0) engine.recorded();
+      recFrom = -1;
     }
     /**
      * How note i was sung: one pitch for the note, the middle of what was heard in it, leaving out the first
@@ -817,12 +850,12 @@ export const singLesson: Screen = (root, [id, rung], ctx) => {
       const cur = notes.findIndex((nt) => u < nt.at + nt.len);
       const li = cur >= 0 ? notes[cur].line : idxs[idxs.length - 1];
       where(li);
-      $('#eb', root).textContent = `${ctx ? `${ctx.label} · ${song.title} · ` : ''}${whole ? L('Full speed, to the end', 'Volles Tempo, bis zum Ende') : L(`Phrase ${line + 1} of ${n} · with the click at ${tempo}%`, `Phrase ${line + 1} von ${n} · mit Klick bei ${tempo}%`)}`;
+      $('#eb', root).textContent = `${ctx ? `${ctx.label} · ${song.title} · ` : ''}${review ? L(`Sung again from cold · phrases ${idxs.map((x) => x + 1).join(' and ')} · ${tempo}%`, `Wiederholen aus dem Stand · Phrasen ${idxs.map((x) => x + 1).join(' und ')} · ${tempo}%`) : whole ? L('Full speed, to the end', 'Volles Tempo, bis zum Ende') : L(`Phrase ${line + 1} of ${n} · with the click at ${tempo}%`, `Phrase ${line + 1} von ${n} · mit Klick bei ${tempo}%`)}`;
       $('#h1', root).innerHTML = u < 0 ? L(`Get ready: <em>${Math.min(count, Math.ceil(-u / song.beat))}</em>`, `Mach dich bereit: <em>${Math.min(count, Math.ceil(-u / song.beat))}</em>`) : cur >= 0 ? `<em>${noteName(notes[cur].midi)}</em>` : '';
       $('#sub', root).textContent = '';
       voiceSim(cur >= 0 && u > notes[cur].at - 0.2 ? notes[cur].midi : null);
       root.dataset.step = String(notes.filter((nt) => now >= t0 + nt.at * unit).length - 1);
-      lane.draw({ look: (i) => (state[i] === 'up' ? (i === cur ? 'cur' : 'up') : state[i]), at: u, trail, voice: voice === null ? null : lane.fold(voice), tol });
+      lane.draw({ look: (i) => (state[i] === 'up' ? (i === cur ? 'cur' : 'up') : state[i]), at: u, trail, voice: voice === null ? null : lane.fold(voice), tol, hide: (i) => help >= 2 && state[i] === 'up' && i > 0, blind: help >= 2 });
       if (now > t0 + units * unit + latency + 0.3 && state.every((s) => s !== 'up')) done();
     }
     function done(): void {
@@ -832,14 +865,32 @@ export const singLesson: Screen = (root, [id, rung], ctx) => {
       const close = state.filter((s) => s === 'close').length;
       const changes = [];
       const now = Date.now();
-      for (const li of idxs) {
+      // the voice, recorded at full speed: kept to listen to, beside the first recording of the song
+      const rec = recFrom >= 0 ? engine.recorded() : null;
+      if (rec && rec.samples.length > rec.sampleRate) {
+        const bars = idxs.map((li, k) => {
+          const from = t0 + idxs.slice(0, k).reduce((s, x) => s + lines[x].units, 0) * unit - recFrom;
+          const mine = notes.map((nt, i) => (nt.line === li ? i : -1)).filter((i) => i >= 0);
+          return { bar: li, from: Math.max(0, from), to: from + lines[li].units * unit, clean: mine.every((i) => state[i] === 'done') };
+        });
+        void saveTake('voice', song.id, rec.samples, rec.sampleRate, { t: now, secs: rec.samples.length / rec.sampleRate, tempo, bars });
+      }
+      recFrom = -1;
+      // the second voice is practice of its own: the tune's phrases are not measured by it
+      if (harmony) changes.push(store.skills.record('ear:v.harmony', Math.round((100 * hits) / Math.max(1, notes.length)), now));
+      else for (const li of idxs) {
         const mine = notes.map((nt, i) => (nt.line === li ? i : -1)).filter((i) => i >= 0);
         if (mine.every((i) => state[i] === 'done')) changes.push(store.skills.record(sungPhraseKey(song, li), tempo, now));
       }
       const clean = hits === notes.length;
       let then: string;
       let leave = false;
-      if (whole) {
+      const visit = !!review;
+      if (review) {
+        then = reviewed('voice', song.id, clean);
+        leave = !!ctx;
+        review = null;
+      } else if (whole) {
         store.progress[song.id] = 0;
         leave = !!ctx;
         then = clean ? L('That is the whole song at full speed.', 'Das war der ganze Song im vollen Tempo.') : L('Press R or Space to sing it again.', 'Drück R oder die Leertaste, um ihn nochmal zu singen.');
@@ -853,11 +904,13 @@ export const singLesson: Screen = (root, [id, rung], ctx) => {
         if (hits + close < 0.6 * notes.length && tempo > TEMPOS[0]) tempo = TEMPOS[Math.max(0, TEMPOS.indexOf(tempo) - 1)];
         then = L('Once more.', 'Nochmal.');
       }
+      if (enlist('voice', song.id)) then += L(` New in your repertoire: it comes back in ${REVIEW_DAYS[0]} days, from cold.`, ` Neu in deinem Repertoire: Er kommt in ${REVIEW_DAYS[0]} Tagen wieder, aus dem Stand.`);
       store.save();
       const near = close ? L(` ${close} close (amber): nearly there.`, ` ${close} knapp daneben (gelb): fast.`) : '';
       say(clean ? 'good' : 'info', `${clean ? icon('check') : ''}${L(`${hits} of ${notes.length} notes on pitch at ${tempo}%.`, `${hits} von ${notes.length} Tönen getroffen bei ${tempo}%.`)}${near}${levelNews(changes)} ${then}`);
       $('#h1', root).textContent = clean ? L('Clean.', 'Sauber.') : L(`${hits} of ${notes.length}.`, `${hits} von ${notes.length}.`);
       if (leave) timer = later(3200, ctx!.next, ctx!.after);
+      else if (visit) $('#pause span', root).textContent = L('Play', 'Start');
       else if (!whole) timer = later(2600, () => go(clean ? line + 1 : line), clean ? L('the next phrase', 'die nächste Phrase') : L('the same phrase again', 'noch einmal dieselbe Phrase'));
       else $('#pause span', root).textContent = L('Play', 'Start');
     }
@@ -891,8 +944,35 @@ export const singLesson: Screen = (root, [id, rung], ctx) => {
   }
   function go(li: number): void {
     engine.stopDemo();
+    review = null;
     line = (li + n) % n;
     setStage(stage);
+  }
+  function pick(s: number): void {
+    review = null;
+    setStage(s);
+  }
+  /** What the switches say. */
+  function extras(): void {
+    $('#helpbtn', root).innerHTML = `${[L('Help: the model and the line', 'Hilfe: Vorbild und Linie'), L('Help: the line only', 'Hilfe: nur die Linie'), L('Help: neither, the first note only', 'Hilfe: keine, nur der erste Ton')][help]} <kbd>L</kbd>`;
+    $('#harmbtn', root).setAttribute('aria-pressed', String(harmony));
+  }
+  function setHelp(h: number): void {
+    help = h;
+    store.settings.voiceHelp = h;
+    store.save();
+    extras();
+    say('info', [L('The model and the line: everything there is.', 'Vorbild und Linie: alles, was es gibt.'), L('The line only: H gives the first note, the rest is yours.', 'Nur die Linie: H gibt den ersten Ton, der Rest ist deins.'), L('Neither: H gives the first note; the line and your voice show once it is sung.', 'Keins von beidem: H gibt den ersten Ton; die Linie und deine Stimme erscheinen, wenn gesungen ist.')][h]);
+    setStage(stage);
+  }
+  /** T: the second voice, with the click; or back to the tune. */
+  function toggleHarmony(): void {
+    harmony = !harmony;
+    lines = harmony ? voiced : tune;
+    review = null;
+    extras();
+    say('info', harmony ? L('The second voice: the app sings the tune, you a third below it. Headphones only.', 'Die zweite Stimme: Die App singt die Melodie, du eine Terz darunter. Nur mit Kopfhörern.') : L('Back to the tune.', 'Zurück zur Melodie.'));
+    setStage(harmony && stage === 0 ? 1 : stage);
   }
   function setTempo(step: number): void {
     if (stage !== 1) return;
@@ -917,9 +997,11 @@ export const singLesson: Screen = (root, [id, rung], ctx) => {
     ArrowRight: () => go(line + 1),
     r: () => go(line),
     h: hearIt,
-    '1': () => setStage(0),
-    '2': () => setStage(1),
-    '3': () => setStage(2),
+    '1': () => pick(0),
+    '2': () => pick(1),
+    '3': () => pick(2),
+    l: () => setHelp((help + 1) % 3),
+    t: toggleHarmony,
     '-': () => setTempo(-1),
     '+': () => setTempo(1),
     '=': () => setTempo(1),
@@ -932,8 +1014,11 @@ export const singLesson: Screen = (root, [id, rung], ctx) => {
   $('#slower', root).onclick = () => setTempo(-1);
   $('#faster', root).onclick = () => setTempo(1);
   $('#pause', root).onclick = () => mode?.toggle();
-  RUNGS().forEach((_, i) => ($('#st' + i, root).onclick = () => setStage(i)));
+  RUNGS().forEach((_, i) => ($('#st' + i, root).onclick = () => pick(i)));
   if (ctx) $('#nextstep', root).onclick = ctx.next;
+  $('#helpbtn', root).onclick = () => setHelp((help + 1) % 3);
+  $('#harmbtn', root).onclick = toggleHarmony;
+  extras();
   setStage(stage);
   return () => {
     mode?.stop();

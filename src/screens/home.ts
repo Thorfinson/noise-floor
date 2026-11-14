@@ -6,15 +6,22 @@ import { KINDS, kindOf, type SkillKind } from '../core/skills';
 import { store, type Instrument } from '../core/store';
 import { allPieces, KEY_CHORDS } from '../music/content';
 import { CHORDS, noteName, pianoChord } from '../music/theory';
-import { $, $$, esc, go, hear, icon, keys, micMeter, type Screen } from '../ui/dom';
+import { $, $$, applyScale, esc, go, hear, icon, keys, micMeter, type Screen } from '../ui/dom';
 import { describe, pieceMaterial } from './learn';
 import { currentPiece, currentSong, currentSongToSing } from '../music/difficulty';
 import { rangeMeasured, voiceRange } from './sing';
 import { learningPath, OPEN_CHORDS, type Stage } from '../music/path';
 import { LANDS, Trail, type StoneState } from '../ui/trail';
-import { dayOf, describeSung, doneToday, focusChord, instrumentOf, plan, resumeAt, todaysChords, todaysKeyChords } from './session';
+import { begun, bindChoose, chooseRow, currentId, dayOf, describeSung, doneToday, focusChord, fullPlan, instrumentOf, plan, resumeAt, setPlanned, songChoices, todaysChords, todaysKeyChords } from './session';
 
 import { skillLabel } from '../music/labels';
+import { progressTabs } from './repertoire';
+import { bindPlan, planCard, weekLine } from './habit';
+import { weekStats } from './trends';
+import { relDay } from '../music/review';
+import { askAgain, chooseFile, fileState, forgetFile, takeNewer } from '../core/progressfile';
+import { TUNINGS } from '../music/tuning';
+import { dayStart } from '../core/days';
 
 export { skillLabel };
 
@@ -37,6 +44,8 @@ export const pips = (level: number, cls = 'on'): string => `<span class="pips" r
 
 /** Shows the page again after something it depends on has changed. */
 const refresh = (): void => void dispatchEvent(new HashChangeEvent('hashchange'));
+/** The plan on show as a list to change: which steps the player keeps. Kept while the app is open. */
+let editingPlan = false;
 
 /** Home is today's session: one clear place to start, everything else underneath. */
 export const home: Screen = (root) => {
@@ -52,7 +61,6 @@ export const home: Screen = (root) => {
   const played = Object.keys(store.skills.data);
   const pieceIds = piano ? new Set(allPieces().map((p) => p.id)) : new Set<string>();
   const first = voice ? !played.some((k) => k.startsWith('pitch:') || k.startsWith('tone:') || k.startsWith('sing:') || k.includes('~voice')) && !rangeMeasured() : piano ? !played.some((k) => k.startsWith('finger:piano') || k.startsWith('scale:') || k.startsWith('chord:p.') || (k.startsWith('bar:') && pieceIds.has(k.split(':')[1]))) : store.sessions.length === 0;
-  const days = store.streak(now);
   const chord = focusChord();
   const piece = currentPiece();
   const song = currentSong();
@@ -75,8 +83,8 @@ export const home: Screen = (root) => {
       : L(`${CHORDS[slowest].name} with all strings clean in under ${under} seconds`, `${CHORDS[slowest].name} mit allen Saiten sauber in unter ${String(under).replace('.', ',')} Sekunden`);
   const intro = voice
     ? L(
-        'The app leads you through it. First it finds your range: a low note and a high one, both comfortable, and every song is moved into it. Then come five tones to sing back, a short game of sung patterns and two phrases of a song, sung on “la”. Any octave counts. Nothing starts before you are ready, and nothing is recorded.',
-        'Die App führt dich hindurch. Zuerst findet sie deinen Umfang: einen tiefen und einen hohen Ton, beide bequem, und jeder Song wird hineingelegt. Dann kommen fünf Töne zum Nachsingen, ein kurzes Spiel mit gesungenen Mustern und zwei Phrasen eines Songs, auf „la“ gesungen. Jede Oktave zählt. Nichts beginnt, bevor du bereit bist, und nichts wird aufgenommen.',
+        'The app leads you through it. First it finds your range: a low note and a high one, both comfortable, and every song is moved into it. Then come five tones to sing back, a short game of sung patterns and two phrases of a song, with its words or in solfège (do re mi). Any octave counts. Nothing starts before you are ready, and nothing leaves your computer.',
+        'Die App führt dich hindurch. Zuerst findet sie deinen Umfang: einen tiefen und einen hohen Ton, beide bequem, und jeder Song wird hineingelegt. Dann kommen fünf Töne zum Nachsingen, ein kurzes Spiel mit gesungenen Mustern und zwei Phrasen eines Songs, mit Text oder in Solmisation (do re mi). Jede Oktave zählt. Nichts beginnt, bevor du bereit bist, und nichts verlässt deinen Computer.',
       )
     : piano
     ? L(
@@ -89,17 +97,31 @@ export const home: Screen = (root) => {
       );
   const link = (href: string, label: string): string => `<a class="hb" href="#/${href}">${esc(label)}</a>`;
   // today's session is through: the page says so, shows what was measured today, and offers more
-  if (doneToday(inst, now) && !at) return doneHome(root, now, days, link);
+  if (doneToday(inst, now) && !at) return doneHome(root, now, link);
   root.innerHTML = `<div class="page mid">
+    ${fileBanner()}
     <div class="today">
       <div>
-        <p class="kick">${first ? L('Start here', 'Fang hier an') : days ? L(`Day ${days} in a row`, `Tag ${days} in Folge`) : L('Welcome back', 'Willkommen zurück')}${store.skills.rank() ? L(` · rank ${store.skills.rank()}`, ` · Rang ${store.skills.rank()}`) : ''}</p>
+        <p class="kick">${first ? L('Start here', 'Fang hier an') : weekLine(now)}</p>
         <h1>${at ? L(`Today: ${left} minutes left`, `Heute: noch ${left} ${left === 1 ? 'Minute' : 'Minuten'}`) : L(`Today: about ${minutes} minutes`, `Heute: etwa ${minutes} ${minutes === 1 ? 'Minute' : 'Minuten'}`)}</h1>
         <p class="lede">${at ? L(`You stopped after step ${at}. It goes on with step ${at + 1}: ${esc(steps[at].title)}.`, `Du hast nach Schritt ${at} aufgehört. Es geht weiter mit Schritt ${at + 1}: ${esc(steps[at].title)}.`) : first ? intro : L(`Today's goal: ${esc(goal)}.`, `Heutiges Ziel: ${esc(goal)}.`)}</p>
-        <div class="row" style="margin-top:26px"><a class="btn primary big" id="go" href="#/session">${at ? L(`Continue at step ${at + 1}`, `Weiter mit Schritt ${at + 1}`) : L("Start today's session", 'Heutige Session starten')} <kbd>${L('Space', 'Leertaste')}</kbd></a>${at ? `<a class="btn big" id="anew" href="#/session/new">${L('Start from step 1', 'Ab Schritt 1 beginnen')}</a>` : ''}</div>
+        <div class="row" style="margin-top:26px"><a class="btn primary big" id="go" href="#/session">${at ? L(`Continue at step ${at + 1}`, `Weiter mit Schritt ${at + 1}`) : L("Start today's session", 'Heutige Session starten')} <kbd>${L('Space', 'Leertaste')}</kbd></a>${at ? `<a class="btn big" id="anew" href="#/session/new">${L('Start from step 1', 'Ab Schritt 1 beginnen')}</a>` : `<a class="btn big" id="short" href="#/session/short" title="${L('The first step and the song: five minutes count as fully as a whole session.', 'Der erste Schritt und der Song: Fünf Minuten zählen so voll wie eine ganze Session.')}">${L('Only 5 minutes', 'Nur 5 Minuten')}</a>`}</div>
+        ${first ? '' : weekNote(inst, now)}
       </div>
-      <ol class="plan" aria-label="${L("Today's steps", 'Heutige Schritte')}">${steps.map((st, i) => `<li class="${i < at ? 'done' : i === at ? 'cur' : ''}"><span class="n">${i < at ? icon('check') : i + 1}</span><div><b>${esc(st.title)}</b><small>${esc(st.detail)}</small></div><span class="t">${st.minutes} min</span></li>`).join('')}</ol>
+      <div class="planside">${
+        editingPlan && !at
+          ? `<ol class="plan editing" aria-label="${L('The steps of your plan', 'Die Schritte deines Plans')}">${fullPlan(now)
+              .map((st) => {
+                const on = !(store.planOff[inst] ?? []).includes(st.kind);
+                return `<li class="${on ? '' : 'off'}"><label class="pl"><input type="checkbox" data-kind="${esc(st.kind)}"${on ? ' checked' : ''}><div><b>${esc(st.title)}</b><small>${esc(st.detail)}</small></div></label><span class="t">${st.minutes} min</span></li>`;
+              })
+              .join('')}</ol>
+            <p class="note">${L('Leave out what you do not need: the plan stays so every day until you bring a step back. The app still fills each step from what it measured.', 'Lass weg, was du nicht brauchst: Der Plan bleibt jeden Tag so, bis du einen Schritt zurückholst. Die App füllt jeden Schritt weiter aus dem, was sie gemessen hat.')}</p>
+            <div class="row"><button class="btn" id="plandone">${L('Done', 'Fertig')}</button></div>`
+          : `<ol class="plan" aria-label="${L("Today's steps", 'Heutige Schritte')}">${steps.map((st, i) => `<li class="${i < at ? 'done' : i === at ? 'cur' : ''}"><span class="n">${i < at ? icon('check') : i + 1}</span><div><b>${esc(st.title)}</b><small>${esc(st.detail)}</small></div><span class="t">${st.minutes} min</span></li>`).join('')}</ol>${at ? '' : `<div class="row planrow"><button class="btn quiet" id="editplan">${L('Change the plan', 'Plan ändern')}</button>${(store.planOff[inst] ?? []).length ? `<span class="note">${L(`${(store.planOff[inst] ?? []).length} left out by you`, `${(store.planOff[inst] ?? []).length} von dir weggelassen`)}</span>` : ''}</div>`}${!at && !begun(currentId(inst)) ? chooseRow(songChoices(inst), currentId(inst)) : ''}`
+      }</div>
     </div>
+    <div class="homefoot">
     <div>
       <p class="k" style="margin:0 0 10px">${L('Or one thing on its own', 'Oder eine Übung für sich')}</p>
       <nav class="links" aria-label="${L('Single exercises', 'Einzelne Übungen')}">
@@ -108,7 +130,32 @@ export const home: Screen = (root) => {
       </nav>
       <p class="note" style="margin-top:14px">${engine.running ? (engine.micOn ? L('Microphone is on.', 'Das Mikrofon ist an.') : L('Listening to the practice instrument only.', 'Hört nur auf das Übungsinstrument.')) : L('The microphone starts when you begin.', 'Das Mikrofon startet, wenn du beginnst.')}</p>
     </div>
+    ${planCard()}
+    </div>
   </div>`;
+  bindPlan(root, refresh);
+  bindFileBanner(root);
+  // the player's own plan: steps left out or brought back, and the song chosen among the next ones
+  const edit = root.querySelector<HTMLButtonElement>('#editplan');
+  if (edit)
+    edit.onclick = () => {
+      editingPlan = true;
+      refresh();
+    };
+  const done = root.querySelector<HTMLButtonElement>('#plandone');
+  if (done)
+    done.onclick = () => {
+      editingPlan = false;
+      refresh();
+    };
+  $$<HTMLInputElement>('.plan.editing input[data-kind]', root).forEach(
+    (b) =>
+      (b.onchange = () => {
+        setPlanned(b.dataset.kind!, b.checked);
+        refresh();
+      }),
+  );
+  bindChoose(root, inst, () => refresh());
   $$('[data-inst]', root).forEach(
     (b) =>
       (b.onclick = () => {
@@ -120,11 +167,37 @@ export const home: Screen = (root) => {
   return keys({ ' ': () => go('/session'), Enter: () => go('/session') });
 };
 
+/** On the start page: a progress file saved later on another computer, or one the browser must allow again. */
+function fileBanner(): string {
+  const f = fileState();
+  if (f.newer)
+    return `<div class="filebar" role="status"><p>${L(`Your progress file is newer than this browser: saved ${dayMonth(f.newer)} at ${new Date(f.newer).toLocaleTimeString(lang(), { hour: '2-digit', minute: '2-digit' })}, on another computer perhaps.`, `Deine Fortschrittsdatei ist neuer als dieser Browser: gespeichert am ${dayMonth(f.newer)} um ${new Date(f.newer).toLocaleTimeString(lang(), { hour: '2-digit', minute: '2-digit' })}, vielleicht auf einem anderen Computer.`)}</p><div class="row"><button class="btn primary" id="filetake">${L('Load it', 'Laden')}</button><button class="btn quiet" id="filekeep">${L('Keep this browser’s', 'Die dieses Browsers behalten')}</button></div></div>`;
+  if (f.status === 'ask') return `<div class="filebar" role="status"><p>${L(`Your progress is kept in ${f.name}: the browser asks before the app may use it again.`, `Dein Fortschritt wird in ${f.name} gehalten: Der Browser fragt, bevor die App sie wieder nutzen darf.`)}</p><div class="row"><button class="btn" id="fileallow">${L('Allow', 'Erlauben')}</button></div></div>`;
+  return '';
+}
+function bindFileBanner(root: HTMLElement): void {
+  const on = (id: string, fn: () => Promise<unknown>): void => {
+    const b = root.querySelector<HTMLButtonElement>('#' + id);
+    if (b) b.onclick = () => void fn().then(refresh);
+  };
+  on('filetake', () => takeNewer(true));
+  on('filekeep', () => takeNewer(false));
+  on('fileallow', () => askAgain());
+}
+
+/** The week in a line under the start: minutes, new best values, the repertoire; and where to see more. */
+function weekNote(inst: Instrument, now: number): string {
+  const w = weekStats(inst, now);
+  const rep = Object.keys(store.reviews).filter((k) => k.startsWith(inst + ':')).length;
+  const parts = [L(`${w.minutes} minutes played this week`, `${w.minutes} Minuten gespielt diese Woche`), ...(w.bests ? [L(`${w.bests} new best ${w.bests === 1 ? 'value' : 'values'}`, `${w.bests} neue Bestwerte`)] : []), ...(rep ? [L(`${rep} in your repertoire`, `${rep} im Repertoire`)] : [])];
+  return `<p class="note weeknote">${esc(parts.join(' · '))} · <a href="#/trends">${L('over the weeks', 'über die Wochen')}</a></p>`;
+}
+
 /**
  * The start page once today's session is through: done, what was measured today and how far it got, and
  * what can still be done: another round, a game, a song of your choice. Tomorrow the plan is new.
  */
-function doneHome(root: HTMLElement, now: number, days: number, link: (href: string, label: string) => string): () => void {
+function doneHome(root: HTMLElement, now: number, link: (href: string, label: string) => string): () => void {
   const inst = store.settings.instrument;
   const today = dayOf(now);
   const measured = Object.entries(store.skills.data)
@@ -135,9 +208,10 @@ function doneHome(root: HTMLElement, now: number, days: number, link: (href: str
   root.innerHTML = `<div class="page mid">
     <div class="today">
       <div>
-        <p class="kick">${days > 1 ? L(`Day ${days} in a row`, `Tag ${days} in Folge`) : L('First day of a new streak', 'Erster Tag einer neuen Serie')}${store.skills.rank() ? L(` · rank ${store.skills.rank()}`, ` · Rang ${store.skills.rank()}`) : ''}</p>
+        <p class="kick">${weekLine(now)}</p>
         <h1>${L("Today's session is done.", 'Die heutige Session ist geschafft.')}</h1>
         <p class="lede">${measured.length ? L(`Measured today: ${measured.length} ${measured.length === 1 ? 'skill' : 'skills'}. Everything is kept on this computer; tomorrow's plan takes up what needs it most.`, `Heute gemessen: ${measured.length} ${measured.length === 1 ? 'Fähigkeit' : 'Fähigkeiten'}. Alles bleibt auf diesem Computer gespeichert; der Plan für morgen greift auf, was es am meisten braucht.`) : L("Everything is kept on this computer; tomorrow's plan takes up what needs it most.", 'Alles bleibt auf diesem Computer gespeichert; der Plan für morgen greift auf, was es am meisten braucht.')} ${L('If you want more today:', 'Wenn du heute noch mehr willst:')}</p>
+        ${weekNote(inst, now)}
         <div class="row" style="margin-top:22px"><a class="btn primary big" id="go" href="#/session/new">${L('Another round', 'Noch eine Runde')} <kbd>${L('Space', 'Leertaste')}</kbd></a><a class="btn" href="#/nf">${L('Play a game', 'Ein Spiel spielen')}</a><a class="btn" href="#/songs">${songsLabel}</a></div>
       </div>
       <div class="donecard" aria-label="${L('Measured today', 'Heute gemessen')}">
@@ -178,11 +252,13 @@ export const progress: Screen = (root) => {
         const r = store.skills.data[key];
         const next = store.skills.next(key);
         const partial = kind === 'pitch' && r.level === 0 && !isFinite(r.best) ? L('not all found yet', 'noch nicht alle getroffen') : timed(kind) && r.level === 0 ? (kind === 'chord' && r.strings ? cleanStrings(key, r.strings) : L('not clean yet', 'noch nicht sauber')) : fmt(kind, r.best);
-        return `<tr><td>${esc(skillLabel(key))}${store.skills.rusty(key, now) ? `<span class="tag weak">${L('rusty', 'eingerostet')}</span>` : ''}</td><td>${pips(r.level)}</td><td class="n">${partial}</td><td class="n">${next ? (timed(kind) && next.level === 1 ? L('all clean once', 'einmal ganz sauber') : fmt(kind, next.value)) : L('top', 'höchste Stufe')}</td></tr>`;
+        // the first try of the last day it was played: what the hands do from cold, beside the best ever
+        const cold = r.cold && r.level > 0 ? `${fmt(kind, r.cold[1])}<small class="ago">${relDay(dayStart(r.cold[0]), now)}</small>` : '–';
+        return `<tr><td>${esc(skillLabel(key))}${store.skills.rusty(key, now) ? `<span class="tag weak">${L('rusty', 'eingerostet')}</span>` : ''}${store.skills.due(key, now) && !store.skills.rusty(key, now) ? `<span class="tag up">${L('due again', 'wieder fällig')}</span>` : ''}</td><td>${pips(r.level)}</td><td class="n">${partial}</td><td class="n">${cold}</td><td class="n">${next ? (timed(kind) && next.level === 1 ? L('all clean once', 'einmal ganz sauber') : fmt(kind, next.value)) : L('top', 'höchste Stufe')}</td></tr>`;
       })
       .join('');
     const top = Math.max(...found.map((key) => store.skills.data[key].level));
-    return `<details class="kind"><summary><b>${title}</b><span>${L(`${found.length} measured`, `${found.length} gemessen`)} · ${KINDS[kind].describe}</span>${pips(top)}</summary><div class="scroll"><table class="fixed"><thead><tr><th>${title}</th><th>${L('Level', 'Stufe')}</th><th class="n">${L('Best', 'Bestwert')}</th><th class="n">${L('Next level at', 'Nächste Stufe bei')}</th></tr></thead><tbody>${rows}</tbody></table></div></details>`;
+    return `<details class="kind"><summary><b>${title}</b><span>${L(`${found.length} measured`, `${found.length} gemessen`)} · ${KINDS[kind].describe}</span>${pips(top)}</summary><div class="scroll"><table class="fixed"><thead><tr><th>${title}</th><th>${L('Level', 'Stufe')}</th><th class="n">${L('Best', 'Bestwert')}</th><th class="n">${L('Last cold try', 'Zuletzt kalt')}</th><th class="n">${L('Next level at', 'Nächste Stufe bei')}</th></tr></thead><tbody>${rows}</tbody></table></div></details>`;
   };
   const body = kinds.map(section).join('');
   const names: Record<string, string> = lang() === 'de'
@@ -206,6 +282,7 @@ export const progress: Screen = (root) => {
   const stopWide = Math.min(20, 64 / Math.max(1, main.length - 1));
 
   root.innerHTML = `<div class="page way">
+    ${progressTabs('progress')}
     <div class="wayhead">
       <div><p class="kick">${L(`Your path · ${inst}`, `Dein Weg · ${inst === 'voice' ? 'Stimme' : piano ? 'Klavier' : 'Gitarre'}`)}</p>
         <h1>${here ? L(`You are at: ${esc(here.title.toLowerCase())}`, `Du bist bei: ${esc(here.title)}`) : L('Every stage of the path is done.', 'Jede Etappe des Wegs ist geschafft.')}</h1>
@@ -304,9 +381,18 @@ export const settings: Screen = (root) => {
     <div>
       <p class="k">${L('Language', 'Sprache')}</p>
       ${field('lang', L('Language of the app', 'Sprache der App'), L('English or German. The same choice is at the top right, EN and DE.', 'Englisch oder Deutsch. Dieselbe Wahl gibt es oben rechts, EN und DE.'), `<select id="lang"><option value="en" lang="en"${lang() === 'en' ? ' selected' : ''}>English</option><option value="de" lang="de"${lang() === 'de' ? ' selected' : ''}>Deutsch</option></select>`)}
+      <p class="k">${L('Seeing it', 'Ansicht')}</p>
+      ${field('scale', L('Size of the type', 'Schriftgröße'), L('Larger, for reading from a metre or more away with the instrument in your hands. On the screens you play at it enlarges what you read while playing (the instruction, the numbers and names of the music, what the app says), and the buttons keep their size.', 'Größer, zum Lesen aus einem Meter oder mehr, mit dem Instrument in den Händen. Auf den Bildschirmen, an denen du spielst, vergrößert sie, was du beim Spielen liest (die Anweisung, die Zahlen und Namen der Musik, was die App sagt), und die Knöpfe behalten ihre Größe.'), `<select id="scale">${[[1, L('Normal', 'Normal')], [1.15, L('Larger', 'Größer')], [1.3, L('Largest', 'Am größten')]].map(([v, n]) => `<option value="${v}"${s.uiScale === v ? ' selected' : ''}>${n}</option>`).join('')}</select>`)}
+      ${field('capo', L('Capo', 'Kapodaster'), L('The fret the capo sits at. The app hears the guitar as written: a C shape stays a C shape, and everything sounds that much higher.', 'Der Bund, in dem der Kapodaster sitzt. Die App hört die Gitarre wie notiert: Ein C-Griff bleibt ein C-Griff, und alles klingt entsprechend höher.'), `<select id="capo">${[0, 1, 2, 3, 4, 5, 6, 7].map((n) => `<option value="${n}"${n === (s.capo || 0) ? ' selected' : ''}>${n ? L(`Fret ${n}`, `${n}. Bund`) : L('None', 'Keiner')}</option>`).join('')}</select>`)}
+      ${field('tuning', L('Tuning of the guitar', 'Stimmung der Gitarre'), L('Tuned a half or a whole step down, the guitar is heard as written, as with a capo. Drop D and the open tunings are in the tuner, for playing of your own.', 'Einen Halb- oder Ganzton tiefer gestimmt, wird die Gitarre wie notiert gehört, wie mit Kapodaster. Drop D und die offenen Stimmungen sind im Stimmgerät, zum eigenen Spielen.'), `<select id="tuning">${TUNINGS()
+        .filter((t) => t.lessons)
+        .map((t) => `<option value="${t.id}"${t.id === s.tuning ? ' selected' : ''}>${esc(t.name)}</option>`)
+        .join('')}</select>`)}
+      ${field('lefty', L('Left-handed guitar', 'Linkshänder-Gitarre'), L('Chord pictures and the fretboard mirrored, the high e string on the left, as you see your guitar.', 'Griffbilder und Griffbrett gespiegelt, die hohe e-Saite links, so wie du deine Gitarre siehst.'), check('lefty', s.leftHanded))}
       <p class="k">${L('Microphone', 'Mikrofon')}</p>
       ${field('mic', L('Use the microphone', 'Mikrofon benutzen'), L('Off: the app only hears the built-in practice instrument.', 'Aus: Die App hört nur das eingebaute Übungsinstrument.'), check('mic', s.mic))}
       ${field('dev', L('Which microphone', 'Welches Mikrofon'), L('The names appear once the microphone has been allowed.', 'Die Namen erscheinen, sobald das Mikrofon erlaubt ist.'), `<select id="dev"><option value="">${L('System default', 'Systemstandard')}</option></select>`)}
+      <div class="field"><div><b>${L('Hearing check', 'Hörcheck')}</b><small>${store.progress[`check:${s.instrument}`] ? L(`Last time ${store.progress[`checkscore:${s.instrument}`] ?? 0}% heard right, ${dayMonth(store.progress[`check:${s.instrument}`])}.`, `Zuletzt ${store.progress[`checkscore:${s.instrument}`] ?? 0} % richtig gehört, am ${dayMonth(store.progress[`check:${s.instrument}`])}.`) : L('Two minutes: the app asks for strings, chords, keys or notes and says how well it hears your instrument in your room, and what to change.', 'Zwei Minuten: Die App bittet um Saiten, Akkorde, Tasten oder Töne und sagt, wie gut sie dein Instrument in deinem Raum hört, und was du ändern kannst.')}</small></div><div class="row"><a class="btn" href="#/check">${L('Start the hearing check', 'Hörcheck starten')}</a></div></div>
       <div class="field"><div><b>${L('Is it hearing you?', 'Hört es dich?')}</b><small id="testmsg">${L('Start the test and play a note. The bars should move and the note should be named.', 'Starte den Test und spiel einen Ton. Die Balken sollten sich bewegen, und der Ton sollte benannt werden.')}</small></div><div class="row"><button class="btn" id="test">${L('Test the microphone', 'Mikrofon testen')}</button><span id="testout" hidden>${micMeter()}</span><b id="heard"></b></div></div>
       <div class="field"><div><b>${L('When something is not heard right', 'Wenn etwas nicht richtig gehört wird')}</b><small id="recmsg">${L('Record it: play what the app gets wrong, for up to 30 seconds. The file holds exactly what the app heard and goes to your downloads folder.', 'Nimm es auf: Spiel bis zu 30 Sekunden lang, was die App falsch versteht. Die Datei enthält genau das, was die App gehört hat, und landet in deinem Download-Ordner.')}</small></div><div class="row"><button class="btn" id="rec">${L('Record', 'Aufnehmen')}</button></div></div>
       <p class="k">${L('Playing', 'Spielen')}</p>
@@ -317,6 +403,9 @@ export const settings: Screen = (root) => {
       ${field('mute', L('Pause a run by muting the strings', 'Eine Runde durch Abdämpfen pausieren'), L('Hit the muted strings twice in a row and then stop: that pauses a Noise Floor run. The same again goes on.', 'Schlag die abgedämpften Saiten zweimal hintereinander an und hör dann auf: Das pausiert eine Noise-Floor-Runde. Dasselbe noch einmal, und es geht weiter.'), check('mute', s.mutePause))}
       ${field('strum', L('Choose menu cards from the instrument', 'Menükarten mit dem Instrument wählen'), L('Strum Em, Am or C, or play C, D or E on the piano, for the first, second or third card. With the voice the number keys choose.', 'Schlag Em, Am oder C an oder spiel C, D oder E am Klavier, für die erste, zweite oder dritte Karte. Bei der Stimme wählen die Zifferntasten.'), check('strum', s.strumSelect))}
       ${field('prac', L('Show the practice instrument', 'Übungsinstrument zeigen'), L('Buttons and keys (N, W, M, B, X) that play notes for you, to try things without an instrument.', 'Knöpfe und Tasten (N, W, M, B, X), die Töne für dich spielen, um ohne Instrument etwas auszuprobieren.'), check('prac', s.practiceInstrument))}
+      ${field('rectakes', L('Record takes at full speed', 'Durchgänge im vollen Tempo aufnehmen'), L('To listen back, bar by bar, and to hear weeks of practice: the first recording of each song and the latest stay in this browser, nowhere else.', 'Zum Anhören, Takt für Takt, und um Wochen des Übens zu hören: Die erste Aufnahme jedes Songs und die neueste bleiben in diesem Browser, nirgends sonst.'), check('rectakes', s.recordTakes))}
+      ${field('autotempo', L('In a loop, the tempo rises by itself', 'In der Schleife steigt das Tempo von selbst'), L('After three clean runs in a row, 5% faster, up to 125%.', 'Nach drei sauberen Durchläufen in Folge 5 % schneller, bis 125 %.'), check('autotempo', s.autoTempo))}
+      ${field('weekgoal', L('Days a week to play', 'Tage pro Woche zum Spielen'), L('The week counts, not an unbroken chain: missed days do not undo anything.', 'Die Woche zählt, nicht eine ununterbrochene Kette: Verpasste Tage machen nichts zunichte.'), `<select id="weekgoal">${[2, 3, 4, 5, 6, 7].map((n) => `<option value="${n}"${s.weekGoal === n ? ' selected' : ''}>${L(`${n} days`, `${n} Tage`)}</option>`).join('')}</select>`)}
       <p class="k">${L('Tuning', 'Stimmung')}</p>
       ${field('a4', L('Guitar: tuning reference, A in Hz', 'Gitarre: Stimmton, A in Hz'), L('440 is standard.', '440 ist der Standard.'), `<input id="a4" type="number" min="400" max="470" step="0.1" value="${s.a4}">`)}
       ${field('pa4', L('Piano: pitch of its A in Hz', 'Klavier: Tonhöhe seines A in Hz'), L('Measured at the start of every piano session. An old piano is often lower than 440.', 'Wird zu Beginn jeder Klavier-Session gemessen. Ein altes Klavier liegt oft tiefer als 440.'), `<input id="pa4" type="number" min="400" max="470" step="0.1" value="${s.pianoA4}">`)}
@@ -327,6 +416,7 @@ export const settings: Screen = (root) => {
       ${field('vtol', L('How near a sung note must be', 'Wie genau ein gesungener Ton sein muss'), L('In cents, a hundredth of a semitone. 50 is the measure singing studies use: the right semitone. 35 is stricter; 75 is kind to a voice that is just starting.', 'In Cent, einem Hundertstel Halbton. 50 ist das Maß, das Gesangsstudien nehmen: der richtige Halbton. 35 ist strenger; 75 ist nachsichtig mit einer Stimme, die gerade anfängt.'), `<select id="vtol">${[35, 50, 75].map((v) => `<option value="${v}"${s.voiceTol === v ? ' selected' : ''}>${v} ${L('cents', 'Cent')}</option>`).join('')}</select>`)}
       <div class="field"><div><b>${L('Timing with the click', 'Timing mit dem Klick')}</b><small id="latmsg"></small></div><div class="row"><button class="btn" id="latmeasure">${L('Measure now', 'Jetzt messen')}</button><button class="btn quiet" id="latreset">${L('Forget', 'Vergessen')}</button></div></div>
       <p class="k">${L('Your data', 'Deine Daten')}</p>
+      <div class="field"><div><b>${L('Progress file', 'Fortschrittsdatei')}</b><small id="filemsg"></small></div><div class="row" id="filerow"></div></div>
       <div class="field"><div><b>${L('Backup', 'Sicherung')}</b><small>${L('Everything is kept in this browser on this computer. A backup file holds your levels, scores, settings and your own songs.', 'Alles wird in diesem Browser auf diesem Computer gespeichert. Eine Sicherungsdatei enthält deine Stufen, Punkte, Einstellungen und deine eigenen Songs.')}</small></div><div class="row"><button class="btn" id="export">${L('Save a backup file', 'Sicherungsdatei speichern')}</button><button class="btn" id="import">${L('Load a backup', 'Sicherung laden')}</button><input id="file" type="file" accept="application/json,.json" hidden></div></div>
     </div>
     <div class="row"><button class="btn" id="reset">${L('Erase all progress', 'Gesamten Fortschritt löschen')}</button><span class="note" id="msg">${L('Changes are saved at once and stay on this computer.', 'Änderungen werden sofort gespeichert und bleiben auf diesem Computer.')}</span></div>
@@ -350,6 +440,22 @@ export const settings: Screen = (root) => {
   bind('strum', (el) => (s.strumSelect = el.checked));
   bind('small', (el) => (s.smallShapes = el.checked));
   bind('mute', (el) => (s.mutePause = el.checked));
+  bind('lefty', (el) => (s.leftHanded = el.checked));
+  bind('rectakes', (el) => (s.recordTakes = el.checked));
+  bind('autotempo', (el) => (s.autoTempo = el.checked));
+  $<HTMLSelectElement>('#capo', root).onchange = (e) => {
+    s.capo = Number((e.target as HTMLSelectElement).value) || 0;
+    store.save();
+  };
+  $<HTMLSelectElement>('#tuning', root).onchange = (e) => {
+    s.tuning = (e.target as HTMLSelectElement).value;
+    store.save();
+  };
+  $<HTMLSelectElement>('#scale', root).onchange = (e) => {
+    s.uiScale = Number((e.target as HTMLSelectElement).value) || 1;
+    store.save();
+    applyScale();
+  };
   bind('click', (el) => (s.click = Number(el.value)));
   bind('chimes', (el) => {
     s.chimes = Number(el.value);
@@ -361,6 +467,10 @@ export const settings: Screen = (root) => {
   bind('ring', (el) => (s.ring = Number(el.value)));
   $<HTMLSelectElement>('#vtol', root).onchange = (e) => {
     s.voiceTol = [35, 50, 75].includes(Number((e.target as HTMLSelectElement).value)) ? Number((e.target as HTMLSelectElement).value) : 50;
+    store.save();
+  };
+  $<HTMLSelectElement>('#weekgoal', root).onchange = (e) => {
+    s.weekGoal = Math.max(2, Math.min(7, Number((e.target as HTMLSelectElement).value) || 4));
     store.save();
   };
   $<HTMLSelectElement>('#csound', root).onchange = (e) => {
@@ -501,6 +611,49 @@ export const settings: Screen = (root) => {
     }, 4400);
   };
 
+  // the progress file: chosen once, written after every change, read when it is newer
+  const showFile = (): void => {
+    const f = fileState();
+    $('#filemsg', root).textContent =
+      f.status === 'unsupported'
+        ? L('Not in this browser: Edge or Chrome on a computer can keep your progress in a file of your own. Here the backup file below does it by hand.', 'Nicht in diesem Browser: Edge oder Chrome auf einem Computer können deinen Fortschritt in einer eigenen Datei halten. Hier tut es die Sicherungsdatei unten von Hand.')
+        : f.status === 'none'
+          ? L('Your progress in a file you choose, written after every change: put it in a folder your computers share (OneDrive, Dropbox, a USB stick) and choose the same file on each. No account, nothing sent anywhere.', 'Dein Fortschritt in einer Datei deiner Wahl, nach jeder Änderung geschrieben: Leg sie in einen Ordner, den deine Computer teilen (OneDrive, Dropbox, ein USB-Stick), und wähl auf jedem dieselbe Datei. Kein Konto, nichts wird irgendwohin geschickt.')
+          : f.status === 'ask'
+            ? L(`Kept in ${f.name}. The browser asks once a visit before the app may write to it again.`, `In ${f.name} gehalten. Der Browser fragt einmal pro Besuch, bevor die App wieder hineinschreiben darf.`)
+            : L(`Kept in ${f.name}${f.lastWritten ? `, last written at ${new Date(f.lastWritten).toLocaleTimeString(lang(), { hour: '2-digit', minute: '2-digit' })}` : ''}.`, `In ${f.name} gehalten${f.lastWritten ? `, zuletzt geschrieben um ${new Date(f.lastWritten).toLocaleTimeString(lang(), { hour: '2-digit', minute: '2-digit' })}` : ''}.`);
+    $('#filerow', root).innerHTML =
+      f.status === 'unsupported'
+        ? ''
+        : f.status === 'none'
+          ? `<button class="btn" id="filenew">${L('Keep it in a new file', 'In einer neuen Datei halten')}</button><button class="btn quiet" id="fileopen">${L('Take a file from another computer', 'Eine Datei von einem anderen Computer nehmen')}</button>`
+          : `${f.status === 'ask' ? `<button class="btn" id="fileask">${L('Allow writing to it', 'Schreiben erlauben')}</button>` : ''}<button class="btn quiet" id="filestop">${L('Stop using the file', 'Datei nicht mehr nutzen')}</button>`;
+    const on = (id: string, fn: () => Promise<void>): void => {
+      const b = root.querySelector<HTMLButtonElement>('#' + id);
+      if (b) b.onclick = () => void fn();
+    };
+    const picked = async (r: string): Promise<void> => {
+      if (r === 'loaded') {
+        await engine.stop();
+        refresh();
+        return;
+      }
+      if (r === 'not-ours') say(L('That file is not a Noise Floor progress file. Nothing was changed.', 'Diese Datei ist keine Noise-Floor-Fortschrittsdatei. Nichts wurde geändert.'));
+      showFile();
+    };
+    on('filenew', async () => picked(await chooseFile(false)));
+    on('fileopen', async () => picked(await chooseFile(true)));
+    on('fileask', async () => {
+      await askAgain();
+      refresh();
+    });
+    on('filestop', async () => {
+      await forgetFile();
+      showFile();
+    });
+  };
+  showFile();
+
   $('#export', root).onclick = () => {
     const a = document.createElement('a');
     a.href = URL.createObjectURL(new Blob([store.backup()], { type: 'application/json' }));
@@ -534,6 +687,10 @@ export const settings: Screen = (root) => {
     store.speeds = {};
     store.sessions = [];
     store.progress = {};
+    store.reviews = {};
+    store.practice = {};
+    store.ratings = [];
+    store.takes = {};
     store.save();
     $('#reset', root).textContent = L('Erased', 'Gelöscht');
   };

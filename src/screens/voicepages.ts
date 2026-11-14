@@ -190,6 +190,43 @@ export const VOICE_PAGES = (): VoicePage[] => [
     tryIt: { say: L('Sing three steps up: do, re, mi (any octave).', 'Sing drei Schritte aufwärts: do, re, mi (jede Oktave).'), sing: [60, 62, 64], count: 3 },
   },
   {
+    id: 'v-interval',
+    title: L('Intervals: how far to the next note', 'Intervalle: wie weit zum nächsten Ton'),
+    points: [
+      L('An interval is the distance between two notes. A step is the next note of the scale; a third leaves one out; a fifth is the distance from do to sol.', 'Ein Intervall ist der Abstand zwischen zwei Tönen. Ein Schritt ist der nächste Ton der Tonleiter; eine Terz lässt einen aus; eine Quinte ist der Abstand von do zu sol.'),
+      L('Singers find them through songs that begin with them: "Amazing Grace" starts with a fourth up, "Twinkle, Twinkle" with a fifth. Sing the start of the song in your head, and stop on its second note.', 'Sänger finden sie über Lieder, die damit beginnen: „Amazing Grace“ beginnt mit einer Quarte hinauf, „Morgen kommt der Weihnachtsmann“ mit einer Quinte. Sing den Anfang des Lieds im Kopf und bleib auf seinem zweiten Ton stehen.'),
+      L('The app sings the first note and names the distance; you sing the note that far away and hold it. T lets you hear the target, but then it counts as helped.', 'Die App singt den ersten Ton und nennt den Abstand; du singst den Ton, der so weit entfernt ist, und hältst ihn. T lässt dich den Zielton hören, aber dann zählt es als geholfen.'),
+    ],
+    art: () => {
+      const r = rows(60, 50, 420, 250, 57, 74);
+      let s = r.svg;
+      const pairs: [number, number, string][] = [[60, 62, L('step', 'Schritt')], [60, 64, L('third', 'Terz')], [62, 67, L('fourth', 'Quarte')], [60, 67, L('fifth', 'Quinte')]];
+      pairs.forEach(([a, b, name], k) => {
+        const x = 90 + k * 100;
+        s += `<rect x="${x}" y="${r.yOf(a) - 8}" width="34" height="16" rx="6" fill="${P.now}" opacity="0.8"/><rect x="${x + 40}" y="${r.yOf(b) - 8}" width="34" height="16" rx="6" fill="${P.good}"/>`;
+        s += label(x + 37, 325, name, 'middle', P.text);
+      });
+      return s + label(270, 360, L('blue: the app sings · green: you sing', 'blau: die App singt · grün: du singst'), 'middle');
+    },
+  },
+  {
+    id: 'v-harmony',
+    title: L('A second voice', 'Eine zweite Stimme'),
+    points: [
+      L('Two voices a third apart are the sound of choirs and of folk songs sung together. The second voice follows the tune, a third below it, step for step.', 'Zwei Stimmen im Abstand einer Terz sind der Klang von Chören und gemeinsam gesungenen Volksliedern. Die zweite Stimme folgt der Melodie, eine Terz darunter, Schritt für Schritt.'),
+      L('It is harder than it looks: the tune pulls you up to it. Sing the second voice alone first, with the line; then with the app singing the tune.', 'Es ist schwerer, als es aussieht: Die Melodie zieht dich zu sich hinauf. Sing die zweite Stimme zuerst allein, mit der Linie; dann, während die App die Melodie singt.'),
+      L('Use headphones: through speakers the microphone would hear the app instead of you.', 'Nimm Kopfhörer: Über Lautsprecher würde das Mikrofon die App statt dich hören.'),
+    ],
+    art: () => {
+      const r = rows(60, 50, 420, 250, 52, 72);
+      let s = r.svg;
+      const tune = [64, 65, 67, 67, 65, 64, 62, 60];
+      const low = [60, 62, 64, 64, 62, 60, 59, 57];
+      tune.forEach((m, i) => (s += `<rect x="${80 + i * 50}" y="${r.yOf(m) - 7}" width="42" height="14" rx="6" fill="${P.faint}"/><rect x="${80 + i * 50}" y="${r.yOf(low[i]) - 7}" width="42" height="14" rx="6" fill="${P.now}"/>`));
+      return s + label(270, 330, L('grey: the tune · blue: the voice a third below', 'grau: die Melodie · blau: die Stimme eine Terz darunter'), 'middle');
+    },
+  },
+  {
     id: 'v-care',
     title: L('Looking after your voice', 'Die Stimme pflegen'),
     points: [
@@ -212,6 +249,7 @@ export const VOICE_CHAPTERS = (): { title: string; about: string; ids: string[] 
   { title: L('First things', 'Das Erste'), about: L('How to stand and breathe, and how to warm up.', 'Wie man steht und atmet, und wie man sich einsingt.'), ids: ['v-stand', 'v-warm'] },
   { title: L('Notes', 'Töne'), about: L('Finding a note, reading the lane, holding a tone.', 'Einen Ton treffen, die Spur lesen, einen Ton halten.'), ids: ['v-match', 'v-lane', 'v-steady'] },
   { title: L('Songs', 'Songs'), about: L('Steps and leaps, and the beat.', 'Schritte und Sprünge, und der Takt.'), ids: ['v-steps', 'count'] },
+  { title: L('By ear', 'Nach Gehör'), about: L('Intervals, and a second voice.', 'Intervalle, und eine zweite Stimme.'), ids: ['v-interval', 'v-harmony'] },
   { title: L('Your voice', 'Deine Stimme'), about: L('Its range, and how to look after it.', 'Ihr Umfang, und wie man sie pflegt.'), ids: ['v-range', 'v-care'] },
 ];
 
@@ -225,4 +263,6 @@ export const VOICE_COMES_UP = (): Record<string, string> => ({
   'v-range': L('before the range is measured', 'bevor der Stimmumfang gemessen wird'),
   'v-steps': L('before the first song', 'vor dem ersten Song'),
   'v-care': L('nowhere by itself: read it once', 'nirgends von selbst: lies sie einmal'),
+  'v-interval': L('before the first intervals', 'vor den ersten Intervallen'),
+  'v-harmony': L('when the second voice is first sung', 'wenn die zweite Stimme zum ersten Mal gesungen wird'),
 });

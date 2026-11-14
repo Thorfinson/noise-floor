@@ -592,3 +592,22 @@ if (!only || only === 'voice') {
   }
 }
 console.log(`\n${made} clips written to tests/real`);
+
+// Sixth: slides on the G string of the three electric guitars of IDMT-SMT-Guitar (data set 2, the same licence
+// as above: for your own use only), with their annotation: the pitch moves from note to note without a new
+// pluck, as it does in a hammer-on or a pull-off. For tests/real/legato.ts. `npm run samples -- legato`.
+if (!only || only === 'legato') {
+  const dir = resolve(root, 'tests/real/legato');
+  mkdirSync(dir, { recursive: true });
+  const want = ['FS', 'LP', 'AR'].filter((g) => !existsSync(resolve(dir, `${g}_G_V_slide.wav`)));
+  if (want.length) {
+    const zip = await openZip('https://zenodo.org/api/records/7544110/files/IDMT-SMT-GUITAR_V2.zip/content');
+    for (const g of want) {
+      const f = `${g}_G_V_slide`;
+      writeFileSync(resolve(dir, `${f}.xml`), await zip.read(`IDMT-SMT-GUITAR_V2/dataset2/annotation/${f}.xml`));
+      const { sr, samples } = readWav(await zip.read(`IDMT-SMT-GUITAR_V2/dataset2/audio/${f}.wav`));
+      writeWav(resolve(dir, `${f}.wav`), cut(samples, sr, 0, samples.length / sr));
+      console.log(`legato ${f}`);
+    }
+  }
+}

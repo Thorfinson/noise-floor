@@ -188,10 +188,10 @@ describe('the path of the voice', () => {
   it('goes from finding the voice over sung patterns to songs, level by level', () => {
     const stages = learningPath('voice');
     expect(stages.filter((s) => s.state !== 'side').map((s) => s.id)).toEqual(['vfirst', 'vpatterns', 'vsongs1', 'vsongs2', 'vsongs3', 'vsongs4']);
-    expect(stages.filter((s) => s.state === 'side').map((s) => s.id)).toEqual(['vfine', 'vscale']);
+    expect(stages.filter((s) => s.state === 'side').map((s) => s.id)).toEqual(['ear', 'vfine', 'vscale']);
     expect(stages.find((s) => s.state === 'here')!.id).toBe('vfirst');
     for (const lv of [1, 2, 3, 4]) expect(stages.find((s) => s.id === `vsongs${lv}`)!.items, `level ${lv}`).toHaveLength(5);
-    for (const s of stages) for (const i of s.items) expect(i.href, `${s.id} ${i.label}`).toMatch(/^#\/(range|match|hold|run|sing)/);
+    for (const s of stages) for (const i of s.items) expect(i.href, `${s.id} ${i.label}`).toMatch(/^#\/(range|match|hold|run|sing|ear)/);
   });
 });
 

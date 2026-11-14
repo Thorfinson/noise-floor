@@ -7,7 +7,7 @@
  * Drawn on a canvas, because the voice is redrawn some fifty times a second.
  */
 import { noteName } from '../music/theory';
-import { LEARN } from './draw';
+import { LEARN, typeScale } from './draw';
 
 export interface LaneNote {
   midi: number;
@@ -43,6 +43,10 @@ export interface LaneView {
   tol: number;
   /** a stretch of pitch to show as found: the range of the voice, low and high */
   band?: [number, number];
+  /** notes not to show: sung without the line, they appear once they are sung */
+  hide?: (i: number) => boolean;
+  /** the voice is not shown while singing: no line, no dot */
+  blind?: boolean;
 }
 
 const BLACK = [1, 3, 6, 8, 10];
@@ -157,6 +161,7 @@ export class Lane {
       const a = xs(n.at);
       const b = xs(n.at + n.len);
       if (b < left - 4 || a > right + 4) return;
+      if (v.hide?.(i)) return;
       const look = v.look(i);
       const yy = y(n.midi);
       g.fillStyle = look === 'cur' ? P.now : look === 'done' ? P.good : look === 'close' ? CLOSE : look === 'miss' ? P.bad : P.panel;
@@ -167,12 +172,15 @@ export class Lane {
       g.roundRect(a + 2, yy - band / 2, Math.max(8, b - a - 4), band, r);
       g.fill();
       if (look === 'up') g.stroke();
-      if (n.word && b - a > 26) {
-        g.fillStyle = look === 'up' ? P.text : P.nowInk;
-        g.font = `600 ${Math.min(16, band * 0.7)}px "IBM Plex Sans", sans-serif`;
+      if (n.word) {
+        // the syllable in the bar where it fits, otherwise just under it
+        // read from a metre away: as large as the bar allows, from 14 to 18 pixels, times the type size
+        g.font = `600 ${Math.round(Math.max(14, Math.min(18, band * 0.9)) * typeScale())}px "IBM Plex Sans", sans-serif`;
+        const fits = g.measureText(n.word).width + 14 <= b - a;
+        g.fillStyle = fits ? (look === 'up' ? P.text : P.nowInk) : look === 'cur' ? P.now : P.text;
         g.textAlign = 'left';
-        g.textBaseline = 'middle';
-        g.fillText(n.word, a + 9, yy + 1);
+        g.textBaseline = fits ? 'middle' : 'top';
+        g.fillText(n.word, a + (fits ? 9 : 3), fits ? yy + 1 : yy + band / 2 + 3);
       }
     });
 
@@ -183,7 +191,7 @@ export class Lane {
     g.beginPath();
     let pen = false;
     let last = -1e9;
-    for (const p of v.trail) {
+    for (const p of v.blind ? [] : v.trail) {
       const xx = xs(p.u);
       if (xx < left) continue;
       if (!pen || p.u - last > 0.4) g.moveTo(xx, y(p.midi));
@@ -192,7 +200,7 @@ export class Lane {
       last = p.u;
     }
     g.stroke();
-    if (v.voice !== null) {
+    if (v.voice !== null && !v.blind) {
       const xx = v.at === null ? (v.dotAt !== undefined && this.notes[v.dotAt] ? xs(this.notes[v.dotAt].at + this.notes[v.dotAt].len / 2) : xs(this.units / 2)) : xs(v.at);
       const yy = Math.max(top + 6, Math.min(bottom - 6, y(v.voice)));
       g.fillStyle = P.now;

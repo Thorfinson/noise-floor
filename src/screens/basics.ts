@@ -44,11 +44,105 @@ const pattern = (y: number, name: string, marks: string): string =>
     .join('');
 
 /** read when shown, so that it is in the language chosen at that moment: the pages of the guitar and the piano, then those of the voice */
+/** A fingertip whose skin hardens, and a head that plays a line of tab in its thoughts. */
+const restArt = (finger: boolean): string => {
+  let h = '';
+  if (finger) {
+    // the fingertip seen from the side, the pad pressing a string; the hardening skin as a band at the tip
+    h += `<path d="M40 250V150c0-46 36-74 76-74s76 28 76 74v100" fill="${P.panel}" stroke="${P.text}" stroke-width="2.5"/>`;
+    h += `<path d="M52 128c10-30 36-44 64-44s54 14 64 44" fill="none" stroke="${P.now}" stroke-width="9" stroke-linecap="round" opacity="0.55"/>`;
+    h += `<path d="M84 108c8-6 20-9 32-9s24 3 32 9" fill="none" stroke="${P.faint}" stroke-width="1.6"/><line x1="20" x2="212" y1="72" y2="72" stroke="${P.text}" stroke-width="3"/>`;
+    h += label(116, 286, L('the skin hardens:', 'die Haut wird fester:'), 'middle') + label(116, 306, L('a few weeks of a little a day', 'ein paar Wochen mit wenig am Tag'), 'middle');
+  } else {
+    // a hand resting on its knee, loose
+    h += `<path d="M40 210c20-30 60-40 100-30l50 12c14 4 14 22 0 24l-40 2c20 6 34 14 30 26-4 10-30 8-60 0-40-10-70-10-80-34z" fill="${P.panel}" stroke="${P.text}" stroke-width="2.5" stroke-linejoin="round"/>`;
+    h += label(116, 286, L('loose, between the takes', 'locker, zwischen den Durchgängen'), 'middle');
+  }
+  // a head in profile and the line it plays to itself
+  h += `<path d="M330 300v-40c-30-10-46-40-46-76 0-50 40-86 90-86 46 0 84 34 84 82 0 18-6 30-14 40l12 22-18 6v20c0 14-12 22-26 20l-24-4v16" fill="${P.panel}" stroke="${P.text}" stroke-width="2.5" stroke-linejoin="round"/>`;
+  for (const [x, y, r] of [[300, 96, 5], [286, 76, 8]]) h += `<circle cx="${x}" cy="${y}" r="${r}" fill="none" stroke="${P.faint}" stroke-width="2"/>`;
+  h += `<rect x="214" y="10" width="200" height="62" rx="20" fill="${P.bg}" stroke="${P.faint}" stroke-width="2"/>`;
+  for (let k = 0; k < 3; k++) h += `<line x1="230" x2="398" y1="${28 + k * 13}" y2="${28 + k * 13}" stroke="${P.line}" stroke-width="1.5"/>`;
+  [[254, 1, '0'], [292, 0, '1'], [330, 2, '3'], [368, 1, '0']].forEach(([x, k, f], i) => (h += `<text x="${x}" y="${28 + Number(k) * 13 + 5}" class="tn" style="font-size:15px" fill="${i === 1 ? P.now : P.text}">${f}</text>`));
+  return h + label(374, 340, L('I: the app plays, you follow in your head', 'I: Die App spielt, du folgst im Kopf'), 'middle');
+};
+
 const INTROS = (): Intro[] => [
   ...INSTRUMENT_INTROS(),
   ...VOICE_PAGES().map((v): Intro => ({ id: v.id, title: v.title, points: v.points, art: v.art, ...(v.tryIt ? { tryIt: { say: v.tryIt.say, notes: v.tryIt.sing, count: v.tryIt.count, voice: true } } : {}) })),
 ];
 const INSTRUMENT_INTROS = (): Intro[] => [
+  {
+    id: 'riff',
+    title: L('Riffs: lines on the low strings', 'Riffs: Linien auf den tiefen Saiten'),
+    points: [
+      L('A riff is a short line of single notes that comes back again and again, mostly on the low strings: the backbone of rock and blues songs.', 'Ein Riff ist eine kurze Linie aus einzelnen Tönen, die immer wiederkommt, meist auf den tiefen Saiten: das Rückgrat von Rock- und Bluessongs.'),
+      L('Pick each note on its own, with small strokes down. Keep the edge of the right hand near the bridge; laid lightly on the strings there it makes the notes short and punchy (palm muting).', 'Zupf jeden Ton einzeln, mit kleinen Anschlägen nach unten. Halt die Kante der rechten Hand nah am Steg; leicht dort auf die Saiten gelegt, macht sie die Töne kurz und knackig (Palm Muting).'),
+      L('The left hand: one finger per fret. Fret 2 is the middle finger, fret 3 the ring finger; an open string needs no finger at all.', 'Die linke Hand: ein Finger pro Bund. Bund 2 ist der Mittelfinger, Bund 3 der Ringfinger; eine leere Saite braucht gar keinen Finger.'),
+      L('Let the open strings you do not play stay quiet: the left hand rests lightly on them.', 'Lass die leeren Saiten, die du nicht spielst, still: Die linke Hand liegt leicht auf ihnen.'),
+    ],
+    art: () => {
+      let h = strings(40, 480, 110, 22);
+      const notes: [number, number][] = [[0, 0], [0, 0], [0, 3], [0, 0], [1, 0], [1, 2], [0, 3], [0, 0]];
+      notes.forEach(([s, f], i) => {
+        const x = 80 + i * 52;
+        const y = 110 + (5 - s) * 22;
+        h += `<rect x="${x - 13}" y="${y - 12}" width="26" height="24" fill="${P.bg}"/><text x="${x}" y="${y + 8}" class="tn" fill="${i === 2 ? P.now : P.text}">${f}</text>`;
+      });
+      return h + label(40, 80, L('the low strings, at the bottom of the tab', 'die tiefen Saiten, unten in der Tabulatur'), 'start', P.text) + label(260, 300, L('short notes, one after the other', 'kurze Töne, einer nach dem anderen'), 'middle') + label(260, 325, L('the right hand near the bridge', 'die rechte Hand nah am Steg'), 'middle');
+    },
+  },
+  {
+    id: 'power',
+    title: L('Power chords', 'Powerchords'),
+    points: [
+      L('A power chord is a root and its fifth, often with the root again an octave up: two or three strings. Without a third it is neither major nor minor, which is why it fits nearly everywhere.', 'Ein Powerchord ist ein Grundton und seine Quinte, oft mit dem Grundton eine Oktave höher: zwei oder drei Saiten. Ohne Terz ist er weder Dur noch Moll, darum passt er fast überall.'),
+      L('The shape is the same on every fret: index finger on the root, ring and little finger two frets higher on the next two strings. Move it, and the name moves with it: G5 at the third fret, C5 on the A string at the third.', 'Der Griff ist auf jedem Bund derselbe: Zeigefinger auf dem Grundton, Ring- und kleiner Finger zwei Bünde höher auf den nächsten beiden Saiten. Verschieb ihn, und der Name wandert mit: G5 im dritten Bund, C5 auf der A-Saite im dritten.'),
+      L('Only those strings sound: the strings below stay quiet under the fingers that touch them lightly. Strum short strokes down, eight to a bar.', 'Nur diese Saiten klingen: Die übrigen bleiben still unter den Fingern, die sie leicht berühren. Schlag kurze Abschläge, acht in einem Takt.'),
+    ],
+    art: () => chordBox(CHORDS['E5'], 50, 110, 170, P, false, undefined, 44) + chordBox(CHORDS['G5'], 300, 110, 170, P, false, undefined, 44) + label(135, 70, L('E5: open, two fingers', 'E5: offen, zwei Finger'), 'middle', P.text) + label(385, 70, L('G5: the shape that moves', 'G5: der Griff, der wandert'), 'middle', P.text) + label(260, 360, L('root, fifth, octave: no third', 'Grundton, Quinte, Oktave: keine Terz'), 'middle'),
+  },
+  {
+    id: 'pent',
+    title: L('The minor pentatonic', 'Die Moll-Pentatonik'),
+    points: [
+      L('Five notes: in A minor they are A, C, D, E and G. Almost every blues and rock solo is made of them, because none of them clashes with the chords under it.', 'Fünf Töne: In A-Moll sind es A, C, D, E und G. Fast jedes Blues- und Rocksolo ist daraus gemacht, weil keiner davon mit den Akkorden darunter reibt.'),
+      L('At the fifth fret they lie in a box: two notes on every string, at frets 5 and 7 or 5 and 8. One finger per fret: the index at 5, the ring finger at 7, the little finger at 8.', 'Im fünften Bund liegen sie in einem Kasten: zwei Töne auf jeder Saite, in den Bünden 5 und 7 oder 5 und 8. Ein Finger pro Bund: der Zeigefinger auf 5, der Ringfinger auf 7, der kleine Finger auf 8.'),
+      L('Learn the box up and down until the fingers find it alone; then the licks are short sentences in it. Later you can play your own: any of these notes over an A minor chord sounds right.', 'Lern den Kasten hinauf und hinab, bis die Finger ihn allein finden; dann sind die Licks kurze Sätze darin. Später spielst du deine eigenen: Jeder dieser Töne klingt über einem A-Moll-Akkord richtig.'),
+    ],
+    art: () => {
+      let h = '';
+      const fx = (f: number): number => 90 + (f - 4) * 90;
+      for (let k = 0; k <= 4; k++) h += `<line x1="${fx(4 + k)}" x2="${fx(4 + k)}" y1="90" y2="290" stroke="${P.faint}" stroke-width="3"/>`;
+      for (let s = 0; s < 6; s++) h += `<line x1="${fx(4)}" x2="${fx(8)}" y1="${90 + (5 - s) * 40}" y2="${90 + (5 - s) * 40}" stroke="${P.text}" stroke-width="${1 + (5 - s) * 0.4}"/>`;
+      const box: [number, number][] = [[0, 5], [0, 8], [1, 5], [1, 7], [2, 5], [2, 7], [3, 5], [3, 7], [4, 5], [4, 8], [5, 5], [5, 8]];
+      for (const [s, f] of box) {
+        const root = (s === 0 && f === 5) || (s === 2 && f === 7) || (s === 5 && f === 5);
+        h += `<circle cx="${fx(f) - 45}" cy="${90 + (5 - s) * 40}" r="15" fill="${root ? P.now : P.text}"/><text x="${fx(f) - 45}" y="${96 + (5 - s) * 40}" class="fgr" style="font-size:14px" fill="${P.bg}">${{ 5: 1, 7: 3, 8: 4 }[f]}</text>`;
+      }
+      return h + label(fx(5) - 45, 320, '5', 'middle') + label(fx(7) - 45, 320, '7', 'middle') + label(fx(8) - 45, 320, '8', 'middle') + label(260, 60, L('frets 5 to 8 · blue: the root A', 'Bund 5 bis 8 · blau: der Grundton A'), 'middle', P.text);
+    },
+  },
+  {
+    id: 'ear',
+    title: L('Playing by ear', 'Nach Gehör spielen'),
+    points: [
+      L('The app plays a few notes, or a chord, and you play them back: first by listening, without looking. That is how most musicians learned before there was anything written down, and it carries over to everything else: improvising, playing from memory, even reading.', 'Die App spielt ein paar Töne oder einen Akkord, und du spielst sie nach: erst durch Hören, ohne hinzusehen. So haben die meisten Musiker gelernt, bevor es etwas Aufgeschriebenes gab, und es färbt auf alles andere ab: aufs Improvisieren, aufs Auswendigspielen, sogar aufs Lesen.'),
+      L('Find the first note by trying: a note sounds higher or lower than the one you want, and you move towards it. Any octave counts. A wrong note costs nothing; hear it again (H) and start over.', 'Den ersten Ton findest du durch Probieren: Ein Ton klingt höher oder tiefer als der gesuchte, und du gehst darauf zu. Jede Oktave zählt. Ein falscher Ton kostet nichts; hör es noch einmal (H) und fang von vorn an.'),
+      L('The motifs come from the song you are learning, so that you learn its sound before its signs. T shows the notes when you want them; then it counts as "with help".', 'Die Motive stammen aus dem Song, den du lernst, sodass du seinen Klang vor seinen Zeichen lernst. T zeigt die Töne, wenn du sie willst; dann zählt es als „mit Hilfe“.'),
+      L('Singing a motif before playing it fixes it in the ear: what you can sing, you can find.', 'Ein Motiv erst zu singen und dann zu spielen, prägt es dem Ohr ein: Was du singen kannst, findest du auch.'),
+    ],
+    art: () => {
+      let h = '';
+      // a wave of sound from a speaker on the left, an ear in the middle, the hand on the strings on the right
+      h += `<path d="M40 150h30l40 -40v120l-40 -40h-30z" fill="${P.panel}" stroke="${P.text}" stroke-width="2"/>`;
+      for (const r of [40, 70, 100]) h += `<path d="M${120 + r * 0.2} ${170 - r * 0.6}q${r * 0.5} ${r * 0.6} 0 ${r * 1.2}" fill="none" stroke="${P.now}" stroke-width="2.5" opacity="${1 - r / 160}"/>`;
+      h += `<path d="M250 120c30 -40 90 -20 80 30c-6 30 -40 34 -40 66c0 24 -30 30 -40 8" fill="none" stroke="${P.text}" stroke-width="3" stroke-linecap="round"/><path d="M272 150c10 -16 34 -10 30 8" fill="none" stroke="${P.text}" stroke-width="2.5" stroke-linecap="round"/>`;
+      h += strings(380, 500, 120, 18);
+      for (const [x, s] of [[400, 2], [440, 3], [480, 1]]) h += `<circle cx="${x}" cy="${120 + (5 - s) * 18}" r="11" fill="${P.now}"/>`;
+      return h + label(75, 280, L('the app plays', 'die App spielt'), 'middle') + label(290, 280, L('you listen', 'du hörst'), 'middle') + label(440, 280, L('you play it back', 'du spielst nach'), 'middle') + label(260, 340, L('first by ear; the notes only when you ask', 'erst nach Gehör; die Töne nur, wenn du fragst'), 'middle');
+    },
+  },
   {
     id: 'hold',
     title: L('The guitar, and how to hold it', 'Die Gitarre und wie du sie hältst'),
@@ -134,7 +228,7 @@ const INSTRUMENT_INTROS = (): Intro[] => [
       L('Two ways of getting a second note out of one pluck. Hammer-on: pluck a note, then bring another finger down firmly on a higher fret of the same string. The new note sounds without a second pluck.', 'Zwei Wege, aus einem Zupfen einen zweiten Ton zu holen. Hammer-on: Zupf einen Ton, dann setz einen anderen Finger kräftig auf einen höheren Bund derselben Saite. Der neue Ton klingt, ohne dass du noch einmal zupfst.'),
       L('Pull-off: the other way round. Two fingers are down on one string; pluck, then pull the upper finger off sideways, so that it plucks the string a little. The lower note sounds.', 'Pull-off: umgekehrt. Zwei Finger liegen auf einer Saite; zupf, dann zieh den Finger am höheren Bund seitlich ab, sodass er die Saite ein wenig anzupft. Der tiefere Ton klingt.'),
       L('In tabs they are written as h and p between two fret numbers, or as an arc over them: 5h7, 7p5.', 'In Tabs stehen sie als h und p zwischen zwei Bundzahlen oder als Bogen darüber: 5h7, 7p5.'),
-      L('The songs in this app do not need them yet. They are worth knowing because almost every tab you find elsewhere uses them.', 'Die Songs in dieser App brauchen sie noch nicht. Es lohnt sich trotzdem, sie zu kennen, denn fast jede Tabulatur, die du anderswo findest, verwendet sie.'),
+      L('Under Tools there is an exercise for them: the app follows the pitch and hears whether the second note sounds. Whether it was hammered or plucked again it cannot hear: a hammer-on keeps one sound going, and your ear can tell.', 'Unter Werkzeuge gibt es eine Übung dazu: Die App folgt der Tonhöhe und hört, ob der zweite Ton klingt. Ob er gehämmert oder neu gezupft wurde, kann sie nicht hören: Ein Hammer-on lässt einen Klang weiterlaufen, und das hört dein Ohr.'),
     ],
     art: () => {
       let h = '';
@@ -340,12 +434,37 @@ const INSTRUMENT_INTROS = (): Intro[] => [
     tryIt: { say: L('Play C, E, G, E one after the other with fingers 1, 3, 5, 3.', 'Spiel C, E, G, E nacheinander mit den Fingern 1, 3, 5, 3.'), notes: [60, 64, 67, 64], count: 4, piano: true },
   },
   {
-    id: 'p-hands',
-    title: L('One hand at a time, and the pedal', 'Jeweils eine Hand, und das Pedal'),
+    id: 'p-staff',
+    title: L('The staff', 'Die Notenzeile'),
     points: [
-      L('Everything in this app is played with one hand at a time. The pieces and chords are written for the right hand; the finger gym also trains the left.', 'In dieser App spielst du alles mit jeweils einer Hand. Die Stücke und Akkorde sind für die rechte Hand geschrieben; das Fingertraining übt auch die linke.'),
-      L('That is how the piano is learned anyway: each hand alone first. It is also what a microphone can check. With both hands playing it cannot tell for sure which keys were struck.', 'So lernt man Klavier ohnehin: erst jede Hand allein. Das kann auch ein Mikrofon prüfen. Spielen beide Hände, kann es nicht sicher sagen, welche Tasten angeschlagen wurden.'),
-      L('When a song sits well in the right hand, try this without the app: the left hand plays only the lowest key of each chord, an octave or two further down, while the right hand goes on as before.', 'Wenn ein Song in der rechten Hand gut sitzt, probier ohne die App Folgendes: Die linke Hand spielt nur die tiefste Taste jedes Akkords, eine oder zwei Oktaven weiter unten, während die rechte Hand wie bisher weiterspielt.'),
+      L('Printed music for the piano is written on two staffs of five lines: the upper one, with the treble clef, for the right hand; the lower one, with the bass clef, for the left. Read left to right, like the strip.', 'Gedruckte Noten fürs Klavier stehen auf zwei Systemen aus fünf Linien: das obere mit dem Violinschlüssel für die rechte Hand, das untere mit dem Bassschlüssel für die linke. Gelesen wird von links nach rechts, wie der Streifen.'),
+      L('The higher a note sits, the higher the key. Each line and each space between two lines is the next white key. Middle C sits on a short line of its own just below the upper staff.', 'Je höher eine Note sitzt, desto höher die Taste. Jede Linie und jeder Zwischenraum ist die nächste weiße Taste. Das mittlere C sitzt auf einer kurzen eigenen Linie direkt unter dem oberen System.'),
+      L('A ♯ before a note means the black key just above, a ♭ the black key just below. A filled head with a stem is one beat; a hollow one, two.', 'Ein ♯ vor einer Note heißt die schwarze Taste direkt darüber, ein ♭ die schwarze Taste direkt darunter. Ein ausgefüllter Kopf mit Hals ist ein Schlag; ein hohler, zwei.'),
+      L('The names under the notes are there while you learn a phrase; once it sits they go, and you read the notes themselves. In the lesson, More → Note names changes that.', 'Die Namen unter den Noten stehen da, solange du eine Phrase lernst; sitzt sie, verschwinden sie, und du liest die Noten selbst. In der Lektion ändert Mehr → Notennamen das.'),
+    ],
+    art: () => {
+      let h = '';
+      for (let k = 0; k < 5; k++) h += `<line x1="40" x2="480" y1="${90 + k * 18}" y2="${90 + k * 18}" stroke="${P.line}" stroke-width="1.5"/>`;
+      h += `<text x="52" y="172" style="font: 400 86px 'Segoe UI Symbol', 'Apple Symbols', 'Noto Music', serif" fill="${P.text}">𝄞</text>`;
+      // C4 to C5, one note a step
+      const names = ['C', 'D', 'E', 'F', 'G', 'A', 'B', 'C'];
+      names.forEach((n, i) => {
+        const x = 140 + i * 44;
+        const y = 180 - i * 9;
+        if (i === 0) h += `<line x1="${x - 16}" x2="${x + 16}" y1="${y}" y2="${y}" stroke="${P.text}" stroke-width="1.5"/>`;
+        h += `<ellipse cx="${x}" cy="${y}" rx="9" ry="6.5" transform="rotate(-20 ${x} ${y})" fill="${i === 0 ? P.now : P.text}"/><line x1="${x + 8}" x2="${x + 8}" y1="${y}" y2="${y - 44}" stroke="${i === 0 ? P.now : P.text}" stroke-width="2"/>`;
+        h += label(x, 222, n, 'middle', i === 0 ? P.now : P.muted);
+      });
+      return h + label(140, 250, L('middle C', 'mittleres C'), 'middle', P.now) + label(260, 320, L('each line and each space: the next white key', 'jede Linie, jeder Zwischenraum: die nächste weiße Taste'), 'middle') + label(260, 345, L('higher on the staff, higher on the keyboard', 'höher auf der Zeile, höher auf der Tastatur'), 'middle');
+    },
+  },
+  {
+    id: 'p-hands',
+    title: L('Both hands: the root, then the chord', 'Beide Hände: erst der Grundton, dann der Akkord'),
+    points: [
+      L('Each hand alone first: that is how the piano is learned. Once a piece of chords sits in the right hand, its version for both hands adds the left: on the first beat of each bar, and wherever the chord changes, the left hand strikes the root of the chord, an octave lower, with the little finger.', 'Erst jede Hand allein: So lernt man Klavier. Sitzt ein Stück aus Akkorden in der rechten Hand, kommt in seiner Fassung für beide Hände die linke dazu: Auf dem ersten Schlag jedes Takts, und wo der Akkord wechselt, schlägt die linke Hand den Grundton des Akkords an, eine Oktave tiefer, mit dem kleinen Finger.'),
+      L('The right hand plays the chord on the beats after it. Root, chord, chord, chord: one hand after the other, never both at once.', 'Die rechte Hand spielt den Akkord auf den Schlägen danach. Grundton, Akkord, Akkord, Akkord: eine Hand nach der anderen, nie beide zugleich.'),
+      L('That is also what lets the microphone hear both: a root struck together with its chord disappears in it, but struck on its own it is clearly that key.', 'Das lässt das Mikrofon auch beide hören: Ein Grundton, der zusammen mit seinem Akkord angeschlagen wird, verschwindet darin; allein angeschlagen ist er deutlich diese Taste.'),
       L('The right pedal lets every key ring on after you let go. It makes a broken chord sound full, and it blurs a tune: lift it at every change of chord.', 'Das rechte Pedal lässt jede Taste weiterklingen, nachdem du sie losgelassen hast. Es lässt einen gebrochenen Akkord voll klingen und verwischt eine Melodie: Heb es bei jedem Akkordwechsel an.'),
     ],
     art: () =>
@@ -353,8 +472,23 @@ const INSTRUMENT_INTROS = (): Intro[] => [
       keyboard(chordMarks('C', true), P, 60, 1, { x: 270, y: 130, w: 236, h: 160, names: true }) +
       label(132, 96, L('left hand: only the lowest key', 'linke Hand: nur die tiefste Taste'), 'middle', P.text) +
       label(388, 96, L('right hand: the chord', 'rechte Hand: der Akkord'), 'middle', P.text) +
-      label(260, 336, L('for later, and without the app:', 'für später, und ohne die App:'), 'middle') +
-      label(260, 358, L('the app listens to one hand at a time', 'die App hört immer nur einer Hand zu'), 'middle'),
+      label(260, 336, L('1: the left hand · 2, 3, 4: the right hand', '1: die linke Hand · 2, 3, 4: die rechte Hand'), 'middle') +
+      label(260, 358, L('one after the other, so that both are heard', 'nacheinander, damit beide gehört werden'), 'middle'),
+  },
+  {
+    id: 'p-together',
+    title: L('Both hands together: a bass under the melody', 'Beide Hände zusammen: ein Bass unter der Melodie'),
+    points: [
+      L('The next step after root, then chord: on the first beat of a bar the left hand strikes a bass key at the same moment as the right hand its melody key. The rest of the bar is the melody alone.', 'Der nächste Schritt nach erst Grundton, dann Akkord: Auf der Eins eines Takts schlägt die linke Hand eine Basstaste im selben Moment an, in dem die rechte ihre Melodietaste spielt. Der Rest des Takts ist die Melodie allein.'),
+      L('Each hand alone first: the melody is the piece itself, the bass only its first beats. Then both together, slowly, with the click.', 'Erst jede Hand allein: Die Melodie ist das Stück selbst, der Bass nur seine Einsen. Dann beide zusammen, langsam, mit dem Klick.'),
+      L('The bass is the root of the chord of the bar, or its third where the melody key lies an octave or a fifth above the root: there the melody key is inside the sound of the bass itself, and a microphone cannot tell the two apart. Where neither will do, the left hand rests for that bar.', 'Der Bass ist der Grundton des Akkords des Takts, oder seine Terz, wo die Melodietaste eine Oktave oder eine Quinte über dem Grundton liegt: Dort liegt die Melodietaste im eigenen Klang des Basses, und ein Mikrofon kann die beiden nicht trennen. Wo nichts davon passt, ruht die linke Hand in diesem Takt.'),
+      L('Keep the left hand light, with the little finger: the melody is what is heard.', 'Halte die linke Hand leicht, mit dem kleinen Finger: Gehört wird die Melodie.'),
+    ],
+    art: () =>
+      keyboard([{ midi: 48, hot: true, fg: 5 }, { midi: 64, hot: true, fg: 3 }], P, 48, 2, { x: 30, y: 120, w: 460, h: 170, names: true }) +
+      label(130, 96, L('left: the bass', 'links: der Bass'), 'middle', P.text) +
+      label(380, 96, L('right: the melody', 'rechts: die Melodie'), 'middle', P.text) +
+      label(260, 336, L('struck at the same moment, on the first beat', 'im selben Moment angeschlagen, auf der Eins'), 'middle'),
   },
   {
     id: 'tune',
@@ -484,6 +618,27 @@ const INSTRUMENT_INTROS = (): Intro[] => [
       L('Check it string by string. Which string does not ring tells you what to shift.', 'Prüf es Saite für Saite. Welche Saite nicht klingt, sagt dir, was du verschieben musst.'),
     ],
     art: () => chordBox(CHORDS['F#m'], 170, 90, 200, P, false, undefined, 50) + label(392, 196, L('the index finger, flat', 'Zeigefinger, flach'), 'start', P.text) + lead(390, 192, 374, 168) + label(150, 290, L('ring and little finger', 'Finger 3 und 4'), 'end', P.text) + lead(152, 286, 208, 268) + label(270, 372, L('F♯ minor: the full shape', 'F♯-Moll: der volle Griff'), 'middle'),
+  },
+  {
+    id: 'rest',
+    title: L('Sore fingertips, and practice in the head', 'Wunde Fingerkuppen, und Üben im Kopf'),
+    points: [
+      L('In the first weeks the fingertips hurt. That passes as the skin hardens, after a few weeks of playing a little every day; several short sessions do more for it than one long one.', 'In den ersten Wochen tun die Fingerkuppen weh. Das vergeht, wenn die Haut fester wird, nach ein paar Wochen mit täglich ein wenig Spielen; mehrere kurze Sitzungen helfen mehr als eine lange.'),
+      L('A dull ache is normal; stop when it stings sharply or a blister comes. Press only as hard as the note needs: close behind the fret it rings with little force. Keep the nails of that hand short.', 'Ein dumpfer Schmerz ist normal; hör auf, wenn es scharf sticht oder eine Blase kommt. Drück nur so fest, wie der Ton es braucht: dicht hinter dem Bund klingt er schon mit wenig Kraft. Halte die Nägel dieser Hand kurz.'),
+      L('A day off undoes nothing: the week counts the days you play, not an unbroken chain.', 'Ein freier Tag macht nichts zunichte: Die Woche zählt die Tage, an denen du spielst, keine ununterbrochene Kette.'),
+      L('While the fingers rest, the line can be practised in the head. In a lesson, I plays it and shows each note as it sounds; follow it with your eyes, then once more with them closed, the fingers still or moving above the strings. That helps a little, and more beside real playing than instead of it.', 'Während die Finger ruhen, lässt sich die Zeile im Kopf üben. In einer Lektion spielt I sie und zeigt jeden Ton, während er klingt; folge ihr mit den Augen, dann noch einmal mit geschlossenen, die Finger still oder über den Saiten in der Luft. Das hilft ein wenig, und mehr neben dem echten Spielen als statt seiner.'),
+    ],
+    art: () => restArt(true),
+  },
+  {
+    id: 'p-rest',
+    title: L('Resting the hands, and practice in the head', 'Die Hände ausruhen, und Üben im Kopf'),
+    points: [
+      L('Playing should not hurt. A tight forearm, wrist or thumb is the sign to stop, let the arms hang and shake them out loosely.', 'Spielen soll nicht wehtun. Ein fester Unterarm, ein steifes Handgelenk oder ein verkrampfter Daumen sind das Zeichen, aufzuhören, die Arme hängen zu lassen und locker auszuschütteln.'),
+      L('Several short sessions do more than one long one, and a day off undoes nothing: the week counts the days you play.', 'Mehrere kurze Sitzungen helfen mehr als eine lange, und ein freier Tag macht nichts zunichte: Die Woche zählt die Tage, an denen du spielst.'),
+      L('While the hands rest, the phrase can be practised in the head. In a lesson, I plays it and shows each key as it sounds; follow it with your eyes, then once more with them closed, the fingers still or moving lightly on your knee. That helps a little, and more beside real playing than instead of it.', 'Während die Hände ruhen, lässt sich die Phrase im Kopf üben. In einer Lektion spielt I sie und zeigt jede Taste, während sie klingt; folge ihr mit den Augen, dann noch einmal mit geschlossenen, die Finger still oder leicht auf dem Knie. Das hilft ein wenig, und mehr neben dem echten Spielen als statt seiner.'),
+    ],
+    art: () => restArt(false),
   },
 ];
 
@@ -638,6 +793,15 @@ export function showIntros(root: HTMLElement, ids: string[], done: () => void, r
 
 /** Which introductions belong before a screen, given what it is opened with. */
 function introsFor(name: string, params: string[]): string[] {
+  const ids = baseIntros(name, params);
+  // the third day of playing is when fingertips hurt most: the page about them comes before the song or piece
+  const thirdDay = Object.keys(store.practice).length >= 2;
+  if (thirdDay && name === 'song') return [...ids, 'rest'];
+  if (thirdDay && name === 'piano') return [...ids, 'p-rest'];
+  return ids;
+}
+
+function baseIntros(name: string, params: string[]): string[] {
   const piano = store.settings.instrument === 'piano';
   const voice = store.settings.instrument === 'voice';
   if (name === 'range') return ['v-stand', 'v-warm', 'v-range'];
@@ -646,6 +810,9 @@ function introsFor(name: string, params: string[]): string[] {
   if (name === 'sing') return ['v-lane', 'v-steps'];
   if (name === 'run' && (params[0] === 'sing' || params[0] === 'ssong')) return ['v-match', 'v-steps'];
   if (voice && name === 'stride') return ['count', 'v-steps'];
+  if (name === 'ear') return voice ? ['v-interval'] : ['ear'];
+  if (name === 'strumming') return ['count', 'strum', 'patterns', 'mute'];
+  if (name === 'slur') return ['tab', 'slur'];
   if (name === 'tuner') return params[0] === 'piano' ? ['p-keys'] : params[0] ? [] : ['hold', 'tune'];
   if (name === 'keys') return ['p-sit', 'p-chord', 'p-figure', 'p-play'];
   if (piano && name === 'change') return ['p-play', 'p-move'];
@@ -660,14 +827,18 @@ function introsFor(name: string, params: string[]): string[] {
   if (name === 'piano') {
     // what this piece asks for beyond five fingers on white keys
     const piece = findPiece(params[0]);
+    const extra = [...(piece.hands ? [piece.phrases.some((ph) => ph.some((n) => n.bass)) ? 'p-together' : 'p-hands'] : []), ...(store.settings.notation === 'staff' ? ['p-staff'] : [])];
     const notes = piece.phrases.flat();
     const crossing = notes.some((n, i) => i > 0 && !!n.fg && !!notes[i - 1].fg && ((n.midi > notes[i - 1].midi && n.fg === 1 && notes[i - 1].fg! > 1) || (n.midi < notes[i - 1].midi && notes[i - 1].fg === 1 && n.fg > 1)));
     const black = notes.some((n) => (n.chord ? pianoChord(n.chord).midis.some(isBlackKey) : isBlackKey(n.midi)));
-    return ['p-sit', 'p-keys', 'p-notes', ...(piece.kind === 'chords' ? ['p-figure'] : []), ...(piece.kind === 'broken' ? ['p-figure', 'p-broken'] : []), ...(black ? ['p-black'] : []), ...(crossing ? ['p-thumb'] : [])];
+    return ['p-sit', 'p-keys', 'p-notes', ...(piece.kind === 'chords' ? ['p-figure'] : []), ...(piece.kind === 'broken' ? ['p-figure', 'p-broken'] : []), ...(black ? ['p-black'] : []), ...(crossing ? ['p-thumb'] : []), ...extra];
   }
   if (name === 'run') return params[0] === 'changes' ? ['strum', 'mute'] : params[0] === 'fingers' ? ['tab', 'mute'] : params[0] === 'keys' || params[0] === 'piece' ? ['p-sit', 'p-keys'] : ['mute'];
   if (name === 'song') {
     const song = findSong(params[0]);
+    if (song.id.startsWith('riff-')) return ['tab', 'riff'];
+    if (song.id.startsWith('pent-')) return ['tab', 'pent'];
+    if (song.id.endsWith('-power')) return ['strum', 'power'];
     const strummed = song.bars.every((b) => b.notes.every((n) => n.strum));
     return strummed ? ['tab', 'strum'] : song.bars.some((b) => b.chord) ? ['tab', 'pluck'] : ['tab'];
   }
@@ -706,14 +877,19 @@ const CHAPTERS = (): Record<Instrument, Chapter[]> => ({
     { title: L('Chords', 'Akkorde'), about: L('What they are, how their pictures are read, how to press.', 'Was sie sind, wie du ihre Griffbilder liest, wie du die Saiten drückst.'), ids: ['chord', 'diagram', 'press'] },
     { title: L('The strumming hand', 'Die Anschlagshand'), about: L('One stroke, then patterns, and how to stop the strings.', 'Ein Anschlag, dann Muster, und wie du die Saiten abdämpfst.'), ids: ['strum', 'patterns', 'mute'] },
     { title: L('Single notes', 'Einzelne Töne'), about: L('Plucking, reading tab, and notes that are not plucked.', 'Zupfen, Tabulatur lesen, und Töne, die nicht gezupft werden.'), ids: ['pluck', 'tab', 'slur'] },
+    { title: L('Riffs, power chords, the pentatonic', 'Riffs, Powerchords, Pentatonik'), about: L('Single-note lines on the low strings, the chords of rock, and the scale of solos.', 'Einzeltonlinien auf den tiefen Saiten, die Akkorde des Rock und die Tonleiter der Soli.'), ids: ['riff', 'power', 'pent'] },
+    { title: L('By ear', 'Nach Gehör'), about: L('Hearing first, then playing: without the tab.', 'Erst hören, dann spielen: ohne die Tabulatur.'), ids: ['ear'] },
     { title: L('For later', 'Für später'), about: L('The barre: a matter of weeks, never of one evening.', 'Das Barré: eine Sache von Wochen, nie von einem Abend.'), ids: ['barre'] },
+    { title: L('Looking after the hands', 'Die Hände pflegen'), about: L('Sore fingertips, and practising in the head while they rest.', 'Wunde Fingerkuppen, und Üben im Kopf, während sie ruhen.'), ids: ['rest'] },
   ],
   piano: [
     { title: L('At the piano', 'Am Klavier'), about: L('How to sit, and where the keys are.', 'Wie du sitzt, und wo die Tasten liegen.'), ids: ['p-sit', 'p-keys'] },
-    { title: L('Reading and counting', 'Lesen und Zählen'), about: L('The strip the notes are written on, and the beat.', 'Der Streifen, auf dem die Noten stehen, und der Schlag.'), ids: ['p-notes', 'count'] },
+    { title: L('Reading and counting', 'Lesen und Zählen'), about: L('The strip the notes are written on, the staff, and the beat.', 'Der Streifen, auf dem die Noten stehen, die Notenzeile, und der Schlag.'), ids: ['p-notes', 'p-staff', 'count'] },
     { title: L('Chords', 'Akkorde'), about: L('What they are, how they are shown, how to strike and how to move.', 'Was sie sind, wie sie gezeigt werden, wie du sie anschlägst und wechselst.'), ids: ['p-chord', 'p-figure', 'p-play', 'p-move'] },
     { title: L('Beyond five fingers', 'Über fünf Finger hinaus'), about: L('Black keys, the thumb passing under, chords broken into keys.', 'Schwarze Tasten, der Daumenuntersatz, Akkorde in einzelne Tasten gebrochen.'), ids: ['p-black', 'p-thumb', 'p-broken'] },
-    { title: L('For later', 'Für später'), about: L('The other hand, and the pedal.', 'Die andere Hand, und das Pedal.'), ids: ['p-hands'] },
+    { title: L('By ear', 'Nach Gehör'), about: L('Hearing first, then playing: without the notes.', 'Erst hören, dann spielen: ohne die Noten.'), ids: ['ear'] },
+    { title: L('Both hands', 'Beide Hände'), about: L('The root in the left, the chord in the right, and the pedal; then a bass under the melody, together.', 'Der Grundton links, der Akkord rechts, und das Pedal; dann ein Bass unter der Melodie, zusammen.'), ids: ['p-hands', 'p-together'] },
+    { title: L('Looking after the hands', 'Die Hände pflegen'), about: L('Resting them, and practising in the head meanwhile.', 'Sie ausruhen, und derweil im Kopf üben.'), ids: ['p-rest'] },
   ],
 });
 const ORDER: Record<Instrument, string[]> = { guitar: CHAPTERS().guitar.flatMap((c) => c.ids), piano: CHAPTERS().piano.flatMap((c) => c.ids), voice: CHAPTERS().voice.flatMap((c) => c.ids) };
@@ -734,7 +910,7 @@ const COMES_UP = (): Record<string, string> => ({
   mute: L('before the first game: two muted hits pause it', 'vor dem ersten Spiel: Zwei gedämpfte Anschläge halten es an'),
   pluck: L('before the first song with a picking pattern', 'vor dem ersten Song mit einem Zupfmuster'),
   tab: L('before the first song and the finger gym', 'vor dem ersten Song und dem Fingertraining'),
-  slur: L('nowhere yet: the app cannot hear a slur, so there is no exercise for it', 'noch nirgends: Die App kann Hammer-on und Pull-off nicht hören, darum gibt es keine Übung dazu'),
+  slur: L('before the hammer-on and pull-off exercise (Tools)', 'vor der Übung zu Hammer-on und Pull-off (Werkzeuge)'),
   barre: L('before the first barre chord in the chord check', 'vor dem ersten Barréakkord im Akkord-Check'),
   'p-sit': L('before the first piece and the first game', 'vor dem ersten Stück und dem ersten Spiel'),
   'p-keys': L('before the first piece, and when the app is matched to the piano', 'vor dem ersten Stück, und wenn die App auf das Klavier eingestimmt wird'),
@@ -747,6 +923,9 @@ const COMES_UP = (): Record<string, string> => ({
   'p-thumb': L('before the first piece in which the thumb passes under', 'vor dem ersten Stück mit Daumenuntersatz'),
   'p-broken': L('before the first piece of broken chords', 'vor dem ersten Stück mit gebrochenen Akkorden'),
   'p-hands': L('nowhere by itself: it is about what the app leaves to you', 'nirgends von selbst: Es geht um das, was die App dir überlässt'),
+  rest: L('before the song, on the third day you play', 'vor dem Song, am dritten Tag, an dem du spielst'),
+  'p-rest': L('before the piece, on the third day you play', 'vor dem Stück, am dritten Tag, an dem du spielst'),
+  'p-together': L('before the first piece for both hands together', 'vor dem ersten Stück für beide Hände zusammen'),
 });
 
 /**

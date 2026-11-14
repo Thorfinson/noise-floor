@@ -351,7 +351,7 @@ export function pianoKey(chords: string[]): number {
  * lively (`basic` asks for that in any case: one chord on every click); broken into keys where the guitar
  * has a pattern and the song is calm.
  */
-function fromChords(guitar: Song, basic: boolean): PianoPiece | null {
+export function fromChords(guitar: Song, basic: boolean): PianoPiece | null {
   if (!guitar.bars.every((b) => b.chord)) return null;
   const used = [...new Set(guitar.bars.flatMap((b) => [b.chord!, ...b.notes.map((x) => x.strum).filter((c): c is string => !!c)]))];
   // a piece that names its key in its title stays in it
@@ -458,7 +458,7 @@ export function pianoBook(): PianoPiece[] {
   if (book) return book;
   const made: PianoPiece[] = TUNES.map(tune);
   for (const song of SONGS) {
-    if (HAS_OWN.has(song.id) || NOT_FOR_KEYS.has(song.id)) continue;
+    if (HAS_OWN.has(song.id) || NOT_FOR_KEYS.has(song.id) || song.guitarOnly) continue;
     if (song.bars.every((b) => !b.chord && b.notes.every((x) => !x.strum))) made.push(fromTune(song));
     else for (const basic of [false, true]) {
       const piece = fromChords(song, basic);

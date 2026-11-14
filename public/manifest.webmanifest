@@ -1,0 +1,11 @@
+{
+  "name": "Noise Floor",
+  "short_name": "Noise Floor",
+  "description": "A guitar, piano and singing trainer that listens to your real instrument or voice through the microphone.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f4eee6",
+  "theme_color": "#f4eee6",
+  "icons": [{ "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }]
+}

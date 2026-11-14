@@ -9,15 +9,20 @@ src/main.ts      the router: a table of routes from the address (#/song/scarboro
 src/audio        hearing and sounding
   listener.ts      onsets, notes, chords, the string check, muted hits, pitch tracking for the voice
   fft.ts, peaks.ts, yin.ts   spectrum, peak picking, the YIN pitch estimator
-  engine.ts        browser audio: the microphone, the metronome, the practice instrument, the model voice
+  engine.ts        browser audio: the microphone, the metronome, sounds scheduled on the listener's clock (the backing),
+                   the drone, recording what was heard, the practice instrument, the model voice
   synth.ts         synthesized guitar, piano and singing voice (for the practice instrument and the tests)
-  wav.ts           reading and writing sound files
+  backing.ts       the soft bass and chords under playing along
+  wav.ts           reading and writing sound files, resampling for listening back
 src/core         state and measures, without drawing
-  skills.ts        measured skill: kinds, thresholds, levels, rusty
-  store.ts         settings, skills, history and your own songs, kept in localStorage
+  skills.ts        measured skill: kinds, thresholds, levels, rusty, due again, the first value of a day, the course of days
+  store.ts         settings, skills, history, reviews, favourites, practice time, the week, your plan and own songs (localStorage)
+  takes.ts         the recordings of the player, kept in IndexedDB at 16 kHz
+  days.ts          local days and weeks
   playalong.ts     playing along with the click: what was on time
   singing.ts       a sung note held, how steady a tone was, the range of a voice, moving a song into it
   i18n.ts          the two languages
+  progressfile.ts  your progress in a file of your own choosing, written after every change, read when newer
 src/music        what is played
   theory.ts        notes, chords, shapes on the guitar and on the keys
   content.ts       songs, pieces, finger patterns, scales
@@ -26,6 +31,14 @@ src/music        what is played
   pianobook.ts     the piano book, the piano's fingering, songs moved to the keys
   voicebook.ts     the songs a voice can sing
   difficulty.ts    how hard a song or piece is, the current song, a chord's weight
+  review.ts        songs that come back at growing gaps, from cold; the repertoire
+  exercises.ts     riffs, power-chord versions, the minor pentatonic and licks, picking patterns
+  strums.ts        the strumming patterns of the trainer, and which one a song uses
+  lyrics.ts        words of the songs to sing, one syllable per note; where a held note is sung twice
+  harmony.ts       a second voice a third below a tune
+  accompany.ts     a song's words over its chords bar by bar, and the words under the notes of a tune
+  rhythms.ts       the rhythms to read, in note values, level by level
+  tuning.ts        the capo and the tunings of the guitar; the A it is heard with
   path.ts          the learning path
   labels.ts        skills named as a person would say them
   import.ts        reading a text tab and note names
@@ -34,8 +47,18 @@ src/game         the rules of the games, without drawing or audio (testable on t
   stride.ts        Stepping stones: the walk and its stones
   gesture.ts       the muted-strings gesture that pauses a run
 src/screens      one file per screen or family of screens; each is a function (root, params, ctx) => cleanup
-src/ui           shared drawings (tab, note strip, fretboard, chord box, keyboard, pitch lane), the painted worlds
+  learn.ts         lessons on three rungs (wait, click, full speed), the loop, backing, performance, recordings, by ear,
+                   both hands; the chord check
+  sing.ts          the voice's range, tones, held tones and songs (words, less help, a second voice)
+  session.ts       the plan of the day, the short session, the summary
+  ear.ts           by ear: motifs, chords, sung then played; intervals for the voice
+  strum.ts         the strumming trainer; rhythm.ts reading rhythm; slur.ts hammer-on and pull-off
+  singalong.ts     sing and play: the chords over the words; check.ts the hearing check
+  repertoire.ts    the repertoire and the recordings; trends.ts the course over weeks; habit.ts the week and the plan
+  tools.ts         the tools page, the metronome, the drone, the chord library; compose.ts your own song, playing freely
+src/ui           shared drawings (tab, note strip, staff, fretboard, chord box, keyboard, pitch lane), the painted worlds
                  of the games (scene, watch, trail), the practice instrument, DOM helpers
+public           the icon, the web manifest and the service worker that keeps the app's own files for offline use (the page tells it which files the first visit loaded before it was there)
 ```
 
 ## Screens and the session
@@ -58,7 +81,7 @@ Every text is written as `L(english, german)` and chosen at the moment it is sho
 
 ## State
 
-`store.ts` keeps everything in one object in `localStorage` under `noise-floor/v1`: settings, skills (`chord:Am`, `pair:Em>Am`, `bar:<song>:<bar>`, `pitch:match` ...), best scores, recent runs, sessions, progress through songs, your own songs and pieces. A backup is that object as a file.
+`store.ts` keeps everything in one object in `localStorage` under `noise-floor/v1`: settings, skills (`chord:Am`, `pair:Em>Am`, `bar:<song>:<bar>`, `pitch:match`, `ear:motif`, `beat:strum-folk` ...) with their best value, first value of the last day and best value of each day, best scores, recent runs, sessions, progress through songs, the songs that come back (`reviews`), favourites, recently opened songs, minutes played per day, the plan, the player's own count of slips, the index of recordings, your own songs and pieces. A backup is that object as a file. The recordings themselves are in IndexedDB (`noise-floor-takes`), outside the backup.
 
 ## Drawing
 

@@ -810,7 +810,10 @@ export class Listener {
     // On the piano the search starts at the lowest key itself: the root and the fifth of a chord are also the
     // second and third harmonic of the key an octave under its root, which nobody is playing.
     if (this.voicing !== 'piano') {
-      for (let m = lowest - 1; m <= 88; m++) if (combScore(peaks, this.tuned(peaks, m), CHORD_HIGH).explained >= 0.85) return;
+      // A power chord is a root and its fifth and octave: nearly all of it is the root's own harmonics, as a
+      // single string would be. Where one is asked for, its root explaining the sound does not rule it out.
+      const powerRoots = new Set(ids.filter((id) => /^[A-G][#b]?5$/.test(id)).map((id) => this.notesOf(id)[0] % 12));
+      for (let m = lowest - 1; m <= 88; m++) if (combScore(peaks, this.tuned(peaks, m), CHORD_HIGH).explained >= 0.85 && !powerRoots.has(m % 12)) return;
     } else {
       // On the piano the root and the fifth of a chord are also the second and third harmonic of the key an
       // octave under its root, which nobody is playing: below the chords' own keys a single key only counts

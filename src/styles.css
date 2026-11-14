@@ -168,7 +168,8 @@ th { padding: 8px 16px 8px 0; border-bottom: 1px solid var(--line); text-align: 
 td { padding: 11px 16px 11px 0; border-bottom: 1px solid var(--line); }
 td.n, th.n { text-align: right; font-family: var(--mono); }
 table.fixed { table-layout: fixed; }
-table.fixed th:first-child { width: 46%; }
+table.fixed th:first-child { width: 40%; }
+td small.ago { display: block; font: 400 0.75rem var(--font); color: var(--muted); }
 .tag { margin-left: 10px; padding: 2px 8px; border: 1px solid var(--line); border-radius: 3px; font: 500 0.75rem var(--mono); letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); }
 .tag.weak { border-color: var(--bad); color: var(--bad); }
 .tag.up { border-color: var(--now); color: var(--now); }
@@ -555,7 +556,7 @@ body[data-mode='nf'] .banner { z-index: 2; border-color: transparent; box-shadow
 .chap a.read small { color: var(--good); }
 .chap .tick { color: var(--good); }
 .chap .tick .ic { width: 18px; height: 18px; }
-.leaf { position: sticky; top: 78px; display: grid; grid-template-columns: minmax(0, 0.95fr) minmax(0, 1fr); gap: 34px; align-items: start; max-height: calc(100vh - 216px); max-height: calc(100dvh - 216px); min-height: 380px; overflow-y: auto; padding: 28px 34px 0; border: 1px solid rgba(255, 255, 255, 0.8); border-radius: 20px; background: #fdf9f2; box-shadow: 0 16px 44px rgba(50, 34, 46, 0.12); }
+.leaf { position: sticky; top: 78px; display: grid; grid-template-columns: minmax(0, 0.95fr) minmax(0, 1fr); gap: 34px; align-items: start; max-height: calc(100vh - 252px); max-height: calc(100dvh - 252px); min-height: 380px; overflow-y: auto; padding: 28px 34px 0; border: 1px solid rgba(255, 255, 255, 0.8); border-radius: 20px; background: #fdf9f2; box-shadow: 0 16px 44px rgba(50, 34, 46, 0.12); }
 .leaf .pic { position: sticky; top: 0; }
 .leaf .pic { padding: 14px; border: 1px solid var(--line); border-radius: 14px; background: #fbf6ec; }
 .leaf .pic svg { display: block; width: 100%; height: auto; }
@@ -642,6 +643,11 @@ body[data-mode='nf'] .banner { z-index: 2; border-color: transparent; box-shadow
 
 /* the right side of the navigation: the instrument, and the language */
 .nav .navr { display: flex; align-items: center; gap: 10px; }
+/* the settings: a gear beside the instrument and the language, as most apps have it; the six places to learn stay in the row */
+.nav .gear { display: grid; place-items: center; width: 42px; height: 42px; border: 1px solid var(--line); border-radius: 999px; background: var(--panel); color: var(--muted); }
+.nav .gear:hover { background: var(--raised); color: var(--text); }
+.nav .gear[aria-current='page'] { background: var(--now); border-color: var(--now); color: var(--now-ink); }
+.nav .gear .ic { width: 22px; height: 22px; }
 .nav .seg.lang button { padding: 6px 10px; font: 600 0.8125rem var(--mono); letter-spacing: 0.04em; }
 
 /* the pitch lane of singing: as wide as the stage, tall enough for an octave and a half of rows */
@@ -664,3 +670,265 @@ body[data-fit] canvas.lane.tall { height: clamp(220px, 46vh, 520px); }
 .later i s { display: block; height: 100%; width: 0; background: var(--now); text-decoration: none; animation: later-fill linear forwards; }
 @keyframes later-fill { from { width: 0; } to { width: 100%; } }
 @media (prefers-reduced-motion: reduce) { .later i s { animation: none; width: 100%; opacity: 0.4; } }
+
+/* the progress pages: tabs over the path, the repertoire and the weeks */
+.tabs { display: flex; gap: 6px; flex-wrap: wrap; margin: -10px 0 0; border-bottom: 1px solid var(--line); }
+.tabs a { padding: 10px 16px; border-bottom: 3px solid transparent; text-decoration: none; font-weight: 600; color: var(--muted); }
+.tabs a:hover { color: var(--text); }
+.tabs a[aria-current='page'] { border-color: var(--now); color: var(--text); }
+/* the repertoire */
+.duebox { display: flex; align-items: center; justify-content: space-between; gap: 16px 24px; flex-wrap: wrap; padding: 18px 24px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); }
+.duebox p { margin: 0; max-width: 70ch; font-size: 1.0625rem; color: var(--muted); }
+.duebox p b { color: var(--text); }
+.rep { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--line); }
+.rep li { display: grid; grid-template-columns: minmax(0, 1fr) 7.5rem 7.5rem 10rem auto; gap: 18px; align-items: center; padding: 14px 0; border-bottom: 1px solid var(--line); font-size: 1.125rem; }
+.rep b { font-weight: 600; }
+.rep small { display: block; font-size: 0.875rem; color: var(--muted); }
+.rep .num { font: 600 1.125rem var(--mono); }
+.rep .num small { font: 500 0.6875rem var(--mono); letter-spacing: 0.12em; text-transform: uppercase; }
+.fresh b { display: inline-block; padding: 2px 9px; border: 1px solid var(--line); border-radius: 4px; font: 600 0.75rem var(--mono); letter-spacing: 0.1em; text-transform: uppercase; }
+.fresh.fresh b { border-color: var(--good); color: var(--good); }
+.fresh.due b { border-color: var(--now); color: var(--now); }
+.fresh.slipped b { border-color: var(--bad); color: var(--bad); }
+@media (max-width: 900px) {
+  .rep li { grid-template-columns: minmax(0, 1fr) auto; }
+  .rep li > .row { grid-column: 1 / -1; }
+}
+
+/* the lesson's switches: the loop, the backing, the performance */
+.extras { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+.extras .btn { min-height: 36px; padding: 0 10px; gap: 6px; border-color: var(--line); font-size: 0.875rem; }
+.extras kbd { font-size: 0.6875rem; padding: 1px 5px; }
+.btn.tog[aria-pressed='true'] { border-color: var(--now); background: var(--panel); color: var(--now); }
+.btn.tog[aria-pressed='true'] kbd { opacity: 1; }
+/* the recording under the music: its bars to pick and listen to */
+.takebox { display: grid; gap: 10px; padding: 12px 16px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); }
+.barmap { display: flex; flex-wrap: wrap; gap: 6px; }
+.barmap .bm { min-width: 44px; min-height: 44px; padding: 0 8px; border: 2px solid var(--line); border-radius: 8px; background: var(--bg); font: 600 1rem var(--mono); }
+.barmap .bm.ok { border-color: var(--good); background: var(--good-bg); color: var(--good); }
+.barmap .bm.bad { border-color: var(--bad); color: var(--bad); }
+.selfrate { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-weight: 600; }
+/* the second level of a lesson's controls, opened upward from the bar */
+.more { position: relative; }
+.more > summary { list-style: none; }
+.more > summary::-webkit-details-marker { display: none; }
+.more[open] > summary { background: var(--raised); color: var(--text); }
+.morepanel { position: absolute; right: 0; bottom: calc(100% + 10px); z-index: 6; display: grid; gap: 8px; width: min(440px, 92vw); padding: 16px 18px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--bg); box-shadow: 0 10px 30px rgba(38, 38, 46, 0.18); }
+.morepanel .k { margin: 6px 0 0; }
+.morepanel .note { font-size: 0.875rem; }
+.morepanel .btn { min-height: 44px; }
+.takecard { display: grid; gap: 12px; padding: 18px 22px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); }
+.takecard .k { margin: 0; }
+
+/* the week: seven days, those played on filled, today ringed */
+.week { display: inline-flex; align-items: center; gap: 6px; }
+.week .wk-said { margin-right: 6px; }
+.week i { width: 12px; height: 12px; border-radius: 50%; border: 2px solid var(--line); }
+.week i.on { border-color: var(--now); background: var(--now); }
+.week i.today { outline: 2px solid var(--now); outline-offset: 2px; }
+/* the plan of when to play */
+.homefoot { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr); gap: 56px; align-items: start; }
+.plancard { display: grid; gap: 10px; padding: 16px 20px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); }
+.plancard .k, .plancard .note { margin: 0; }
+.plancard .said { margin: 0; font-size: 1.125rem; font-weight: 600; }
+.plancard select, .plancard input { min-height: 44px; padding: 0 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--text); font: inherit; }
+@media (max-width: 900px) { .homefoot { grid-template-columns: minmax(0, 1fr); gap: 20px; } }
+
+/* over the weeks: four numbers, the calendar of days, a line for each skill */
+.h2 { margin: 0 0 12px; font: 700 1.375rem var(--font); }
+.tiles4 { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; }
+.stat { display: grid; gap: 4px; padding: 16px 18px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); }
+.stat .k, .stat .note { margin: 0; }
+.stat .v { margin: 0; font: 600 1.75rem/1.15 var(--font); }
+.stat .note { font-size: 0.875rem; }
+svg.cal { display: block; width: 100%; max-width: 420px; height: auto; }
+svg .axis { font: 500 11px var(--font); fill: var(--muted); }
+.cal .cell:hover, .cal .cell:focus { stroke: var(--text); stroke-width: 1.5; outline: none; }
+.calkey { display: flex; align-items: center; gap: 4px; margin: 6px 0 0; font-size: 0.8125rem; color: var(--muted); }
+.calkey i { width: 12px; height: 12px; border-radius: 3px; }
+.ctip { min-height: 1.4em; margin: 6px 0 0; font-size: 0.9375rem; font-weight: 600; color: var(--text); }
+.sparks { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+.sparks figure { margin: 0; padding: 14px 16px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); }
+.sparks figcaption b { display: block; font-weight: 600; }
+.sparks figcaption small { color: var(--muted); font-size: 0.8125rem; }
+svg.spark { display: block; width: 100%; height: auto; margin-top: 8px; }
+.spark .grid { stroke: var(--line); stroke-width: 1; }
+.spark .wash { fill: var(--now); opacity: 0.1; }
+.spark .ln { fill: none; stroke: var(--now); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.spark .dot { fill: var(--now); stroke: var(--panel); stroke-width: 2; }
+.spark .val { font: 600 13px var(--font); fill: var(--text); }
+.spark .xh { stroke: var(--muted); stroke-width: 1; }
+.astable summary { cursor: pointer; color: var(--muted); }
+@media (max-width: 900px) { .tiles4 { grid-template-columns: repeat(2, minmax(0, 1fr)); } .sparks { grid-template-columns: minmax(0, 1fr); } }
+.weeknote { margin: 14px 0 0; }
+.lib .star { min-width: 44px; padding: 0 10px; font-size: 1.25rem; color: var(--now); }
+.keychord { margin: -8px 0 0; }
+
+/* the tools: the metronome and the drone, the chord library */
+.metro { display: grid; gap: 18px; justify-items: start; }
+.metro h1 { font-size: clamp(3rem, 8vw, 5.5rem); }
+.metro h1 small { font-size: 0.35em; color: var(--muted); }
+.beats { display: flex; gap: 14px; }
+.beats i { width: 34px; height: 34px; border-radius: 50%; border: 3px solid var(--line); transition: background 0.05s; }
+.beats i.one { border-color: var(--now); }
+.beats i.lit { background: var(--now); border-color: var(--now); }
+.seg.notes { flex-wrap: wrap; }
+.check { display: inline-flex; align-items: center; gap: 8px; font-weight: 600; }
+.check input { width: 22px; height: 22px; accent-color: var(--now); }
+.chordgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; }
+.chordcard { display: grid; gap: 4px; justify-items: center; padding: 12px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); text-decoration: none; }
+.chordcard:hover { border-color: var(--now); }
+.chordcard b { font-size: 1.25rem; }
+.chordcard svg { width: 100%; height: auto; }
+
+/* your own song: chords to pick; playing freely: what was heard, in a row */
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { min-height: 40px; padding: 0 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); font-weight: 600; }
+.chip.known { border-color: var(--now); }
+.chip.quiet { border-style: dashed; color: var(--muted); }
+.trail { display: flex; flex-wrap: wrap; gap: 6px; min-height: 40px; }
+.trail span { display: grid; place-items: center; min-width: 40px; height: 40px; border-radius: 8px; font: 700 1.125rem var(--mono); }
+.trail .in { background: var(--now); color: var(--now-ink); }
+.trail .out { background: #f3dfb8; color: #6b4a0b; }
+
+/* larger type leaves less room on a screen that is played at: the finger legend goes first */
+html:not([data-scale='1']) body[data-fit] .foot .legend { display: none; }
+@media (max-width: 900px) {
+  body[data-fit] .foot { flex-direction: column; align-items: flex-start; gap: 4px; }
+  body[data-fit] .fbk { font-size: 1rem; }
+}
+
+/* The size of the type (Settings). Everywhere but on a play screen the whole page follows it. A play screen
+   fills the window and never scrolls, so there it enlarges what is read with the instrument in the hands:
+   the instruction, the line under it, what the app says, and the numbers and names of the drawings (sized
+   in their code); the buttons keep their size, since every pixel they took would come out of the music. */
+html { font-size: calc(100% * var(--k, 1)); }
+html:has(body[data-fit]) { font-size: 100%; }
+body[data-fit] h1 { font-size: calc(clamp(1.75rem, 3.2vw, 2.625rem) * var(--k, 1)); }
+body[data-fit] .two h1 { font-size: calc(clamp(2rem, 3.6vw, 3rem) * var(--k, 1)); }
+body[data-fit] .metro h1 { font-size: calc(clamp(3rem, 8vw, 5.5rem) * var(--k, 1)); }
+body[data-fit] .sub, body[data-fit] .fbk { font-size: calc(1.125rem * var(--k, 1)); }
+body[data-fit] .tip { font-size: calc(1.1875rem * var(--k, 1)); }
+@media (max-height: 800px) {
+  body[data-fit] h1 { font-size: calc(clamp(1.5rem, min(3.2vw, 5.4vh), 2.625rem) * var(--k, 1)); }
+  body[data-fit] .two h1 { font-size: calc(clamp(1.625rem, min(3.6vw, 5.8vh), 3rem) * var(--k, 1)); }
+  body[data-fit] .sub, body[data-fit] .tip { font-size: calc(1.0625rem * var(--k, 1)); }
+}
+@media (max-width: 900px) {
+  body[data-fit] .fbk { font-size: calc(1rem * var(--k, 1)); }
+}
+/* the bar under a play screen stays one row on a laptop, in German too: a second row is taken from the music */
+@media (max-width: 1600px) {
+  body[data-fit] .bar { gap: 12px; }
+  body[data-fit] .bar .grp { gap: 8px; }
+  body[data-fit] .bar .btn { padding-inline: 16px; }
+}
+
+/* the player's own plan: the steps with a box each; a step left out is drawn faint */
+.planside { display: grid; gap: 14px; min-width: 0; }
+.planrow { align-items: center; gap: 14px; }
+.plan.editing li { grid-template-columns: minmax(0, 1fr) auto; }
+.plan.editing label.pl { display: grid; grid-template-columns: 26px minmax(0, 1fr); gap: 14px; align-items: center; cursor: pointer; }
+.plan.editing input[type='checkbox'] { width: 22px; height: 22px; accent-color: var(--now); }
+.plan.editing li.off b, .plan.editing li.off small, .plan.editing li.off .t { color: var(--faint); }
+/* the next song chosen among a few: the app's proposal pressed until another is picked */
+.choose .k { margin: 0 0 8px; }
+.cards3 { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px; }
+.pick { display: grid; gap: 4px; padding: 12px 14px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); text-align: left; font: inherit; color: var(--text); cursor: pointer; }
+.pick:hover { background: var(--raised); }
+.pick b { font-weight: 700; }
+.pick small { color: var(--muted); font-size: 0.875rem; line-height: 1.35; }
+.pick[aria-pressed='true'] { border-color: var(--now); box-shadow: inset 0 0 0 1px var(--now); }
+
+/* words under the notes of a melody (K in a lesson) */
+.wd { font: 600 22px var(--font); text-anchor: middle; }
+/* sing and play: the chords over the words, four bars a line, the bar of now framed, a bar whose chord was heard green */
+.leadsheet { display: grid; gap: 14px; min-height: 0; }
+.sline { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+.sbar { display: grid; gap: 6px; align-content: start; min-height: 108px; padding: 12px 16px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); }
+.sbar b { font: 700 calc(2rem * var(--k, 1)) / 1.1 var(--font); }
+.sbar span { font-size: calc(1.375rem * var(--k, 1)); line-height: 1.3; color: var(--text); overflow-wrap: anywhere; }
+.sbar.cur { border-color: var(--now); box-shadow: inset 0 0 0 2px var(--now); }
+.sbar.heard b { color: var(--good); }
+.sbar.heard { background: var(--good-bg); }
+@media (max-width: 760px) { .sline { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+/* Phones. The pages that are read: the menu in rows (the places to learn scroll sideways). The screens that are
+   played at: every bar of buttons one row high and swiped sideways, the explanations away, the fretboard away
+   when the phone lies on its side; standing up, a hint to turn it, since a line of music needs the width. */
+.sideways { display: none; }
+@media (max-width: 600px) {
+  .nav { flex-wrap: wrap; gap: 6px 10px; padding: 8px 12px; }
+  .nav nav { order: 3; flex: 1 1 100%; width: 100%; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+  .nav nav a { flex: none; padding: 7px 12px; }
+  .nav .navr { margin-left: auto; gap: 6px; }
+  .nav .seg button { padding: 6px 9px; font-size: 0.875rem; }
+  .nav .gear { width: 36px; height: 36px; }
+  .today h1 { font-size: 2rem; }
+}
+@media (max-width: 600px), (max-height: 500px) {
+  body[data-fit] .top { grid-template-columns: auto minmax(0, 1fr) auto; gap: 8px; min-height: 0; padding: 4px 12px; }
+  body[data-fit] .top .c { font-size: 0.8125rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: left; }
+  body[data-fit] .top .r { justify-self: end; }
+  body[data-fit] .top .btn { min-height: 36px; padding: 0 8px; }
+  body[data-fit] .top .rail { display: none; }
+  body[data-fit] .mic-l { max-width: 32vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.75rem; }
+  body[data-fit] .bar { flex-wrap: nowrap; overflow-x: auto; gap: 8px; padding: 6px 12px; scrollbar-width: none; }
+  body[data-fit] .bar .grp { flex-wrap: nowrap; gap: 6px; }
+  body[data-fit] .bar .btn { flex: none; min-height: 40px; padding-inline: 12px; font-size: 0.9375rem; }
+  body[data-fit] .bar .auto { display: none; }
+  body[data-fit] .practice { flex-wrap: nowrap; overflow-x: auto; padding: 4px 12px; scrollbar-width: none; }
+  body[data-fit] .practice > span:first-child { display: none; }
+  body[data-fit] .practice button { flex: none; min-height: 32px; }
+  body[data-fit] .stage { gap: 6px; padding: 6px 12px; }
+  body[data-fit] .foot .legend, body[data-fit] .rungnote, body[data-fit] .rung small { display: none; }
+  body[data-fit] .chordfig { height: 84px; }
+  body[data-fit] .ladder { width: auto; grid-template-columns: repeat(3, auto); }
+  body[data-fit] .rung { padding: 2px 8px; }
+  body[data-fit] .eyebrow { font-size: 0.8125rem; }
+}
+@media (max-height: 500px) {
+  body[data-fit] .stage > #hands { display: none; }
+  body[data-fit] .head { flex-wrap: nowrap; gap: 12px; }
+  body[data-fit] .sub { display: none; }
+  body[data-fit] h1 { font-size: calc(1.375rem * var(--k, 1)); }
+}
+@media (max-width: 600px) and (orientation: portrait) {
+  body[data-fit] .sideways { display: block; margin: 0; padding: 6px 12px; font-size: 0.875rem; color: var(--muted); text-align: center; background: var(--panel); border-bottom: 1px solid var(--line); }
+  body[data-fit] .stage > #hands { display: none; }
+}
+/* on a touch screen there are no keys to press: their letters go */
+@media (hover: none) and (pointer: coarse) { kbd { display: none; } }
+@media (max-width: 600px) {
+  body[data-fit] .ladder { width: 100%; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  body[data-fit] .rung { min-width: 0; overflow: hidden; }
+  body[data-fit] .rung > span, body[data-fit] .rung > b + * { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+}
+@media (max-width: 600px) {
+  .btn.big { white-space: normal; text-align: center; }
+  .today .row .btn { flex: 1 1 100%; }
+  .page { overflow-x: hidden; }
+}
+@media (max-width: 600px) {
+  .seg, .segs { max-width: 100%; overflow-x: auto; scrollbar-width: none; }
+  .seg > *, .segs > * { flex: none; }
+  .needle { max-width: 100%; height: auto; }
+  body[data-fit] .top > div:first-child { min-width: 0; max-width: 38vw; overflow: hidden; }
+}
+
+/* a progress file saved later elsewhere, or one to allow again: above the day's plan */
+.filebar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px 20px; padding: 14px 18px; border: 1px solid var(--now); border-radius: var(--radius); background: var(--panel); }
+.filebar p { margin: 0; max-width: 70ch; }
+
+/* does coming back keep the songs: the player's own measurement, under the repertoire */
+.stay { padding: 14px 18px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); }
+.stay .k { margin: 0 0 6px; }
+.stay p:last-child { margin: 0; max-width: 80ch; }
+
+/* the hearing check: what is asked for, in a row; each marked right or wrong as it is heard */
+.checklist { display: flex; flex-wrap: wrap; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.checklist li { display: grid; gap: 2px; min-width: 76px; padding: 8px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); font-weight: 700; }
+.checklist li small { font-weight: 500; color: var(--muted); font-size: 0.8125rem; }
+.checklist li.now { border-color: var(--now); box-shadow: inset 0 0 0 2px var(--now); }
+.checklist li.right { background: var(--good-bg); color: var(--good); }
+.checklist li.wrong { background: #f6e3dc; color: var(--bad); }

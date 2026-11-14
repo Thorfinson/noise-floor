@@ -49,7 +49,7 @@ describe('the piano book', () => {
     expect(NOT_FOR_KEYS.size).toBeLessThanOrEqual(46);
     for (const id of NOT_FOR_KEYS) expect(SONGS.some((s) => s.id === id), id).toBe(true);
     for (const song of SONGS) {
-      if (!song.bars.every((b) => b.chord) || NOT_FOR_KEYS.has(song.id)) continue;
+      if (!song.bars.every((b) => b.chord) || NOT_FOR_KEYS.has(song.id) || song.guitarOnly) continue;
       const piece = pianoBook().find((p) => p.id === `${song.id}~keys`);
       expect(piece, song.id).toBeTruthy();
       const guitar = song.bars.flatMap((b) => {
@@ -101,7 +101,7 @@ describe('the piano book', () => {
   });
 
   it('gives a song whose chords are broken into keys a basic version: the same chords, struck as a whole', () => {
-    const basics = allPieces().filter((p) => p.of);
+    const basics = allPieces().filter((p) => p.of && !p.hands);
     expect(basics.length).toBeGreaterThanOrEqual(20);
     for (const b of basics) {
       const full = allPieces().find((p) => p.id === b.of)!;
@@ -320,7 +320,8 @@ describe('chords struck on the model piano', () => {
 
   it('are never asked for again sooner than the practice piano can be heard striking them', () => {
     for (const p of allPieces().filter((x) => x.kind === 'chords')) {
-      for (const n of p.phrases.flat()) expect((n.len ?? 1) * p.noteDur, p.id).toBeGreaterThanOrEqual(0.45);
+      // the left hand's roots of a piece for both hands are single keys: heard as notes, not as chords
+      for (const n of p.phrases.flat()) if (!n.left) expect((n.len ?? 1) * p.noteDur, p.id).toBeGreaterThanOrEqual(0.45);
     }
     // a quick song in six-eight is struck once on each of its two beats, not on every eighth
     const jig = allPieces().find((p) => p.id === 'when-johnny~keys')!;
@@ -643,11 +644,11 @@ describe('the path on the piano', () => {
   it('leads from five fingers over the first chords and their changes to the pieces, level by level', () => {
     const stages = learningPath('piano');
     expect(stages.filter((s) => s.state !== 'side').map((s) => s.id)).toEqual(['hands', 'chords', 'kchanges', 'pieces1', 'pieces2', 'pieces3', 'pieces4']);
-    expect(stages.filter((s) => s.state === 'side').map((s) => s.id)).toEqual(['scales', 'morekeys']);
+    expect(stages.filter((s) => s.state === 'side').map((s) => s.id)).toEqual(['scales', 'bothhands', 'together', 'rhythm', 'ear', 'morekeys']);
     expect(stages.find((s) => s.id === 'chords')!.items.map((i) => i.label)).toEqual(['C', 'F', 'G', 'Am', 'Dm', 'Em']);
     for (const lv of [1, 2, 3, 4]) expect(stages.find((s) => s.id === `pieces${lv}`)!.items, `level ${lv}`).toHaveLength(5);
     // nothing measured yet: the first stage is where the player is
     expect(stages.find((s) => s.state === 'here')!.id).toBe('hands');
-    for (const s of stages) for (const i of s.items) expect(i.href, `${s.id} ${i.label}`).toMatch(/^#\/(run|keys|piano)\//);
+    for (const s of stages) for (const i of s.items) expect(i.href, `${s.id} ${i.label}`).toMatch(/^#\/(run|keys|piano|ear|rhythm)\//);
   });
 });
