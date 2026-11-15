@@ -20,6 +20,7 @@ import { bindPlan, planCard, weekLine } from './habit';
 import { weekStats } from './trends';
 import { relDay } from '../music/review';
 import { askAgain, chooseFile, fileState, forgetFile, takeNewer } from '../core/progressfile';
+import { clearTakes } from '../core/takes';
 import { TUNINGS } from '../music/tuning';
 import { dayStart } from '../core/days';
 
@@ -95,7 +96,8 @@ export const home: Screen = (root) => {
         'The app leads you through it. It tunes the guitar with you and checks the chords of today\'s lines string by string. Then come a short game with those chords and two lines of the song. The hard chord waits at the end, if you like. Nothing starts before you are ready.',
         'Die App führt dich hindurch. Sie stimmt die Gitarre mit dir und prüft die Akkorde der heutigen Zeilen Saite für Saite. Dann kommen ein kurzes Spiel mit diesen Akkorden und zwei Zeilen des Songs. Der schwere Akkord wartet am Ende, wenn du magst. Nichts beginnt, bevor du bereit bist.',
       );
-  const link = (href: string, label: string): string => `<a class="hb" href="#/${href}">${esc(label)}</a>`;
+  // the ids in a link may come from a song of the player's own (or a backup): escaped like any text
+  const link = (href: string, label: string): string => `<a class="hb" href="#/${esc(href)}">${esc(label)}</a>`;
   // today's session is through: the page says so, shows what was measured today, and offers more
   if (doneToday(inst, now) && !at) return doneHome(root, now, link);
   root.innerHTML = `<div class="page mid">
@@ -125,7 +127,7 @@ export const home: Screen = (root) => {
     <div>
       <p class="k" style="margin:0 0 10px">${L('Or one thing on its own', 'Oder eine Übung für sich')}</p>
       <nav class="links" aria-label="${L('Single exercises', 'Einzelne Übungen')}">
-        ${voice ? link('sing/' + sung.id, L('Song: ', 'Song: ') + sung.title) : piano ? link('piano/' + piece.id, L('Piece: ', 'Stück: ') + piece.title) : link('song/' + song.id, L('Song: ', 'Song: ') + song.title)}
+        ${voice ? link('sing/' + encodeURIComponent(sung.id), L('Song: ', 'Song: ') + sung.title) : piano ? link('piano/' + encodeURIComponent(piece.id), L('Piece: ', 'Stück: ') + piece.title) : link('song/' + encodeURIComponent(song.id), L('Song: ', 'Song: ') + song.title)}
         ${voice ? link('match', L('Match the tone', 'Töne treffen')) + link('hold', L('Hold a tone', 'Einen Ton halten')) + link('range', rangeMeasured() ? L(`Your range: ${noteName(voiceRange()[0])} to ${noteName(voiceRange()[1])}`, `Dein Umfang: ${noteName(voiceRange()[0])} bis ${noteName(voiceRange()[1])}`) : L('Find your range', 'Deinen Umfang finden')) + link('stride', L('Rhythm game', 'Rhythmusspiel')) : piano ? link('tuner/piano', L('Piano pitch', 'Tonhöhe des Klaviers')) + link('keys/' + encodeURIComponent(todaysKeyChords(now)[0] ?? 'C'), L('Chord check', 'Akkord-Check')) + link('stride', L('Rhythm game', 'Rhythmusspiel')) : link('tuner', L('Guitar tuner', 'Stimmgerät für die Gitarre')) + link('chord/' + encodeURIComponent(chord), L('Chord check', 'Akkord-Check')) + link('stride', L('Rhythm game', 'Rhythmusspiel'))}
       </nav>
       <p class="note" style="margin-top:14px">${engine.running ? (engine.micOn ? L('Microphone is on.', 'Das Mikrofon ist an.') : L('Listening to the practice instrument only.', 'Hört nur auf das Übungsinstrument.')) : L('The microphone starts when you begin.', 'Das Mikrofon startet, wenn du beginnst.')}</p>
@@ -172,7 +174,9 @@ function fileBanner(): string {
   const f = fileState();
   if (f.newer)
     return `<div class="filebar" role="status"><p>${L(`Your progress file is newer than this browser: saved ${dayMonth(f.newer)} at ${new Date(f.newer).toLocaleTimeString(lang(), { hour: '2-digit', minute: '2-digit' })}, on another computer perhaps.`, `Deine Fortschrittsdatei ist neuer als dieser Browser: gespeichert am ${dayMonth(f.newer)} um ${new Date(f.newer).toLocaleTimeString(lang(), { hour: '2-digit', minute: '2-digit' })}, vielleicht auf einem anderen Computer.`)}</p><div class="row"><button class="btn primary" id="filetake">${L('Load it', 'Laden')}</button><button class="btn quiet" id="filekeep">${L('Keep this browser’s', 'Die dieses Browsers behalten')}</button></div></div>`;
-  if (f.status === 'ask') return `<div class="filebar" role="status"><p>${L(`Your progress is kept in ${f.name}: the browser asks before the app may use it again.`, `Dein Fortschritt wird in ${f.name} gehalten: Der Browser fragt, bevor die App sie wieder nutzen darf.`)}</p><div class="row"><button class="btn" id="fileallow">${L('Allow', 'Erlauben')}</button></div></div>`;
+  // the name of the file is the player's (or a backup's): escaped like any text
+  if (f.status === 'ask') return `<div class="filebar" role="status"><p>${L(`Your progress is kept in ${esc(f.name)}: the browser asks before the app may use it again.`, `Dein Fortschritt wird in ${esc(f.name)} gehalten: Der Browser fragt, bevor die App sie wieder nutzen darf.`)}</p><div class="row"><button class="btn" id="fileallow">${L('Allow', 'Erlauben')}</button></div></div>`;
+  if (f.unreadable) return `<div class="filebar" role="status"><p>${L(`Your progress file ${esc(f.name)} could not be read. Perhaps it is still being synced from another computer: the app writes nothing into it until it can be read.`, `Deine Fortschrittsdatei ${esc(f.name)} ließ sich nicht lesen. Vielleicht wird sie gerade noch von einem anderen Computer synchronisiert: Die App schreibt nichts hinein, bis sie sich lesen lässt.`)}</p><div class="row"><button class="btn primary" id="fileretry">${L('Read it again', 'Noch einmal lesen')}</button><button class="btn quiet" id="fileover">${L('Write this browser’s progress into it', 'Den Fortschritt dieses Browsers hineinschreiben')}</button></div></div>`;
   return '';
 }
 function bindFileBanner(root: HTMLElement): void {
@@ -183,6 +187,8 @@ function bindFileBanner(root: HTMLElement): void {
   on('filetake', () => takeNewer(true));
   on('filekeep', () => takeNewer(false));
   on('fileallow', () => askAgain());
+  on('fileretry', () => askAgain());
+  on('fileover', () => takeNewer(false));
 }
 
 /** The week in a line under the start: minutes, new best values, the repertoire; and where to see more. */
@@ -376,6 +382,8 @@ export const settings: Screen = (root) => {
   const s = store.settings;
   const field = (id: string, label: string, small: string, control: string): string => `<div class="field"><label for="${id}">${label}<small>${small}</small></label>${control}</div>`;
   const check = (id: string, on: boolean): string => `<input id="${id}" type="checkbox" ${on ? 'checked' : ''}>`;
+  // a value of the settings in an attribute: they may come from a backup file, so escaped like any text
+  const val = (v: number | string): string => esc(String(v));
   root.innerHTML = `<div class="page">
     <div><p class="kick">${L('Settings', 'Einstellungen')}</p><h1>${L('Listening and tuning', 'Hören und Stimmen')}</h1></div>
     <div>
@@ -396,8 +404,8 @@ export const settings: Screen = (root) => {
       <div class="field"><div><b>${L('Is it hearing you?', 'Hört es dich?')}</b><small id="testmsg">${L('Start the test and play a note. The bars should move and the note should be named.', 'Starte den Test und spiel einen Ton. Die Balken sollten sich bewegen, und der Ton sollte benannt werden.')}</small></div><div class="row"><button class="btn" id="test">${L('Test the microphone', 'Mikrofon testen')}</button><span id="testout" hidden>${micMeter()}</span><b id="heard"></b></div></div>
       <div class="field"><div><b>${L('When something is not heard right', 'Wenn etwas nicht richtig gehört wird')}</b><small id="recmsg">${L('Record it: play what the app gets wrong, for up to 30 seconds. The file holds exactly what the app heard and goes to your downloads folder.', 'Nimm es auf: Spiel bis zu 30 Sekunden lang, was die App falsch versteht. Die Datei enthält genau das, was die App gehört hat, und landet in deinem Download-Ordner.')}</small></div><div class="row"><button class="btn" id="rec">${L('Record', 'Aufnehmen')}</button></div></div>
       <p class="k">${L('Playing', 'Spielen')}</p>
-      ${field('click', L('Metronome loudness', 'Lautstärke des Metronoms'), L('For playing along with the click. All the way left: silent, the marker still moves.', 'Zum Mitspielen mit dem Klick. Ganz links: stumm, die Markierung bewegt sich trotzdem.'), `<input id="click" type="range" min="0" max="1" step="0.05" value="${s.click}">`)}
-      ${field('chimes', L('Sounds of the games', 'Klänge der Spiele'), L('Small glassy chimes for a hit, a cleared phrase, a lit stone. They are pitched so high that the listening is not disturbed by them. All the way left: silent.', 'Kleine gläserne Klänge für einen Treffer, eine geschaffte Phrase, einen leuchtenden Stein. Sie liegen so hoch, dass sie das Zuhören nicht stören. Ganz links: stumm.'), `<input id="chimes" type="range" min="0" max="1" step="0.05" value="${s.chimes}">`)}
+      ${field('click', L('Metronome loudness', 'Lautstärke des Metronoms'), L('For playing along with the click. All the way left: silent, the marker still moves.', 'Zum Mitspielen mit dem Klick. Ganz links: stumm, die Markierung bewegt sich trotzdem.'), `<input id="click" type="range" min="0" max="1" step="0.05" value="${val(s.click)}">`)}
+      ${field('chimes', L('Sounds of the games', 'Klänge der Spiele'), L('Small glassy chimes for a hit, a cleared phrase, a lit stone. They are pitched so high that the listening is not disturbed by them. All the way left: silent.', 'Kleine gläserne Klänge für einen Treffer, eine geschaffte Phrase, einen leuchtenden Stein. Sie liegen so hoch, dass sie das Zuhören nicht stören. Ganz links: stumm.'), `<input id="chimes" type="range" min="0" max="1" step="0.05" value="${val(s.chimes)}">`)}
       ${field('csound', L('Metronome sound', 'Klang des Metronoms'), L('The high tick does not disturb the listening when the microphone hears it from the speakers. The low click is easier on the ear, but only with headphones.', 'Das hohe Ticken stört das Zuhören nicht, wenn das Mikrofon es aus den Lautsprechern hört. Der tiefe Klick ist angenehmer fürs Ohr, aber nur mit Kopfhörern.'), `<select id="csound"><option value="tick"${s.clickSound === 'tick' ? ' selected' : ''}>${L('High tick (for speakers)', 'Hohes Ticken (für Lautsprecher)')}</option><option value="click"${s.clickSound === 'click' ? ' selected' : ''}>${L('Low click (headphones only)', 'Tiefer Klick (nur mit Kopfhörern)')}</option></select>`)}
       ${field('small', L('Small shapes for barre chords', 'Kleine Griffe für Barré-Akkorde'), L('Songs and runs show F♯m and Bm on four strings until the full barre has rung clean in the chord check.', 'Songs und Runden zeigen F♯m und Bm auf vier Saiten, bis das volle Barré im Akkord-Check sauber geklungen hat.'), check('small', s.smallShapes))}
       ${field('mute', L('Pause a run by muting the strings', 'Eine Runde durch Abdämpfen pausieren'), L('Hit the muted strings twice in a row and then stop: that pauses a Noise Floor run. The same again goes on.', 'Schlag die abgedämpften Saiten zweimal hintereinander an und hör dann auf: Das pausiert eine Noise-Floor-Runde. Dasselbe noch einmal, und es geht weiter.'), check('mute', s.mutePause))}
@@ -407,10 +415,10 @@ export const settings: Screen = (root) => {
       ${field('autotempo', L('In a loop, the tempo rises by itself', 'In der Schleife steigt das Tempo von selbst'), L('After three clean runs in a row, 5% faster, up to 125%.', 'Nach drei sauberen Durchläufen in Folge 5 % schneller, bis 125 %.'), check('autotempo', s.autoTempo))}
       ${field('weekgoal', L('Days a week to play', 'Tage pro Woche zum Spielen'), L('The week counts, not an unbroken chain: missed days do not undo anything.', 'Die Woche zählt, nicht eine ununterbrochene Kette: Verpasste Tage machen nichts zunichte.'), `<select id="weekgoal">${[2, 3, 4, 5, 6, 7].map((n) => `<option value="${n}"${s.weekGoal === n ? ' selected' : ''}>${L(`${n} days`, `${n} Tage`)}</option>`).join('')}</select>`)}
       <p class="k">${L('Tuning', 'Stimmung')}</p>
-      ${field('a4', L('Guitar: tuning reference, A in Hz', 'Gitarre: Stimmton, A in Hz'), L('440 is standard.', '440 ist der Standard.'), `<input id="a4" type="number" min="400" max="470" step="0.1" value="${s.a4}">`)}
-      ${field('pa4', L('Piano: pitch of its A in Hz', 'Klavier: Tonhöhe seines A in Hz'), L('Measured at the start of every piano session. An old piano is often lower than 440.', 'Wird zu Beginn jeder Klavier-Session gemessen. Ein altes Klavier liegt oft tiefer als 440.'), `<input id="pa4" type="number" min="400" max="470" step="0.1" value="${s.pianoA4}">`)}
-      ${field('buzz', L('Buzz tolerance', 'Toleranz fürs Schnarren'), L('Left: stricter, more strings count as buzzing. Right: more forgiving.', 'Links: strenger, mehr Saiten gelten als schnarrend. Rechts: nachsichtiger.'), `<input id="buzz" type="range" min="0.2" max="1.2" step="0.05" value="${s.buzz}">`)}
-      ${field('ring', L('How long a string must ring', 'Wie lange eine Saite klingen muss'), L('For the chord check. Left: forgiving. Right: a string that sounds only briefly counts as muted too. The chord check also adjusts to how your guitar rings; this is the least it asks for.', 'Für den Akkord-Check. Links: nachsichtig. Rechts: Eine Saite, die nur kurz klingt, gilt auch als abgedämpft. Der Akkord-Check passt sich außerdem an, wie deine Gitarre klingt; dies ist das Mindeste, was er verlangt.'), `<input id="ring" type="range" min="0.03" max="0.4" step="0.01" value="${s.ring}">`)}
+      ${field('a4', L('Guitar: tuning reference, A in Hz', 'Gitarre: Stimmton, A in Hz'), L('440 is standard.', '440 ist der Standard.'), `<input id="a4" type="number" min="415" max="466" step="0.1" value="${val(s.a4)}">`)}
+      ${field('pa4', L('Piano: pitch of its A in Hz', 'Klavier: Tonhöhe seines A in Hz'), L('Measured at the start of every piano session. An old piano is often lower than 440.', 'Wird zu Beginn jeder Klavier-Session gemessen. Ein altes Klavier liegt oft tiefer als 440.'), `<input id="pa4" type="number" min="400" max="470" step="0.1" value="${val(s.pianoA4)}">`)}
+      ${field('buzz', L('Buzz tolerance', 'Toleranz fürs Schnarren'), L('Left: stricter, more strings count as buzzing. Right: more forgiving.', 'Links: strenger, mehr Saiten gelten als schnarrend. Rechts: nachsichtiger.'), `<input id="buzz" type="range" min="0.2" max="1.2" step="0.05" value="${val(s.buzz)}">`)}
+      ${field('ring', L('How long a string must ring', 'Wie lange eine Saite klingen muss'), L('For the chord check. Left: forgiving. Right: a string that sounds only briefly counts as muted too. The chord check also adjusts to how your guitar rings; this is the least it asks for.', 'Für den Akkord-Check. Links: nachsichtig. Rechts: Eine Saite, die nur kurz klingt, gilt auch als abgedämpft. Der Akkord-Check passt sich außerdem an, wie deine Gitarre klingt; dies ist das Mindeste, was er verlangt.'), `<input id="ring" type="range" min="0.03" max="0.4" step="0.01" value="${val(s.ring)}">`)}
       <p class="k">${L('Voice', 'Stimme')}</p>
       <div class="field"><div><b>${L('Your range', 'Dein Stimmumfang')}</b><small>${rangeMeasured() ? L(`Measured: ${noteName(s.voiceLow)} to ${noteName(s.voiceHigh)}. Songs are set a little inside it.`, `Gemessen: ${noteName(s.voiceLow)} bis ${noteName(s.voiceHigh)}. Songs liegen etwas innerhalb davon.`) : L('Not measured yet: the first singing session does it. Until then songs are set for a middle voice.', 'Noch nicht gemessen: Die erste Gesangs-Session misst ihn. Bis dahin liegen Songs für eine mittlere Stimme.')}</small></div><div class="row"><a class="btn" href="#/range">${rangeMeasured() ? L('Measure again', 'Neu messen') : L('Measure now', 'Jetzt messen')}</a></div></div>
       ${field('vtol', L('How near a sung note must be', 'Wie genau ein gesungener Ton sein muss'), L('In cents, a hundredth of a semitone. 50 is the measure singing studies use: the right semitone. 35 is stricter; 75 is kind to a voice that is just starting.', 'In Cent, einem Hundertstel Halbton. 50 ist das Maß, das Gesangsstudien nehmen: der richtige Halbton. 35 ist strenger; 75 ist nachsichtig mit einer Stimme, die gerade anfängt.'), `<select id="vtol">${[35, 50, 75].map((v) => `<option value="${v}"${s.voiceTol === v ? ' selected' : ''}>${v} ${L('cents', 'Cent')}</option>`).join('')}</select>`)}
@@ -430,7 +438,8 @@ export const settings: Screen = (root) => {
       store.save();
     };
   };
-  const hz = (el: HTMLInputElement): number => Math.min(470, Math.max(400, Number(el.value) || 440));
+  // the guitar's A within what the tuner allows (415 to 466); a piano may sit lower or higher
+  const hz = (el: HTMLInputElement, lo = 400, hi = 470): number => Math.min(hi, Math.max(lo, Number(el.value) || 440));
   bind('mic', (el) => {
     s.mic = el.checked;
     endRecording(false);
@@ -461,7 +470,7 @@ export const settings: Screen = (root) => {
     s.chimes = Number(el.value);
     engine.chime('clear', s.chimes);
   });
-  bind('a4', (el) => (s.a4 = hz(el)));
+  bind('a4', (el) => (s.a4 = hz(el, 415, 466)));
   bind('pa4', (el) => (s.pianoA4 = hz(el)));
   bind('buzz', (el) => (s.buzz = Number(el.value)));
   bind('ring', (el) => (s.ring = Number(el.value)));
@@ -621,7 +630,8 @@ export const settings: Screen = (root) => {
           ? L('Your progress in a file you choose, written after every change: put it in a folder your computers share (OneDrive, Dropbox, a USB stick) and choose the same file on each. No account, nothing sent anywhere.', 'Dein Fortschritt in einer Datei deiner Wahl, nach jeder Änderung geschrieben: Leg sie in einen Ordner, den deine Computer teilen (OneDrive, Dropbox, ein USB-Stick), und wähl auf jedem dieselbe Datei. Kein Konto, nichts wird irgendwohin geschickt.')
           : f.status === 'ask'
             ? L(`Kept in ${f.name}. The browser asks once a visit before the app may write to it again.`, `In ${f.name} gehalten. Der Browser fragt einmal pro Besuch, bevor die App wieder hineinschreiben darf.`)
-            : L(`Kept in ${f.name}${f.lastWritten ? `, last written at ${new Date(f.lastWritten).toLocaleTimeString(lang(), { hour: '2-digit', minute: '2-digit' })}` : ''}.`, `In ${f.name} gehalten${f.lastWritten ? `, zuletzt geschrieben um ${new Date(f.lastWritten).toLocaleTimeString(lang(), { hour: '2-digit', minute: '2-digit' })}` : ''}.`);
+            : L(`Kept in ${f.name}${f.lastWritten ? `, last written at ${new Date(f.lastWritten).toLocaleTimeString(lang(), { hour: '2-digit', minute: '2-digit' })}` : ''}.`, `In ${f.name} gehalten${f.lastWritten ? `, zuletzt geschrieben um ${new Date(f.lastWritten).toLocaleTimeString(lang(), { hour: '2-digit', minute: '2-digit' })}` : ''}.`) +
+              (f.unreadable ? L(' It could not be read the last time: nothing is written into it until it can be (the start page asks).', ' Beim letzten Mal ließ sie sich nicht lesen: Es wird nichts hineingeschrieben, bis das wieder geht (die Startseite fragt).') : '');
     $('#filerow', root).innerHTML =
       f.status === 'unsupported'
         ? ''
@@ -678,9 +688,11 @@ export const settings: Screen = (root) => {
     if (!armed) {
       armed = true;
       $('#reset', root).textContent = L('Click again to erase', 'Zum Löschen noch einmal klicken');
-      say(L('This removes all levels, scores and run history. Your own songs and settings stay. It cannot be undone.', 'Das entfernt alle Stufen, Punkte und den Verlauf der Runden. Deine eigenen Songs und Einstellungen bleiben. Es lässt sich nicht rückgängig machen.'));
+      say(L('This removes all levels, scores, run history and the recordings of your takes. Your own songs and settings stay. It cannot be undone.', 'Das entfernt alle Stufen, Punkte, den Verlauf der Runden und die Aufnahmen deiner Durchgänge. Deine eigenen Songs und Einstellungen bleiben. Es lässt sich nicht rückgängig machen.'));
       return;
     }
+    // the sound of the recordings too, not only their index: it is the largest thing the app keeps
+    void clearTakes();
     store.skills.data = {};
     store.runs = [];
     store.best = {};

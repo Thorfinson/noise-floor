@@ -6,7 +6,7 @@ vi.hoisted(() => {
   g.addEventListener ??= () => undefined;
 });
 
-import { DAY_MS, dayOf } from '../src/core/days';
+import { atTime, DAY_MS, dayOf, dayStart } from '../src/core/days';
 import { setLang } from '../src/core/i18n';
 import { store } from '../src/core/store';
 import { planIcs, planSaid } from '../src/screens/habit';
@@ -35,6 +35,27 @@ describe('a habit without pressure', () => {
     expect(ics).toMatch(/DTEND:\d{8}T194500/);
     // commas in the text are escaped, as the calendar format asks
     expect(ics).toMatch(/DESCRIPTION:After dinner\\, I play for 15 minutes\\, at about 19:30\./);
+  });
+
+  it('keeps the day and the time of the plan on a day the clocks change (Auckland)', () => {
+    // the time zone of this process for a moment: Auckland moves its clocks on 27 September 2026, at two in
+    // the morning; the day's start and the plan's time must not be an hour off there
+    const tz = process.env.TZ;
+    process.env.TZ = 'Pacific/Auckland';
+    try {
+      // where the time zone cannot be changed at run time there is nothing to see
+      if (new Date(2026, 0, 1).getTimezoneOffset() !== -780) return;
+      const day = new Date(2026, 8, 27, 9).getTime();
+      expect(new Date(dayStart(dayOf(day))).getHours()).toBe(0);
+      expect(dayStart(dayOf(day))).toBe(new Date(2026, 8, 27).getTime());
+      expect(atTime(dayOf(day), 19, 30)).toBe(new Date(2026, 8, 27, 19, 30).getTime());
+      const ics = planIcs({ cue: 'dinner', minutes: 15, time: '19:30' }, day);
+      expect(ics).toMatch(/DTSTART:20260927T193000/);
+      expect(ics).toMatch(/DTEND:20260927T194500/);
+    } finally {
+      if (tz === undefined) delete process.env.TZ;
+      else process.env.TZ = tz;
+    }
   });
 
   it('has a short session of the first step and the song, on every instrument', () => {

@@ -38,14 +38,23 @@ function open(): Promise<IDBDatabase | null> {
   });
 }
 
-async function put(key: string, value: Int16Array): Promise<boolean> {
+/**
+ * Changes the kept sound in one transaction: all of it is done, or none of it (a first take kept without its
+ * latest, or the other way round, would not match the index).
+ */
+async function change(fn: (s: IDBObjectStore) => void): Promise<boolean> {
   const db = await open();
   if (!db) return false;
   return new Promise((resolve) => {
-    const tx = db.transaction(STORE, 'readwrite');
-    tx.objectStore(STORE).put(value, key);
-    tx.oncomplete = () => resolve(true);
-    tx.onerror = () => resolve(false);
+    try {
+      const tx = db.transaction(STORE, 'readwrite');
+      fn(tx.objectStore(STORE));
+      tx.oncomplete = () => resolve(true);
+      tx.onerror = () => resolve(false);
+      tx.onabort = () => resolve(false);
+    } catch {
+      resolve(false);
+    }
   });
 }
 
@@ -83,15 +92,35 @@ export const toFloat = (s: Int16Array): Float32Array => Float32Array.from(s, (v)
 export async function saveTake(inst: Instrument, id: string, samples: Float32Array, rate: number, meta: TakeMeta): Promise<boolean> {
   const key = keyOf(inst, id);
   const data = downsample(samples.subarray(0, Math.min(samples.length, Math.round(TAKE_MAX * rate))), rate);
+  const first = !store.takes[key]?.first;
+  const kept = await change((s) => {
+    s.put(data, `${key}:last`);
+    if (first) s.put(data, `${key}:first`);
+  });
+  if (!kept) return false;
+  // the index is looked up again after the wait: a backup loaded meanwhile may have replaced it
   const entry = (store.takes[key] ??= {});
-  const first = !entry.first;
-  if (!(await put(`${key}:last`, data))) return false;
-  if (first && !(await put(`${key}:first`, data))) return false;
   entry.last = meta;
   if (first) entry.first = meta;
   store.save();
   return true;
 }
+
+/**
+ * Forgets the recordings of a song, the sound and its entry in the index (at once; it is saved with the
+ * caller's next save): when the song itself is taken away.
+ */
+export async function deleteTakes(inst: Instrument, id: string): Promise<boolean> {
+  const key = keyOf(inst, id);
+  delete store.takes[key];
+  return change((s) => {
+    s.delete(`${key}:first`);
+    s.delete(`${key}:last`);
+  });
+}
+
+/** Forgets every recording kept in this browser: all progress is erased. The index is the caller's to clear. */
+export const clearTakes = (): Promise<boolean> => change((s) => s.clear());
 
 /** A kept recording, as samples at TAKE_RATE. */
 export async function loadTake(inst: Instrument, id: string, which: Which): Promise<Float32Array | null> {

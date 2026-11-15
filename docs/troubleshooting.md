@@ -30,4 +30,10 @@ It is built and tested with Microsoft Edge on Windows; Chrome uses the same engi
 
 ## Start over
 
-**Settings → Erase all progress** deletes levels, scores and settings (make a **Backup** first if you might want them back).
+**Settings → Erase all progress** deletes levels, scores, the days played and the recordings of your takes (make a **Backup** first if you might want them back). Your settings, your plan and your own songs stay; to start from nothing at all, clear the browser's data for the site.
+
+## Progress gone after a start
+
+If what the browser kept could not be read (a part of it, or all of it), the app starts with what it could read and keeps a copy of the rest under `noise-floor/v1-unreadable` in the browser's local storage (developer tools, **Application → Local storage**), so that nothing is lost by the next save. A backup or progress file with a field of the wrong type is read the same way: what fits is taken, the rest left out.
+
+A progress file the app cannot read (one still being synced from another computer, for instance) is not written over: the start page says so, and offers to read it again or to write this browser's progress into it.
