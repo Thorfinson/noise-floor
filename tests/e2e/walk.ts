@@ -7,7 +7,7 @@
  *
  * The default size is what a small laptop leaves a browser window: 1366 by 650.
  */
-import { mkdirSync, rmSync } from 'node:fs';
+import { mkdirSync, realpathSync, rmSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium, type Page } from 'playwright-core';
@@ -21,7 +21,8 @@ mkdirSync(out, { recursive: true });
 const width = Number(process.argv[2]) || 1366;
 const height = Number(process.argv[3]) || 650;
 
-const server = await createServer({ root: resolve(here, '../..'), logLevel: 'error', server: { port: 5198, strictPort: true } });
+// node_modules may be a link to another folder (a second working copy shares the first one's): its fonts are served too
+const server = await createServer({ root: resolve(here, '../..'), logLevel: 'error', server: { port: 5198, strictPort: true, fs: { allow: [resolve(here, '../..'), realpathSync(resolve(here, '../../node_modules'))] } } });
 await server.listen();
 const base = 'http://localhost:5198/';
 
@@ -151,12 +152,19 @@ try {
   await shot(page, 'run-debrief');
   await page.keyboard.press('Space');
 
+  // before the song, by ear: motifs of it (or chords) played back without seeing them
+  const byEar = await page.waitForFunction(() => /Step 4 of/.test(document.querySelector('#eb')?.textContent ?? ''), null, { timeout: 8000 }).then(() => true).catch(() => false);
+  if (!byEar) console.log('   !! the step by ear was not reached: the next pictures show something else');
+  await page.waitForTimeout(600);
+  await shot(page, 'by-ear');
+  await page.click('#nextstep').catch(() => undefined);
+
   await page.waitForSelector('#cbox', { timeout: 8000 });
   await page.waitForTimeout(500);
   await shot(page, 'song-start');
   for (let i = 0; i < 5; i++) {
     await page.keyboard.press('n');
-    await page.waitForTimeout(450);
+    await page.waitForTimeout(700);
   }
   await shot(page, 'song-playing');
   await page.keyboard.press('w');
@@ -164,15 +172,16 @@ try {
   await shot(page, 'song-wrong-note');
   for (let i = 0; i < 9; i++) {
     await page.keyboard.press('n');
-    await page.waitForTimeout(450);
+    await page.waitForTimeout(700);
   }
   await shot(page, 'song-line-done');
   await page.waitForTimeout(3200);
   await shot(page, 'song-line-2');
-  // play on until the song step is through: how many strums that takes depends on the song of the day
+  // play on until the song step is through: how many strums that takes depends on the song of the day (a strum
+  // of the same chord as the one before is heard as a new one only once that has rung a moment)
   for (let i = 0; i < 60 && !(await page.locator('#tiles').count()); i++) {
     await page.keyboard.press('n');
-    await page.waitForTimeout(450);
+    await page.waitForTimeout(700);
   }
   // the hard chord, last and optional
   const atBarre = await page.waitForSelector('#tiles', { timeout: 10000 }).then(() => true).catch(() => false);
@@ -189,7 +198,7 @@ try {
 
   // the other screens
   await page.goto(base + '?autostart#/');
-  await page.waitForSelector('.plan');
+  await page.waitForSelector('.plan, .donecard');
   await shot(page, 'home-second-day');
   await page.goto(base + '?autostart#/nf');
   await page.waitForSelector('.cards');
@@ -285,14 +294,33 @@ try {
   await page.waitForSelector('#rowA');
   await page.waitForTimeout(500);
   await shot(page, 'songbook-romanza');
+  // with the click nothing runs before the first note is played (or Space)
   await page.goto(base + '?autostart#/song/scarborough-fair/2');
   await page.waitForSelector('#rowA');
   await page.waitForTimeout(700);
+  await shot(page, 'song-with-click-waiting');
+  await page.keyboard.press('Space');
+  await page.waitForTimeout(700);
   await shot(page, 'song-with-click-count-in');
+  await page.keyboard.press('Space');
   await page.goto(base + '?autostart#/song/four-chords/1');
   await page.waitForSelector('#rowA');
   await page.waitForTimeout(500);
   await shot(page, 'song-strummed');
+  // a song lesson the first time: how a song is learned here, over it; then a line played until it sits
+  await page.goto(base + '?autostart&how#/song/amazing-grace-chords/1');
+  await page.waitForSelector('.slhow', { timeout: 6000 }).catch(() => undefined);
+  await page.waitForTimeout(300);
+  await shot(page, 'song-first-time');
+  await page.keyboard.press('Space');
+  await page.waitForTimeout(400);
+  await shot(page, 'song-words-and-strokes');
+  for (let i = 0; i < 24 && !/sits|in a moment/.test((await page.locator('#h1, #fbk').allTextContents()).join(' ')); i++) {
+    await page.keyboard.press('n');
+    await page.waitForTimeout(650);
+  }
+  await page.waitForTimeout(400);
+  await shot(page, 'song-line-sits');
   await page.goto(base + '?autostart#/chord/F%23m');
   await page.waitForSelector('#tiles');
   await page.waitForTimeout(400);
@@ -304,7 +332,7 @@ try {
   await page.goto(base + '?autostart#/songs');
   await page.waitForSelector('.lib');
   await shot(page, 'songs');
-  await page.goto(base + '?autostart#/progress');
+  await page.goto(base + '?autostart#/learn');
   await page.waitForSelector('#stage h2');
   await page.waitForTimeout(700);
   await shot(page, 'path');
@@ -322,12 +350,12 @@ try {
   await page.click('#skip');
   await page.waitForSelector('#tiles', { timeout: 6000 }).catch(() => undefined);
   await page.click('header.top a[href="#/"]');
-  await page.waitForSelector('.plan');
+  await page.waitForSelector('.plan, .donecard');
   await shot(page, 'home-session-left');
   await page.goto(base + '?autostart#/session/new');
   await page.waitForSelector('#skip');
   await page.goto(base + '?autostart#/');
-  await page.waitForSelector('.plan');
+  await page.waitForSelector('.plan, .donecard');
 
   // the handbook: opened, a page in the middle, its last page, and one page on its own with something to try
   await page.goto(base + '?autostart#/basics');
@@ -348,19 +376,21 @@ try {
 
   // the piano: its own session from start to finish
   await page.goto(base + '?autostart#/');
-  await page.waitForSelector('.plan');
-  await page.click('[data-inst="piano"]');
+  await page.waitForSelector('.plan, .donecard');
+  // the instrument is chosen in a menu beside the name at the top
+  await page.click('details.inst > summary');
+  await page.click('.instmenu [data-inst="piano"]');
   await page.waitForFunction(() => document.querySelectorAll('.plan li').length === 3, null, { timeout: 4000 }).catch(() => undefined);
   await shot(page, 'piano-home');
   await page.goto(base + '?autostart#/basics');
   await page.waitForSelector('#leaf h2');
   await shot(page, 'basics-handbook-piano');
-  await page.goto(base + '?autostart#/progress');
+  await page.goto(base + '?autostart#/learn');
   await page.waitForSelector('#stage h2');
   await page.waitForTimeout(600);
   await shot(page, 'path-piano');
   await page.goto(base + '?autostart#/');
-  await page.waitForSelector('.plan');
+  await page.waitForSelector('.plan, .donecard');
   await page.keyboard.press('Space');
   await page.waitForSelector('#kb');
   await page.waitForTimeout(500);
@@ -382,6 +412,11 @@ try {
   }
   await shot(page, 'piano-run-playing');
   await page.click('#skipstep');
+  // before the piece, by ear, as on the guitar
+  await page.waitForFunction(() => /Step 3 of/.test(document.querySelector('#eb')?.textContent ?? ''), null, { timeout: 8000 }).catch(() => undefined);
+  await page.waitForTimeout(600);
+  await shot(page, 'piano-by-ear');
+  await page.click('#nextstep').catch(() => undefined);
   await page.waitForSelector('#rowA');
   await page.waitForTimeout(500);
   await shot(page, 'piano-piece-start');
@@ -400,7 +435,11 @@ try {
   await page.goto(base + '?autostart#/piano/twinkle/2');
   await page.waitForSelector('#rowA');
   await page.waitForTimeout(700);
+  await shot(page, 'piano-with-click-waiting');
+  await page.keyboard.press('Space');
+  await page.waitForTimeout(700);
   await shot(page, 'piano-with-click');
+  await page.keyboard.press('Space');
   await page.goto(base + '?autostart#/run/keys/1');
   await page.waitForSelector('#brief');
   await page.keyboard.press('Space');
@@ -418,9 +457,9 @@ try {
   await page.waitForSelector('#list li');
   await shot(page, 'pieces');
   await page.click('[data-level="0"]');
-  await page.click('[data-kind="chords"]');
+  await page.selectOption('#kindsel', 'chords');
   await shot(page, 'pieces-chords');
-  await page.click('[data-kind=""]');
+  await page.selectOption('#kindsel', '');
   await page.click('[data-level="4"]');
   await shot(page, 'pieces-hard');
   await page.goto(base + '?autostart#/keys/C');
@@ -453,10 +492,12 @@ try {
   await shot(page, 'piano-chords-change');
   await page.goto(base + '?autostart#/piano/swing-low~keys/2');
   await page.waitForSelector('#rowA rect');
+  await page.waitForTimeout(500);
+  await page.keyboard.press('Space');
   await page.waitForTimeout(3000);
   await shot(page, 'piano-chords-with-click');
   await page.goto(base + '?autostart#/');
-  await page.waitForSelector('.plan');
+  await page.waitForSelector('.plan, .donecard');
   await shot(page, 'piano-home-chords');
   await page.goto(base + '?autostart#/piano/auld-lang-syne-chords~keys/1');
   await page.waitForSelector('#rowA rect');
@@ -500,7 +541,7 @@ try {
     await page.waitForSelector('#leaf h2');
     await shot(page, `basics-${id}`);
   }
-  await page.goto(base + '?autostart#/progress');
+  await page.goto(base + '?autostart#/learn');
   await page.waitForSelector('#stage h2');
   await page.click('#stop-chords');
   await page.waitForTimeout(400);

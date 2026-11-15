@@ -110,6 +110,46 @@ export interface TabLine {
   words?: string[];
   /** a slur into each step from the one before: h a hammer-on, p a pull-off (an arc over the two, with its letter) */
   slurs?: ('h' | 'p' | undefined)[];
+  /**
+   * Note units to a click. With it every strum gets an arrow over it for its direction and its count under it
+   * (1 2 3, the first of a bar bold); a line of strums only is drawn on four lines instead of six.
+   */
+  beat?: number;
+  /** a line of words under each bar: the words sung over its chords */
+  barWords?: string[];
+}
+
+/** A strum as it is played and counted: down or up, and what is said on it, the first of a bar louder. */
+export interface Stroke {
+  up: boolean;
+  count: string;
+  strong: boolean;
+}
+
+/**
+ * What is counted on a moment of a bar (note units from its start), with this many units to a click: the
+ * number of the click on a click, "+" half-way to the next, "e" and "a" on the quarters between. Three units to
+ * a click is six-eight, where all six eighths are counted.
+ */
+export function countAt(at: number, beat: number): { count: string; strong: boolean } {
+  const strong = at < 1e-6;
+  if (beat === 3) return { count: String(Math.round(at) + 1), strong };
+  const u = at / beat;
+  const whole = Math.floor(u + 1e-6);
+  const frac = u - whole;
+  if (frac < 1e-3) return { count: String(whole + 1), strong };
+  const near = (x: number): boolean => Math.abs(frac - x) < 0.01;
+  return { count: near(0.5) ? '+' : near(0.25) ? 'e' : near(0.75) ? 'a' : '', strong };
+}
+
+/**
+ * The strokes of a bar: for each strum its direction and its count, null for a note that is picked. The
+ * direction is the song's own: its strumming pattern writes the strokes that come back up as such
+ * (music/songwriting.ts), and every other strum goes down.
+ */
+export function strokes(notes: TabNote[], beat: number): (Stroke | null)[] {
+  const { at } = noteTimes(notes);
+  return notes.map((n, i) => (n.strum ? { up: !!n.up, ...countAt(at[i], beat) } : null));
 }
 
 /** Space before the first note of a bar, in note units. */
@@ -122,28 +162,42 @@ const BAR_PAD = 0.6;
  * back up. Above a strum stands its chord wherever the chord changes. The markup contains a playhead
  * (class "ph") that is invisible until it is moved. big is the tab of a play screen, read from the
  * instrument: larger numbers and names (FAR, times the type size), and only as much room above the staff
- * as the chord names need; its height is in the result, for the viewBox.
+ * as the chord names need; its height is in the result, for the viewBox. With beat, the strums of a play
+ * screen are drawn to be played: an arrow over each for its direction, the count under it, and a line of
+ * strums only on four lines (a strum has no string of its own), so that the arrows and counts take no more
+ * height than the six lines did.
  */
 export function tabLine(t: TabLine, p: Palette, big = false): Drawn {
   const k = big ? typeScale() : 1;
   const named = t.bars.some((b) => b.chord || b.notes.some((n) => n.strum));
+  // the direction and the count of every strum, where they are asked for
+  const marks = big && !!t.beat && t.bars.some((b) => b.notes.some((n) => n.strum));
+  const compact = marks && t.bars.every((b) => b.notes.length > 0 && b.notes.every((n) => n.strum));
+  const strokeOf = marks ? t.bars.map((b) => strokes(b.notes, t.beat!)) : [];
   // a fret number, its box (which hides the string behind it) and the ring round the one to play now
   const fs = big ? FAR.fret * k : 24;
   const ring = big ? Math.max(24, fs * 0.66) : 19;
   const chordSize = big ? FAR.chord * k : 23;
-  // above the staff: the marker of the note to play clears its ring, and the chord names clear the marker
-  const top = big ? (named ? Math.max(80, ring + 22 + 0.72 * chordSize) : Math.max(46, ring + 14)) : 56;
-  const gap = big ? 28 : 22;
+  // the arrows of the strums stand between the chord names and the staff
+  const arrowH = 20 * k;
+  const nameY = marks ? Math.round(0.72 * chordSize + 10) : 0;
+  const arrowY = nameY + 7;
+  // above the staff: the marker of the note to play clears its ring, and the chord names clear the marker;
+  // over strums with arrows the arrows clear the box of the strum to play
+  const top = big ? (marks ? arrowY + arrowH + 11 : named ? Math.max(80, ring + 22 + 0.72 * chordSize) : Math.max(46, ring + 14)) : 56;
+  const gap = compact ? 30 : big ? 28 : 22;
+  const staffLines = compact ? 4 : 6;
   const left = 90;
   const right = 1160;
-  const bottom = top + 5 * gap;
+  const bottom = top + (staffLines - 1) * gap;
   const times = t.bars.map((b) => noteTimes(b.notes));
   const total = times.reduce((sum, b) => sum + Math.max(1, b.total) + BAR_PAD, 0);
   const scale = (right - left) / total;
   const tri = big ? top - ring - 12 : top - 30;
-  // the words under the staff, below the fingers when there are fingers
-  const wordsY = bottom + (t.fingers ? 30 : 0) + (big ? Math.max(ring, 24) + 10 + 18 * k : 34);
-  const nameY = big ? tri - 4 : top - 36;
+  // the counts under the strums, then the words under the staff (below the fingers when there are fingers)
+  const countY = bottom + (t.fingers ? 30 : 0) + 10 + 20 * k;
+  const wordsY = marks ? countY + 10 + 22 * k : bottom + (t.fingers ? 30 : 0) + (big ? Math.max(ring, 24) + 10 + 18 * k : 34);
+  const chordY = marks ? nameY : big ? tri - 4 : top - 36;
   const num = (x: number, y: number, f: string, ink: string, cur: boolean, size = fs): string => {
     const w = big ? size * 0.62 * f.length + 10 : 30;
     const hh = big ? size * 0.82 : 26;
@@ -156,32 +210,53 @@ export function tabLine(t: TabLine, p: Palette, big = false): Drawn {
   const names: { x: number; text: string }[] = [];
   let prevX = 0;
   let h = '';
-  for (let k = 0; k < 6; k++) h += `<line x1="20" x2="${right}" y1="${top + k * gap}" y2="${top + k * gap}" stroke="${p.line}" stroke-width="1.5"/>`;
-  ['T', 'A', 'B'].forEach((c, k) => (h += `<text x="50" y="${top + gap * 1.6 + k * gap * 1.35}" class="clef" fill="${p.faint}">${c}</text>`));
+  for (let k = 0; k < staffLines; k++) h += `<line x1="20" x2="${right}" y1="${top + k * gap}" y2="${top + k * gap}" stroke="${p.line}" stroke-width="1.5"/>`;
+  ['T', 'A', 'B'].forEach((c, k) => (h += `<text x="50" y="${compact ? top + gap * (k + 0.5) + 9 : top + gap * 1.6 + k * gap * 1.35}" class="clef" fill="${p.faint}">${c}</text>`));
   let n = 0;
   let x0 = left;
   const starts: { u: number; x: number }[] = [];
   let u0 = 0;
   let sounding = '';
+  // the words of each bar, placed once the bars are: each as large as its bar has room for
+  const said: { x: number; w: number; text: string; cur: boolean }[] = [];
   t.bars.forEach((bar, b) => {
     h += `<line x1="${x0}" x2="${x0}" y1="${top}" y2="${bottom}" stroke="${p.faint}" stroke-width="2"/>`;
     const strummed = bar.notes.some((note) => note.strum);
     if (bar.chord && !strummed) names.push({ x: x0 + 14, text: bar.chord });
     starts.push({ u: u0, x: x0 + BAR_LEAD * scale });
+    const words = t.barWords?.[b]?.trim();
+    if (words) said.push({ x: x0 + 14, w: (Math.max(1, times[b].total) + BAR_PAD) * scale - 22, text: words, cur: bar.notes.some((_, j) => t.look(n + j) === 'cur') });
     bar.notes.forEach((note, j) => {
       const x = x0 + (BAR_LEAD + times[b].at[j]) * scale;
       const look = t.look(n);
       const ink = look === 'done' ? p.good : look === 'miss' ? p.bad : look === 'off' ? p.line : p.text;
-      if (look === 'cur') h += `<path d="M${x - 8} ${tri}h16l-8 11z" fill="${p.now}"/>`;
+      const stroke = strokeOf[b]?.[j];
+      // a strum with its arrow has the arrow for a marker; everything else the triangle
+      if (look === 'cur' && !stroke) h += `<path d="M${x - 8} ${tri}h16l-8 11z" fill="${p.now}"/>`;
       if (note.strum) {
         // the chord is named where it begins: at the start of the line, and wherever it changes
         if (note.strum !== sounding || (j === 0 && b === 0)) names.push({ x: j === 0 ? x0 + 14 : x - 12, text: t.name ? t.name(note.strum) : note.strum });
         sounding = note.strum;
         const sc = look === 'cur' ? p.nowInk : ink;
-        if (look === 'cur') h += `<rect x="${x - 21}" y="${top - 8}" width="42" height="${5 * gap + 16}" rx="10" fill="${p.now}"/>`;
+        if (look === 'cur') h += `<rect x="${x - 21}" y="${top - 8}" width="42" height="${bottom - top + 16}" rx="10" fill="${p.now}"/>`;
         h += note.up
-          ? `<path d="M${x - 6} ${top + 2.7 * gap}L${x + 6} ${top + 0.7 * gap}" stroke="${sc}" stroke-width="5" stroke-linecap="round"/><path d="M${x - 3} ${top + 0.55 * gap}L${x + 7} ${top + 0.35 * gap}L${x + 10.5} ${top + 1.25 * gap}" fill="none" stroke="${sc}" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/>`
-          : `<path d="M${x - 9} ${top + 4.1 * gap}L${x + 9} ${top + 0.9 * gap}" stroke="${sc}" stroke-width="8" stroke-linecap="round"/>`;
+          ? compact
+            ? `<path d="M${x - 6} ${top + 0.66 * (bottom - top)}L${x + 6} ${top + 0.08 * (bottom - top)}" stroke="${sc}" stroke-width="5" stroke-linecap="round"/><path d="M${x - 3} ${top + 0.05 * (bottom - top)}L${x + 7} ${top - 1}L${x + 10.5} ${top + 0.22 * (bottom - top)}" fill="none" stroke="${sc}" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/>`
+            : `<path d="M${x - 6} ${top + 2.7 * gap}L${x + 6} ${top + 0.7 * gap}" stroke="${sc}" stroke-width="5" stroke-linecap="round"/><path d="M${x - 3} ${top + 0.55 * gap}L${x + 7} ${top + 0.35 * gap}L${x + 10.5} ${top + 1.25 * gap}" fill="none" stroke="${sc}" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/>`
+          : compact
+            ? `<path d="M${x - 9} ${bottom - 3}L${x + 9} ${top + 3}" stroke="${sc}" stroke-width="8" stroke-linecap="round"/>`
+            : `<path d="M${x - 9} ${top + 4.1 * gap}L${x + 9} ${top + 0.9 * gap}" stroke="${sc}" stroke-width="8" stroke-linecap="round"/>`;
+        if (stroke) {
+          // the direction over the strum, the count under it: the first of a bar larger and bold
+          const ac = look === 'cur' ? p.now : look === 'done' ? p.good : look === 'miss' ? p.bad : look === 'off' ? p.line : p.muted;
+          const a0 = arrowY;
+          const a1 = arrowY + arrowH;
+          const hw = 6.5 * k;
+          h += stroke.up
+            ? `<path d="M${x} ${a1}V${a0}M${x - hw} ${a0 + hw + 1}L${x} ${a0}L${x + hw} ${a0 + hw + 1}" fill="none" stroke="${ac}" stroke-width="${look === 'cur' ? 3.4 : 2.8}" stroke-linecap="round" stroke-linejoin="round"/>`
+            : `<path d="M${x} ${a0}V${a1}M${x - hw} ${a1 - hw - 1}L${x} ${a1}L${x + hw} ${a1 - hw - 1}" fill="none" stroke="${ac}" stroke-width="${look === 'cur' ? 3.4 : 2.8}" stroke-linecap="round" stroke-linejoin="round"/>`;
+          if (stroke.count) h += `<text x="${x}" y="${countY}" class="cnt" style="font-size:${((stroke.strong ? 24 : 21) * k).toFixed(1)}px;font-weight:${stroke.strong ? 700 : 500}" fill="${look === 'cur' ? p.now : stroke.strong ? p.text : p.muted}">${stroke.count}</text>`;
+        }
       } else if (look === 'hide') {
         // by ear: where the note is stays open, only that one comes here
         h += num(x, top + 2.5 * gap, '?', p.faint, false);
@@ -211,17 +286,24 @@ export function tabLine(t: TabLine, p: Palette, big = false): Drawn {
     // a name runs about 0.62 of its size per letter; a change soon after another makes it smaller, never under 16
     const room = (names[i + 1]?.x ?? right + 20) - n.x - 10;
     const size = Math.max(16, Math.min(chordSize, room / (n.text.length * 0.62)));
-    h += `<text x="${n.x}" y="${nameY}" class="chn"${size !== 23 ? ` style="font-size:${size.toFixed(1)}px"` : ''} fill="${p.text}">${n.text}</text>`;
+    h += `<text x="${n.x}" y="${chordY}" class="chn"${size !== 23 ? ` style="font-size:${size.toFixed(1)}px"` : ''} fill="${p.text}">${n.text}</text>`;
   });
+  // the words of a bar run about half their size per letter; a bar too short for them makes them smaller, never under 16
+  for (const w of said) {
+    const size = Math.max(16, Math.min(24 * k, w.w / (w.text.length * 0.5)));
+    h += `<text x="${w.x}" y="${wordsY}" class="bw" style="font-size:${size.toFixed(1)}px" fill="${w.cur ? p.text : p.muted}">${esc(w.text)}</text>`;
+  }
   if (t.fingers) h += `<text x="24" y="${bottom + 30}" class="lbl" fill="${p.muted}">${L('finger', 'Finger')}</text>`;
-  h += `<line class="ph" x1="0" x2="0" y1="${tri}" y2="${bottom + 10}" stroke="${p.now}" stroke-width="3" stroke-linecap="round" opacity="0"/>`;
+  h += `<line class="ph" x1="0" x2="0" y1="${marks ? arrowY : tri}" y2="${bottom + 10}" stroke="${p.now}" stroke-width="3" stroke-linecap="round" opacity="0"/>`;
   const x = (u: number): number => {
     let bar = starts[0];
     for (const s of starts) if (u >= s.u) bar = s;
     return Math.max(24, Math.min(right, bar.x + (u - bar.u) * scale));
   };
-  const below = bottom + (t.fingers ? 44 : big ? Math.ceil(ring) + 6 : 18);
-  return { svg: h, height: t.words ? Math.max(below, Math.ceil(wordsY + 10 * k)) : below, x };
+  let height = bottom + (t.fingers ? 44 : big ? Math.ceil(ring) + 6 : 18);
+  if (marks) height = Math.max(height, Math.ceil(countY + 8 * k));
+  if (t.words || said.length) height = Math.max(height, Math.ceil(wordsY + (marks ? 8 : 10) * k));
+  return { svg: h, height, x };
 }
 
 /**
