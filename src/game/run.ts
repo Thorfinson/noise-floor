@@ -231,6 +231,8 @@ export interface Foe {
   rings: number;
   /** seconds it has rested on the floor line, before it counts as landed */
   down?: number;
+  /** its first note was given by "Clean sweep": nobody played it, so its times measure nothing */
+  given?: boolean;
 }
 
 export type RunEvent =
@@ -324,7 +326,8 @@ export const LAND_Y = 340;
  * played just before the piece touched down is still on its way.
  */
 export const REST_ON_FLOOR = 0.3;
-const SLOTS = [430, 770, 210, 1000, 590, 880, 330];
+/** where the pieces come in, one after the other; the picture gives each place a lane of its own */
+export const SLOTS = [430, 770, 210, 1000, 590, 880, 330];
 /** fall speed in units per second at 100%: about 20 seconds from the top to the floor */
 const BASE_V = 18;
 const MAX_ACTIVE = 4;
@@ -534,7 +537,8 @@ export class Run {
     this.chain++;
     this.bestChain = Math.max(this.bestChain, this.chain);
     this.mult = Math.min(this.perks.has('chain') ? 12 : 8, 1 + Math.floor(this.chain / 6));
-    const quick = f.phrase.kind === 'chg' && this.perks.has('change') && f.gaps.length > 0 && f.gaps[f.gaps.length - 1] < 1.2;
+    // the first gap of a piece whose first chord was given runs from the piece before: not a change
+    const quick = f.phrase.kind === 'chg' && this.perks.has('change') && f.gaps.length > (f.given ? 1 : 0) && f.gaps[f.gaps.length - 1] < 1.2;
     this.score += 10 * this.mult * (quick ? 2 : 1);
     this.events.push({ type: 'hit', id: f.id, x: f.x, y: f.y });
     if (f.hit >= f.need) this.clear(f, t);
@@ -543,7 +547,9 @@ export class Run {
   /** Were the notes evenly spaced, allowing for their written lengths? Every gap within a quarter of the middle one. */
   private static even(f: Foe): boolean {
     const at = f.phrase.at;
-    const rel = f.gaps.map((g, i) => (f.phrase.kind === 'chg' ? g : g / Math.max(0.25, at[i + 1] - at[i])));
+    const all = f.gaps.map((g, i) => (f.phrase.kind === 'chg' ? g : g / Math.max(0.25, at[i + 1] - at[i])));
+    // after a given first note the first gap was not played as one
+    const rel = f.given ? all.slice(1) : all;
     if (rel.length < 2) return false;
     const mid = median(rel);
     return mid > 0 && rel.every((g) => Math.abs(g - mid) <= 0.25 * mid);
@@ -558,11 +564,13 @@ export class Run {
     const dur = t - f.startT;
     const steps = f.need - 1;
     let value: number | null = null;
-    if (p.kind === 'chg') {
+    // a piece that began with a given note was not played whole: neither its time nor a value is kept
+    const whole = !f.given;
+    if (whole && p.kind === 'chg') {
       const avg = f.gaps.reduce((a, b) => a + b, 0) / f.gaps.length;
       stat.times.push(avg);
       if (!f.misses) value = 60 / avg;
-    } else if (dur > 0) {
+    } else if (whole && p.kind !== 'chg' && dur > 0) {
       stat.times.push(dur);
       // song bars and piece phrases: share of full speed; finger patterns: tempo with two notes to the beat
       const units = p.at[p.at.length - 1] - p.at[0];
@@ -582,7 +590,26 @@ export class Run {
     this.events.push({ type: 'clear', id: f.id, x: f.x, y: f.y, label: p.label, key: p.key, value, bonus, gain });
     if (!f.misses && this.perks.has('burst')) {
       const next = this.locked();
-      if (next && next.hit === 0 && next.need > 2) next.hit = 1;
+      if (next && next.hit === 0 && next.need > 2) {
+        // its clock starts now, so that the gap to its next note is one that was played
+        next.hit = 1;
+        next.startT = next.lastT = t;
+        next.given = true;
+      }
+    }
+  }
+
+  /**
+   * The run was paused for this many seconds. Notes are timed on the listener's clock, which went on
+   * through the pause: every piece already begun has its clock moved on by the pause, so that its gaps and
+   * its time are those of the playing.
+   */
+  resumed(paused: number): void {
+    if (!(paused > 0)) return;
+    for (const f of this.foes) {
+      if (f.hit === 0) continue;
+      f.startT += paused;
+      f.lastT += paused;
     }
   }
 

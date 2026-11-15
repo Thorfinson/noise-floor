@@ -9,6 +9,8 @@ import { levelFor, Skills } from '../src/core/skills';
 import { Store } from '../src/core/store';
 import { nextTempo, Take } from '../src/core/playalong';
 import { parseNotes, parseTab } from '../src/music/import';
+import { staffLine } from '../src/ui/staff';
+import { esc, LEARN } from '../src/ui/draw';
 
 /** deterministic random numbers */
 function seeded(seed = 1): () => number {
@@ -167,6 +169,27 @@ describe('a run', () => {
     expect(idle.integrity).toBe(2);
   });
 
+  it('leaves a pause out of the time of a phrase that was paused half-way', () => {
+    /** Plays the first piece of a finger run, a note every quarter of a second, with a pause of 30 s after its second note. */
+    const played = (resume: (run: Run, pause: number) => void): number | null => {
+      const run = new Run('fingers', poolFor('fingers'), flat, { speed: 70, rng: seeded(5) });
+      run.update(0.1);
+      const f = run.locked()!;
+      let t = 1;
+      run.note(wants(f), t);
+      run.note(wants(f), (t += 0.25));
+      // the listener's clock goes on through the pause; the run's does not
+      t += 30;
+      resume(run, 30);
+      while (run.foes.includes(f)) run.note(wants(f), (t += 0.25));
+      const clear = run.events.find((e) => e.type === 'clear');
+      return clear?.type === 'clear' ? clear.value : null;
+    };
+    expect(played((run, pause) => run.resumed(pause))).toBeCloseTo(120, 0);
+    // without being told of the pause the phrase would have taken half a minute
+    expect(played(() => undefined)!).toBeLessThan(20);
+  });
+
   it('keeps going after an upgrade: the second wave scores too', () => {
     const run = new Run('fingers', poolFor('fingers'), flat, { speed: 70, rng: seeded(2) });
     playPerfectly(run, 0.25);
@@ -264,6 +287,37 @@ describe('upgrades', () => {
     const g = choppy.locked()!;
     for (let i = 0; i < g.need; i++) choppy.note(g.phrase.midis[i][0], 1 + i * 0.3, i === 2 ? 0.01 : 0.8);
     expect(clears(choppy)).toEqual(['']);
+  });
+
+  it('"Clean sweep" in a later wave gives the next piece its first note, and measures nothing from that piece', () => {
+    for (const [type, every, tempo] of [
+      // slow enough that the next piece comes in before the one played is gone
+      ['fingers', 0.45, 30 / 0.45],
+      ['changes', 0.8, 60 / 0.8],
+    ] as const) {
+      const run = new Run(type, poolFor(type), flat, { speed: 70, rng: seeded(11) });
+      run.perks.add('burst');
+      // three waves played without a slip, a note exactly every `every` seconds; from the second wave on
+      // another piece is in the air when one is cleared: that is the one given a note
+      let next = 0;
+      for (let k = 0; k < 60000 && run.wave < 4; k++) {
+        if (run.state === 'perk') run.choosePerk(run.offered[0].id);
+        run.update(0.01);
+        const f = run.locked();
+        if (!f || run.time < next - 1e-6) continue;
+        if (f.phrase.kind === 'chg') run.chord(Run.target(f), run.time);
+        else run.note(wants(f), run.time);
+        next = run.time + every;
+      }
+      expect(run.wave, type).toBe(4);
+      const clears = run.events.flatMap((e) => (e.type === 'clear' ? [e] : []));
+      // never a value from a gap that runs from the start of the clock
+      for (const e of clears) if (e.value !== null) expect(e.value, `${type} ${e.label}`).toBeCloseTo(tempo, 0);
+      for (const m of run.measurements()) expect(m.value, `${type} ${m.key}`).toBeCloseTo(tempo, 0);
+      for (const s of run.stats.values()) for (const t of s.times) expect(t, `${type} ${s.label}`).toBeLessThan(10);
+      // played without a slip, only a piece that was given its first note goes without a value
+      expect(clears.filter((e) => e.value === null).length, type).toBeGreaterThan(0);
+    }
   });
 
   it('offers "Let it ring" only where notes can ring on, and "Quick change" only where chords change', () => {
@@ -675,6 +729,24 @@ describe('stepping stones: keeping the pulse', () => {
     stones.forEach((s, i) => w.strum(w.due(i) + 0.03, s.chord));
     expect(w.result().kept).toBe(true);
     expect(w.next(w.due(31) + 1)).toBe(-1);
+  });
+});
+
+describe('note values on the staff', () => {
+  it('gives a dotted eighth the flag of an eighth, and a dotted quarter none', () => {
+    const svg = staffLine([{ midi: 71, len: 0.75 }, { midi: 72, len: 0.25 }, { midi: 74, len: 1.5 }, { midi: 72, len: 3 }], () => 'up', LEARN).svg;
+    // one flag on the dotted eighth, two on the sixteenth
+    expect(svg.match(/<path d="M[\d.]+ [\d.]+q12 /g)?.length).toBe(3);
+    // three dots, and the dotted half is hollow with a stem
+    expect(svg.match(/<circle /g)?.length).toBe(3);
+    expect(svg.match(/<ellipse [^>]*fill="#f4eee6"/g)?.length).toBe(1);
+    expect(svg.match(/<line [^>]*stroke-width="2.2"/g)?.length).toBe(4);
+  });
+});
+
+describe('text in markup', () => {
+  it('is made safe between tags and inside either kind of quotes', () => {
+    expect(esc(`<b title='x' class="y">Tom & Jerry</b>`)).toBe('&lt;b title=&#39;x&#39; class=&quot;y&quot;&gt;Tom &amp; Jerry&lt;/b&gt;');
   });
 });
 

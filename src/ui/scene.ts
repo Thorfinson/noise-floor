@@ -9,6 +9,8 @@
 export type RGB = [number, number, number];
 
 export const rgb = (hex: string): RGB => [parseInt(hex.slice(1, 3), 16), parseInt(hex.slice(3, 5), 16), parseInt(hex.slice(5, 7), 16)];
+/** A table of colours written as they are in CSS ('#f8efe6'), as colours to mix, under the same names. */
+export const rgbs = <K extends string>(c: Record<K, string>): Record<K, RGB> => Object.fromEntries(Object.entries<string>(c).map(([k, v]) => [k, rgb(v)])) as Record<K, RGB>;
 export const css = (c: RGB, a = 1): string => `rgba(${Math.round(c[0])},${Math.round(c[1])},${Math.round(c[2])},${a.toFixed(3)})`;
 export const mix = (a: RGB, b: RGB, t: number): RGB => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
 export const clamp = (v: number, lo = 0, hi = 1): number => Math.min(hi, Math.max(lo, v));
@@ -19,6 +21,25 @@ export const ease = (t: number): number => {
   return u * u * (3 - 2 * u);
 };
 export const TAU = Math.PI * 2;
+
+// the colours and the type both pictures share
+export const GOLD: RGB = [246, 196, 92];
+export const GLOW: RGB = [255, 236, 178];
+export const BAD: RGB = [226, 84, 60];
+/** the slips of paper things are written on */
+export const PAPER = '#fbf5ea';
+/** what is to be played now: the blue of the panels */
+export const NOW: RGB = [30, 106, 168];
+export const MONO = '"IBM Plex Mono", ui-monospace, Consolas, monospace';
+export const SANS = '"IBM Plex Sans", "Segoe UI", system-ui, sans-serif';
+
+/**
+ * The player has asked the system for less motion: the pictures then do not shake, flicker or flash (what
+ * drifts slowly stays). The query is made once; whether it matches is read when it matters, so that a change
+ * in the settings counts at once.
+ */
+const lessMotion = typeof matchMedia === 'function' ? matchMedia('(prefers-reduced-motion: reduce)') : null;
+export const calm = (): boolean => !!lessMotion?.matches;
 
 /** Numbers that look random and come out the same for the same seed. */
 export function prng(seed: number): () => number {
@@ -81,16 +102,30 @@ export class Surface {
     this.ctx = canvas.getContext('2d')!;
   }
 
+  private measured: { over: Element | null; box: DOMRect; o: DOMRect | undefined } | null = null;
+
+  /**
+   * Reads where the canvas and the element over it are. A screen calls this at the start of its frame,
+   * before it writes anything into the page: read then, the sizes cost nothing, while read after a change
+   * to the page they make the browser lay out the page once more in the middle of the frame.
+   */
+  measure(over?: Element | null): void {
+    this.measured = { over: over ?? null, box: this.canvas.getBoundingClientRect(), o: over?.getBoundingClientRect() };
+  }
+
   /**
    * Matches the canvas to its box. over is the element the game happens in front of; without one the
-   * band is the upper middle of the picture. True when anything changed.
+   * band is the upper middle of the picture. True when anything changed. Uses what measure() read in this
+   * frame, if it was read for the same element; otherwise reads it now.
    */
   fit(over?: Element | null): boolean {
-    const box = this.canvas.getBoundingClientRect();
+    const m = this.measured && this.measured.over === (over ?? null) ? this.measured : null;
+    this.measured = null;
+    const box = m ? m.box : this.canvas.getBoundingClientRect();
     const bw = Math.max(1, box.width);
     const bh = Math.max(1, box.height);
     const dpr = Math.min(2, window.devicePixelRatio || 1);
-    const o = over?.getBoundingClientRect();
+    const o = m ? m.o : over?.getBoundingClientRect();
     // with no game going on the picture is a view: the horizon low, much sky
     const top = o && o.height > 40 ? o.top - box.top : bh * 0.1;
     const bottom = o && o.height > 40 ? o.bottom - box.top : bh * 0.84;
@@ -442,6 +477,55 @@ export function bolt(ctx: CanvasRenderingContext2D, x0: number, y0: number, x1: 
     ctx.stroke();
   }
   ctx.globalCompositeOperation = before;
+}
+
+/** Colour that soaks into what is under it: a stain with a soft edge. */
+export function stain(ctx: CanvasRenderingContext2D, x: number, y: number, r: number, c: RGB, a: number): void {
+  if (a <= 0 || r <= 0) return;
+  const g = ctx.createRadialGradient(x, y, 0, x, y, r);
+  g.addColorStop(0, css(c, a));
+  g.addColorStop(0.5, css(c, a * 0.5));
+  g.addColorStop(1, css(c, 0));
+  ctx.fillStyle = g;
+  ctx.beginPath();
+  ctx.arc(x, y, r, 0, TAU);
+  ctx.fill();
+}
+
+/**
+ * Petals, or whatever the wind has picked up, drifting in from the right across a picture W wide: n of them,
+ * between the heights top and top + tall, in two colours (most in the first). drift moves them on with the
+ * view, for a picture that scrolls.
+ */
+export function petals(ctx: CanvasRenderingContext2D, t: number, n: number, W: number, top: number, tall: number, colours: [RGB, RGB], drift = 0): void {
+  for (let i = 0; i < n; i++) {
+    const x = W * (1.1 - (((hash(i, 61) + t * (0.012 + 0.014 * hash(i, 62)) + drift) % 1) * 1.2));
+    const y = top + tall * hash(i, 63) + 18 * Math.sin(t * (0.6 + hash(i, 64)) + i);
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(t * (0.8 + hash(i, 65)) + i);
+    ctx.fillStyle = css(i % 3 ? colours[0] : colours[1], 0.75);
+    ctx.beginPath();
+    ctx.ellipse(0, 0, 3.4, 1.5, 0, 0, TAU);
+    ctx.fill();
+    ctx.restore();
+  }
+}
+
+/**
+ * The grain of the paper and the settling of the pigment are worked out pixel by pixel, which takes a
+ * moment: once for the whole app, not again for every picture (a walk makes a new one as it starts).
+ */
+let tiles: { grain: HTMLCanvasElement; pigment: HTMLCanvasElement } | null = null;
+
+/**
+ * The end of every frame of a painted picture: bare paper at its top, where the score is written over it
+ * (top is the upper edge of the band where the game happens), then the pigment and the grain of the paper.
+ */
+export function paperFinish(s: Surface, top: number, paper: RGB): void {
+  mist(s.ctx, -20, s.w + 20, top + 14, -10, paper, 0.96);
+  tiles ??= { grain: grain(), pigment: pigment() };
+  finish(s, tiles.grain, tiles.pigment);
 }
 
 /** Lays the settling of the pigment and the grain of the paper over a finished frame. */

@@ -8,6 +8,7 @@
  */
 import { noteName } from '../music/theory';
 import { LEARN, typeScale } from './draw';
+import { roundRect } from './scene';
 
 export interface LaneNote {
   midi: number;
@@ -89,11 +90,13 @@ export class Lane {
     return midi + 12 * Math.round((mid - midi) / 12);
   }
 
-  private fit(): { w: number; h: number } {
+  /** The canvas at the size it is shown at, so that nothing is stretched; null while it is not shown. */
+  private fit(): { w: number; h: number } | null {
     const r = this.canvas.getBoundingClientRect();
     const dpr = Math.min(2, window.devicePixelRatio || 1);
-    const w = Math.max(200, Math.round(r.width));
-    const h = Math.max(120, Math.round(r.height));
+    const w = Math.round(r.width);
+    const h = Math.round(r.height);
+    if (w < 1 || h < 1) return null;
     if (this.canvas.width !== Math.round(w * dpr) || this.canvas.height !== Math.round(h * dpr)) {
       this.canvas.width = Math.round(w * dpr);
       this.canvas.height = Math.round(h * dpr);
@@ -103,13 +106,16 @@ export class Lane {
   }
 
   draw(v: LaneView): void {
-    const { w, h } = this.fit();
+    const size = this.fit();
+    if (!size) return;
+    const { w, h } = size;
     const g = this.ctx;
     const P = LEARN;
     const left = 64;
-    const right = w - 16;
+    // a lane narrower than its labels still draws, only squeezed
+    const right = Math.max(left + 20, w - 16);
     const top = 10;
-    const bottom = h - 10;
+    const bottom = Math.max(top + 20, h - 10);
     const rows = this.hi - this.lo + 1;
     const rowH = (bottom - top) / rows;
     const y = (midi: number): number => bottom - (midi - this.lo + 0.5) * rowH;
@@ -167,9 +173,13 @@ export class Lane {
       g.fillStyle = look === 'cur' ? P.now : look === 'done' ? P.good : look === 'close' ? CLOSE : look === 'miss' ? P.bad : P.panel;
       g.strokeStyle = look === 'up' ? P.line : 'transparent';
       g.lineWidth = 2;
-      const r = Math.min(8, band / 2);
-      g.beginPath();
-      g.roundRect(a + 2, yy - band / 2, Math.max(8, b - a - 4), band, r);
+      const bw = Math.max(8, b - a - 4);
+      const r = Math.min(8, band / 2, bw / 2);
+      // Safari before 16 has no roundRect: the same shape drawn with arcs
+      if (typeof g.roundRect === 'function') {
+        g.beginPath();
+        g.roundRect(a + 2, yy - band / 2, bw, band, r);
+      } else roundRect(g, a + 2, yy - band / 2, bw, band, r);
       g.fill();
       if (look === 'up') g.stroke();
       if (n.word) {

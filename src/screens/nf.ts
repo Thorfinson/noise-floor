@@ -38,6 +38,31 @@ const menuOn = (): boolean => engine.running && store.settings.strumSelect && st
 /** The skill of keeping the beat in a pattern of Stepping stones, on the guitar, the piano or with the voice. */
 export const beatKey = (pattern: string, piano: boolean | 'voice'): string => `beat:${piano === 'voice' ? 'v.' : piano ? 'p.' : ''}${pattern}`;
 
+/** The speed a kind of run starts at, a whole percent: what is stored may come from a backup file. */
+const storedSpeed = (type: RunType): number => {
+  const v = Number(store.speeds[type]);
+  return Number.isFinite(v) ? Math.round(v) : 60;
+};
+/** Seconds to a tenth, written the way the language writes them: 6.2, 6,2; num() leaves out a tenth that is 0. */
+const tenths = (s: number): string => {
+  const t = Math.round(s * 10) / 10;
+  return num(t) + (Number.isInteger(t) ? L('.0', ',0') : '');
+};
+
+/**
+ * Where the picture is only a backdrop (the menu, the page before a run and the one after it), what moves in
+ * it drifts slowly: thirty frames a second show that as well as sixty, and spare the battery. Says whether a
+ * frame is to be drawn.
+ */
+function slowly(): (ts: number) => boolean {
+  let drawn = -Infinity;
+  return (ts) => {
+    if (ts - drawn < 1000 / 30 - 4) return false;
+    drawn = ts;
+    return true;
+  };
+}
+
 /** How to pick card i from the instrument. */
 const pickHint = (i: number, piano: boolean): string =>
   menuOn()
@@ -203,7 +228,7 @@ export const nfStart: Screen = (root) => {
     <div class="cards${types.length >= 3 ? ' four' : ''}">${types
       .map(
         (t, i) => `<a class="card${t.type === suggested ? ' sug' : ''}" href="#/run/${t.type}"><span class="k">${t.tag}${t.type === suggested ? L(' · suggested', ' · empfohlen') : ''}</span><h2>${t.name}</h2><p>${esc(t.text)}</p>
-        <span class="meta">${L(`Starts at ${store.speeds[t.type] ?? 60}% speed · weakest: ${esc(weakest(t.type))}`, `Beginnt bei ${store.speeds[t.type] ?? 60} % Tempo · am schwächsten: ${esc(weakest(t.type))}`)}</span><span class="pick">${pickHint(i, piano)}</span></a>`,
+        <span class="meta">${L(`Starts at ${storedSpeed(t.type)}% speed · weakest: ${esc(weakest(t.type))}`, `Beginnt bei ${storedSpeed(t.type)} % Tempo · am schwächsten: ${esc(weakest(t.type))}`)}</span><span class="pick">${pickHint(i, piano)}</span></a>`,
       )
       .join('')}<a class="card" href="#/stride"><span class="k">${L('Rhythm', 'Rhythmus')}</span><h2>${L('Stepping stones', 'Trittsteine')}</h2><p>${voice ? L('A wanderer with a lantern crosses the water on stones: one stone for every sung “ta”, in time with the click, on a note that changes every bar. Trains keeping the pulse and moving to the next note in time.', 'Ein Wanderer mit einer Laterne überquert das Wasser auf Steinen: ein Stein für jedes gesungene „ta“, im Takt mit dem Klick, auf einem Ton, der jeden Takt wechselt. Trainiert, den Puls zu halten und rechtzeitig zum nächsten Ton zu gehen.') : L(`A wanderer with a lantern crosses the water on stones: one stone for every ${piano ? 'chord' : 'strum'}, in time with the click. Trains keeping the pulse through a chord change.`, `Ein Wanderer mit einer Laterne überquert das Wasser auf Steinen: ein Stein für jeden ${piano ? 'Akkord' : 'Anschlag'}, im Takt mit dem Klick. Trainiert, den Puls über einen Akkordwechsel hinweg zu halten.`)}</p>
         <span class="meta">${L(`Four ${piano || voice ? 'rhythms' : 'strumming patterns'} · weakest: `, `Vier ${piano || voice ? 'Rhythmen' : 'Schlagmuster'} · am schwächsten: `)}${esc(PATTERNS.reduce((a, b) => (store.skills.level(beatKey(b.id, voice ? 'voice' : piano)) < store.skills.level(beatKey(a.id, voice ? 'voice' : piano)) ? b : a)).name)}</span><span class="pick"><span>${L(`Press ${types.length + 1}`, `Drück ${types.length + 1}`)}</span></span></a></div>
@@ -218,9 +243,12 @@ export const nfStart: Screen = (root) => {
   canvas.setAttribute('aria-hidden', 'true');
   root.prepend(canvas);
   const scene = new Watch(canvas, 0);
+  const due = slowly();
   let raf = requestAnimationFrame(function frame(ts: number): void {
-    scene.draw(null, ts / 1000, false);
     raf = requestAnimationFrame(frame);
+    if (!due(ts)) return;
+    scene.measure();
+    scene.draw(null, ts / 1000, false);
   });
   const stopMenu = pickMenu(root, pick, piano);
   const stopKeys = keys({ '1': () => pick(0), '2': () => pick(1), '3': () => (types[2] ? pick(2) : go('/stride')), '4': () => types.length >= 3 && go('/stride') });
@@ -337,7 +365,7 @@ function consoleSvg(f: Foe, nx: Foe | null): string {
       h += `<text x="640" y="146" class="cn" text-anchor="end" style="${size(b)}fill:${col(b)}">${shapeOf(b).name}</text>` + chordBox(shapeOf(b), 660, 54, 135, NF, tgt === b, undefined, 33);
     }
     const lastGap = f.gaps[f.gaps.length - 1];
-    h += `<text x="838" y="98" class="ck">${L('LAST CHANGE', 'LETZTER WECHSEL')}</text><text x="838" y="132" class="rd">${lastGap ? lastGap.toFixed(1) + ' s' : '–'}</text><text x="838" y="162" class="ck">${L('30 A MINUTE = 2.0 S', '30 PRO MINUTE = 2,0 S')}</text>`;
+    h += `<text x="838" y="98" class="ck">${L('LAST CHANGE', 'LETZTER WECHSEL')}</text><text x="838" y="132" class="rd">${lastGap ? tenths(lastGap) + ' s' : '–'}</text><text x="838" y="162" class="ck">${L('30 A MINUTE = 2.0 S', '30 PRO MINUTE = 2,0 S')}</text>`;
   }
   if (nx) {
     const q = nx.phrase;
@@ -367,7 +395,7 @@ export const nfRun: Screen = (root, [t, short, again], ctx) => {
   const piano = isPianoRun(type);
   const voice = isVoiceRun(type);
   // the first run of a kind starts slowly
-  const startSpeed = Math.max(50, Math.min(130, store.speeds[type] ?? 60));
+  const startSpeed = Math.max(50, Math.min(130, storedSpeed(type)));
   const began = Date.now();
   const phrases = pool(type);
   const run = new Run(type, phrases, (k) => store.skills.weight(k, began), {
@@ -732,13 +760,13 @@ export const nfRun: Screen = (root, [t, short, again], ctx) => {
           .map((r) => {
             const old = previous?.rows.find((o) => o.key === r.key);
             const diff = old && old.avg && r.avg ? r.avg - old.avg : null;
-            return `<tr><td>${esc(r.label)}${r === weak && (r.cleared < r.sent || rows.length > 1) ? `<span class="tag weak">${L('weakest', 'am schwächsten')}</span>` : ''}</td><td>${pips(store.skills.level(r.key))}</td><td class="n">${r.sent}</td><td class="n">${r.cleared}</td><td class="n">${r.avg ? r.avg.toFixed(1) + ' s' : '–'}</td><td class="n">${diff === null ? '–' : (diff <= 0 ? '−' : '+') + Math.abs(diff).toFixed(1) + ' s'}</td></tr>`;
+            return `<tr><td>${esc(r.label)}${r === weak && (r.cleared < r.sent || rows.length > 1) ? `<span class="tag weak">${L('weakest', 'am schwächsten')}</span>` : ''}</td><td>${pips(store.skills.level(r.key))}</td><td class="n">${r.sent}</td><td class="n">${r.cleared}</td><td class="n">${r.avg ? tenths(r.avg) + ' s' : '–'}</td><td class="n">${diff === null ? '–' : (diff <= 0 ? '−' : '+') + tenths(Math.abs(diff)) + ' s'}</td></tr>`;
           })
           .join('')}
-        ${b ? `<tr><td>${L('The Mute', 'Die Stille')} · ${b.name}</td><td>${pips(store.skills.level(b.key))}</td><td class="n">1</td><td class="n">${L(`${b.results.filter((r) => r === 'clean').length} of ${b.steps.length} ${voice ? 'notes' : piano ? 'keys' : 'strings'}`, `${b.results.filter((r) => r === 'clean').length} von ${b.steps.length} ${voice ? 'Tönen' : piano ? 'Tasten' : 'Saiten'}`)}</td><td class="n">${b.endT >= 0 ? (b.endT - b.startT).toFixed(1) + ' s' : '–'}</td><td class="n">–</td></tr>` : ''}
+        ${b ? `<tr><td>${L('The Mute', 'Die Stille')} · ${b.name}</td><td>${pips(store.skills.level(b.key))}</td><td class="n">1</td><td class="n">${L(`${b.results.filter((r) => r === 'clean').length} of ${b.steps.length} ${voice ? 'notes' : piano ? 'keys' : 'strings'}`, `${b.results.filter((r) => r === 'clean').length} von ${b.steps.length} ${voice ? 'Tönen' : piano ? 'Tasten' : 'Saiten'}`)}</td><td class="n">${b.endT >= 0 ? tenths(b.endT - b.startT) + ' s' : '–'}</td><td class="n">–</td></tr>` : ''}
       </tbody></table></div>
       ${ups.length ? `<p class="note"><b>${L('Levels gained:', 'Neue Stufen:')}</b> ${ups.map(esc).join(' · ')}</p>` : ''}
-      <p class="note">${L(`<b>Next run</b> starts at ${store.speeds[type]}% speed${weak ? ` and sends more of ${esc(weak.label)}` : ''}.`, `<b>Die nächste Runde</b> beginnt bei ${store.speeds[type]} % Tempo${weak ? ` und schickt mehr von ${esc(weak.label)}` : ''}.`)}</p>
+      <p class="note">${L(`<b>Next run</b> starts at ${storedSpeed(type)}% speed${weak ? ` and sends more of ${esc(weak.label)}` : ''}.`, `<b>Die nächste Runde</b> beginnt bei ${storedSpeed(type)} % Tempo${weak ? ` und schickt mehr von ${esc(weak.label)}` : ''}.`)}</p>
       <div class="row">${ctx ? `<button class="btn primary" id="rerun">${L('Next step', 'Nächster Schritt')} <kbd>${L('Space', 'Leertaste')}</kbd></button><span class="note">${L(`Next: ${esc(ctx.after)}.`, `Als Nächstes: ${esc(ctx.after)}.`)}</span>` : `<button class="btn primary" id="rerun">${L('Run again', 'Nochmal')} <kbd>${L('Space', 'Leertaste')}</kbd></button><a class="btn" href="#/nf">${L('Other run', 'Andere Runde')}</a><a class="btn quiet" href="#/">${L('Stop for today', 'Für heute aufhören')}</a>`}</div>
     </div>`;
     $('#hints', root).innerHTML = '';
@@ -789,9 +817,13 @@ export const nfRun: Screen = (root, [t, short, again], ctx) => {
   }
 
   function frame(ts: number): void {
-    if (gate === 'brief') {
-      scene.draw(null, ts / 1000, false);
-      raf = requestAnimationFrame(frame);
+    raf = requestAnimationFrame(frame);
+    const backdrop = gate === 'brief' || debriefed;
+    if (backdrop && !backdropDue(ts)) return;
+    // the picture's size is read before anything is written into the page in this frame
+    scene.measure();
+    if (backdrop) {
+      scene.draw(gate === 'brief' ? null : run, ts / 1000, false);
       return;
     }
     const dt = last ? Math.min(0.1, (ts - last) / 1000) : 0;
@@ -802,14 +834,26 @@ export const nfRun: Screen = (root, [t, short, again], ctx) => {
     if (run.state !== view && !summary) layout();
     if (view === 'playing' && !summary) drawPlaying();
     scene.draw(run, ts / 1000, !paused && gate === 'go');
-    if (!debriefed) hud();
-    raf = requestAnimationFrame(frame);
+    hud();
   }
+  const backdropDue = slowly();
 
+  /**
+   * Notes are timed on the listener's clock, which goes on through a pause: the run is told how long the
+   * pause was, and what was played during it does not count, even when it is reported a moment after.
+   */
+  let pausedAt = -1;
+  let playFrom = -Infinity;
   function setPaused(v: boolean): void {
-    if (summary || view !== 'playing' || gate !== 'go') return;
+    if (summary || view !== 'playing' || gate !== 'go' || v === paused) return;
     conShown = '';
     paused = v;
+    if (v) pausedAt = engine.now();
+    else if (pausedAt >= 0) {
+      playFrom = engine.now();
+      run.resumed(playFrom - pausedAt);
+      pausedAt = -1;
+    }
     const b = $('#pause', root);
     b.setAttribute('aria-pressed', String(v));
     $('span', b).textContent = v ? L('Resume', 'Weiter') : L('Pause', 'Pause');
@@ -829,7 +873,7 @@ export const nfRun: Screen = (root, [t, short, again], ctx) => {
   let bossWrong = -1;
   let bossLast = -1;
   function sungFrame(f: Frame): void {
-    if (gate !== 'go' || paused) return;
+    if (gate !== 'go' || paused || f.t < playFrom) return;
     if (view === 'boss') return bossFrame(f);
     if (view !== 'playing') return;
     if (onNote && f.t - onNote.last > 0.12) onNote = null;
@@ -908,7 +952,7 @@ export const nfRun: Screen = (root, [t, short, again], ctx) => {
         }
         gesture.played(e.time);
         if (view === 'perk') menuPick?.(e.midi, e.conf);
-        else if (!paused && view === 'playing') run.note(e.midi, e.time, e.held);
+        else if (!paused && view === 'playing' && e.time >= playFrom) run.note(e.midi, e.time, e.held);
       },
       onChord: (e) => {
         if (gate !== 'go') {
@@ -918,7 +962,7 @@ export const nfRun: Screen = (root, [t, short, again], ctx) => {
         if (e.best && e.score > 0.6 && e.margin > 0.08) gesture.played(e.time);
         if (view === 'perk') {
           if (e.best) menuStrum?.(e.best, e.score, e.margin);
-        } else if (!paused && view === 'playing') {
+        } else if (!paused && view === 'playing' && e.time >= playFrom) {
           // the chord a piece is waiting for is given when the strum fits it; otherwise what was heard for sure
           const want = run.wanted().find((c) => strumIs(e, c, piano));
           if (want) run.chord(want, e.time);

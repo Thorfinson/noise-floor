@@ -69,8 +69,11 @@ export function chordBox(c: Chord, ox: number, oy: number, w: number, p: Palette
 /** The guitar is held the other way round: chord pictures and the fretboard are drawn mirrored. */
 const lefty = (): boolean => store.settings.leftHanded;
 
-/** Text made safe inside markup (the same as the screens' esc; here to keep the drawings free of them). */
-const esc = (t: string): string => t.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
+/**
+ * Text made safe inside markup, between tags and in attributes in either kind of quotes. The screens get it
+ * through dom.ts; it lives here so that the drawings need nothing of the screens.
+ */
+export const esc = (t: string): string => t.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
 
 /** The size of the type chosen in the settings: 1, 1.15 or 1.3. */
 export const typeScale = (): number => ([1, 1.15, 1.3].includes(store.settings.uiScale) ? store.settings.uiScale : 1);

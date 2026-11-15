@@ -275,11 +275,12 @@ textarea { width: 100%; padding: 14px 16px; border: 1px solid var(--line); borde
 body[data-mode='nf'] .tile { border-width: 1.5px; border-radius: 4px; }
 body[data-mode='nf'] .tile span { font: 500 0.75rem var(--mono); letter-spacing: 0.1em; text-transform: uppercase; }
 body[data-mode='nf'] .tile.clean span { color: var(--text); }
-.banner { position: absolute; left: 50%; top: 18px; transform: translateX(-50%); padding: 8px 18px; border: 1px solid var(--now); background: var(--bg); font: 700 1rem var(--mono); letter-spacing: 0.12em; text-transform: uppercase; color: var(--now); white-space: nowrap; }
+.banner { position: absolute; left: 50%; top: 18px; transform: translateX(-50%); width: max-content; max-width: calc(100% - 24px); padding: 8px 18px; border: 1px solid var(--now); background: var(--bg); font: 700 1rem var(--mono); letter-spacing: 0.12em; text-transform: uppercase; text-align: center; color: var(--now); }
 
 @media (max-width: 1000px) {
   .top, .hud { grid-template-columns: minmax(0, 1fr); gap: 8px; padding: 10px 16px; }
   .top .r, .hud .g:last-child { justify-self: start; }
+  .hud .g { flex-wrap: wrap; row-gap: 6px; }
   .stage, .page, .bar, .console, .hints, .bossc, .practice { padding-inline: 16px; }
   .cards, .two, .bossc, .bossc.wide, .today { grid-template-columns: minmax(0, 1fr); gap: 20px; }
   .ladder { width: 100%; grid-template-columns: repeat(3, minmax(0, 1fr)); }
@@ -296,10 +297,10 @@ body[data-mode='nf'] .tile.clean span { color: var(--text); }
 
 /* before a run: the chords it will ask for, and how it works */
 .shapes { display: flex; flex-wrap: wrap; gap: 12px; max-width: 700px; }
-.shapes figure { margin: 0; width: min(200px, 15vw); padding: 8px 10px 12px; border: 1px solid var(--line); background: var(--panel); text-align: center; }
+.shapes figure { margin: 0; width: clamp(96px, 15vw, 200px); padding: 8px 10px 12px; border: 1px solid var(--line); background: var(--panel); text-align: center; }
 .shapes svg { display: block; width: 100%; }
 .shapes figcaption { font: 700 1.5rem/1.1 var(--font); }
-.shapes.many figure { width: min(124px, 10vw); padding: 4px 6px 8px; }
+.shapes.many figure { width: clamp(92px, 10vw, 124px); padding: 4px 6px 8px; }
 .shapes.many figcaption { font-size: 1.125rem; }
 .how { display: grid; gap: 8px; margin: 0; padding-left: 1.4em; max-width: 72ch; font-size: 1.125rem; line-height: 1.4; color: var(--muted); }
 .how li::marker { color: var(--now); font-weight: 700; }
@@ -512,7 +513,7 @@ canvas.world ~ .hud { border-bottom: 0; background: none; }
 canvas.world ~ #mid .arena { min-height: 150px; background: none; overflow: visible; }
 canvas.world ~ #mid .console, canvas.world ~ #mid .bossc { margin: 0 20px 10px; border: 1px solid rgba(255, 255, 255, 0.7); border-radius: 16px; background: rgba(252, 247, 239, 0.9); box-shadow: 0 14px 44px rgba(50, 34, 46, 0.2); backdrop-filter: blur(10px); }
 canvas.world ~ #mid > .page { flex: 0 1 auto; margin: auto; width: calc(100% - 40px); max-width: 1120px; padding: 28px 36px 32px; border: 1px solid rgba(255, 255, 255, 0.7); border-radius: 18px; background: rgba(252, 247, 239, 0.9); box-shadow: 0 14px 44px rgba(50, 34, 46, 0.2); backdrop-filter: blur(10px); }
-canvas.world ~ #mid { justify-content: center; }
+canvas.world ~ #mid { justify-content: center; justify-content: safe center; }
 /* a page of the menu over the picture: the same sheet of paper, under the navigation */
 canvas.world ~ .page { flex: 0 1 auto; margin: auto; width: calc(100% - 40px); max-width: 1180px; padding: 28px 36px 32px; border: 1px solid rgba(255, 255, 255, 0.7); border-radius: 18px; background: rgba(252, 247, 239, 0.9); box-shadow: 0 14px 44px rgba(50, 34, 46, 0.2); backdrop-filter: blur(10px); }
 canvas.world ~ .nav { background: rgba(252, 247, 239, 0.86); }
@@ -636,8 +637,8 @@ body[data-mode='nf'] .banner { z-index: 2; border-color: transparent; box-shadow
 @media (max-width: 760px) { .shd { grid-template-columns: 48px minmax(0, 1fr); } .prog { grid-column: 1 / -1; justify-items: start; } .kind summary { grid-template-columns: minmax(0, 1fr) auto; } .kind summary span:not(.pips) { display: none; } }
 
 /* chords as keys: wider than a chord diagram of the guitar, and less tall */
-.shapes.keysfig figure { width: min(250px, 19vw); }
-.shapes.keysfig.many figure { width: min(168px, 13vw); }
+.shapes.keysfig figure { width: clamp(132px, 19vw, 250px); }
+.shapes.keysfig.many figure { width: clamp(124px, 13vw, 168px); }
 /* a song that the piano plays in another key than the guitar: said quietly, on a line of its own */
 .lib .otherkey { display: block; color: var(--muted); }
 
@@ -743,7 +744,7 @@ body[data-fit] canvas.lane.tall { height: clamp(220px, 46vh, 520px); }
 .stat .note { font-size: 0.875rem; }
 svg.cal { display: block; width: 100%; max-width: 420px; height: auto; }
 svg .axis { font: 500 11px var(--font); fill: var(--muted); }
-.cal .cell:hover, .cal .cell:focus { stroke: var(--text); stroke-width: 1.5; outline: none; }
+.cal .cell:hover { stroke: var(--text); stroke-width: 1.5; }
 .calkey { display: flex; align-items: center; gap: 4px; margin: 6px 0 0; font-size: 0.8125rem; color: var(--muted); }
 .calkey i { width: 12px; height: 12px; border-radius: 3px; }
 .ctip { min-height: 1.4em; margin: 6px 0 0; font-size: 0.9375rem; font-weight: 600; color: var(--text); }
@@ -896,6 +897,39 @@ body[data-fit] .tip { font-size: calc(1.1875rem * var(--k, 1)); }
 @media (max-width: 600px) and (orientation: portrait) {
   body[data-fit] .sideways { display: block; margin: 0; padding: 6px 12px; font-size: 0.875rem; color: var(--muted); text-align: center; background: var(--panel); border-bottom: 1px solid var(--line); }
   body[data-fit] .stage > #hands { display: none; }
+}
+/* The games on a phone. The head of a run: its groups side by side as far as they go, a little smaller. While
+   a run is played the explanations under it go (the buttons there stay), as in the lessons, so that the
+   picture keeps its room. */
+@media (max-width: 600px), (max-height: 500px) {
+  body[data-fit] .hud { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 18px; min-height: 0; padding: 6px 12px; }
+  body[data-fit] .hud .g { flex-wrap: wrap; gap: 4px 10px; }
+  body[data-fit] .hud .g:last-child { margin-left: auto; gap: 4px 12px; }
+  body[data-fit] .hud b, body[data-fit] .mult { font-size: 1.375rem; }
+  body[data-fit] .hud .hb { min-height: 38px; padding: 0 12px; }
+  body[data-fit] #mid[data-gate='go'] ~ .hints > span:not(:has(button)) { display: none; }
+  body[data-fit] #mid[data-gate='go'] ~ .hints { padding-block: 6px; }
+}
+/* the Mute on a phone held upright: the chord a little smaller, so that the disc and its seals still show above it */
+@media (max-width: 600px) {
+  body[data-fit] .bossc { gap: 10px; padding-block: 10px 12px; }
+  body[data-fit] .bossc svg { max-height: 22vh; }
+  body[data-fit] .bossc .tip { margin: 6px 0 10px; font-size: 1rem; }
+  body[data-fit] .bossc h1 { font-size: 1.375rem; }
+  body[data-fit] .bossc .tile { padding: 6px 10px; }
+}
+/* a phone on its side: the picture and the phrase share what height there is */
+@media (max-height: 500px) {
+  body[data-fit] canvas.world ~ #mid .arena { min-height: 90px; }
+  body[data-fit] .console svg { max-height: 30vh; }
+  body[data-fit] .bossc { grid-template-columns: minmax(0, 190px) minmax(0, 1fr); gap: 20px; padding-block: 8px 10px; }
+  body[data-fit] .bossc.wide { grid-template-columns: minmax(0, 300px) minmax(0, 1fr); }
+  body[data-fit] .bossc svg { max-height: 36vh; }
+  body[data-fit] .bossc h1 { font-size: 1.25rem; }
+  body[data-fit] .bossc .tip { margin: 4px 0 8px; font-size: 0.9375rem; }
+  body[data-fit] .bossc .tile { padding: 4px 10px; }
+  body[data-fit] .bossc .tiles { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+  body[data-fit] .bossc .tiles.eight { grid-template-columns: repeat(8, minmax(0, 1fr)); }
 }
 /* on a touch screen there are no keys to press: their letters go */
 @media (hover: none) and (pointer: coarse) { kbd { display: none; } }

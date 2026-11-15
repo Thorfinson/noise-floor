@@ -10,7 +10,9 @@ import { guitarA4 } from '../music/tuning';
 export const $ = <T extends Element = HTMLElement>(sel: string, root: ParentNode = document): T => root.querySelector(sel) as T;
 export const $$ = <T extends Element = HTMLElement>(sel: string, root: ParentNode = document): T[] => [...root.querySelectorAll(sel)] as T[];
 export const icon = (name: string): string => `<svg class="ic" aria-hidden="true"><use href="#i-${name}"/></svg>`;
-export const esc = (s: string): string => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
+// text made safe inside markup: one implementation, shared with the drawings
+import { esc } from './draw';
+export { esc };
 export const cap = (s: string): string => s[0].toUpperCase() + s.slice(1);
 
 /** Given to a screen when it runs as one step of the guided session. */
