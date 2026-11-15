@@ -102,13 +102,14 @@ export const rhythmReading: Screen = (root, [lv], ctx) => {
   root.innerHTML = frame(
     `<b>${L('Reading rhythm', 'Rhythmus lesen')}</b>`,
     `<div class="head"><div class="say"><p class="eyebrow" id="eb"></p><h1 id="h1" aria-live="polite"></h1><p class="sub" id="sub"></p></div></div>
-     <div class="pats seg" role="group" aria-label="${L('Level', 'Stufe')}">${levels.map((l) => `<button data-lv="${l.n}" aria-pressed="${l.n === level}">${l.n} · ${esc(l.name)}</button>`).join('')}</div>
      <svg class="fit" id="rhy" viewBox="0 0 1180 230" role="img" aria-label="${L('Two bars of rhythm in note values, read left to right, the count under each note', 'Zwei Takte Rhythmus in Notenwerten, von links nach rechts gelesen, die Zählzeit unter jeder Note')}"></svg>
      <div class="foot"><p class="fbk info" id="fbk"></p><p class="legend">${L(`One stroke on each note, ${piano ? 'on one key' : 'on muted strings'}; nothing on a rest. Count out loud.`, `Ein Anschlag auf jede Note, ${piano ? 'auf einer Taste' : 'auf abgedämpften Saiten'}; nichts auf einer Pause. Zähl laut mit.`)}</p></div>`,
-    `<div class="grp"><button class="btn primary" id="go"><span>${L('Start', 'Starten')}</span> <kbd>${L('Space', 'Leertaste')}</kbd></button><button class="btn quiet" id="slower" aria-label="${L('Slower', 'Langsamer')}">−5 <kbd>−</kbd></button><b id="bpm"></b><button class="btn quiet" id="faster" aria-label="${L('Faster', 'Schneller')}">+5 <kbd>+</kbd></button><button class="btn quiet" id="other">${L('Another rhythm', 'Ein anderer Rhythmus')} <kbd>N</kbd></button></div>
+    `<div class="grp"><button class="btn primary" id="go"><span>${L('Start', 'Starten')}</span> <kbd>${L('Space', 'Leertaste')}</kbd></button><button class="btn quiet" id="other">${L('Another rhythm', 'Ein anderer Rhythmus')} <kbd>N</kbd></button></div>
+     <div class="grp how"><span class="stepper"><button class="btn quiet" id="slower" title="${L('Slower by 5 (−)', 'Um 5 langsamer (−)')}" aria-label="${L('Slower', 'Langsamer')}">−</button><b id="bpm"></b><button class="btn quiet" id="faster" title="${L('Faster by 5 (+)', 'Um 5 schneller (+)')}" aria-label="${L('Faster', 'Schneller')}">+</button></span></div>
+     <div class="ladder" role="group" aria-label="${L('Level', 'Stufe')}">${levels.map((l) => `<button class="rung" data-lv="${l.n}" aria-pressed="${l.n === level}" title="${esc(l.name)}"><b>${l.n}</b><span>${esc(l.name)}</span></button>`).join('')}</div>
      <p class="auto">${L('The app hears when each stroke falls, not which note it is.', 'Die App hört, wann jeder Anschlag fällt, nicht welcher Ton es ist.')}</p>`,
     ctx,
-    ['#/tools', L('Tools', 'Werkzeuge')],
+    ['#/learn', L('Learn', 'Lernen')],
   );
 
   const say = (cls: string, html: string): void => {

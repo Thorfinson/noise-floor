@@ -8,7 +8,7 @@ import { L } from '../core/i18n';
 import { store } from '../core/store';
 import { FOLLOW_AFTER, midiToFreq, nearestString, NOTE_NAMES, noteName, OPEN_STRINGS, STRING_FULL, STRING_NAMES, stringName } from '../music/theory';
 import { TUNINGS, tuningOf } from '../music/tuning';
-import { $, $$, hear, icon, keys, later, micMeter, stopTimer, type Screen } from '../ui/dom';
+import { $, $$, hear, icon, keys, later, micMeter, stopTimer, toolsButton, type Screen } from '../ui/dom';
 import { keyboard, LEARN } from '../ui/draw';
 import { practiceBar, setSimTarget } from '../ui/practice';
 
@@ -28,11 +28,16 @@ function moveDot(root: HTMLElement, cents: number, ok: boolean): void {
 
 export const tuner: Screen = (root, [mode], ctx) => {
   const which = mode === 'piano' ? 'piano' : mode === 'any' && !ctx ? 'any' : 'guitar';
-  const tab = (id: string, href: string, label: string): string => `<a href="#/tuner${href}" aria-current="${which === id}">${label}</a>`;
+  const tab = (id: string, href: string, label: string): string => `<a class="rung" href="#/tuner${href}" aria-current="${which === id}"><span>${label}</span></a>`;
   const head = `<header class="top"><div><a class="btn quiet" href="#/">${icon(ctx ? 'x' : 'left')}${ctx ? L('End session', 'Session beenden') : L('Home', 'Start')}</a></div>
-    <div class="c">${ctx ? ctx.rail : `<nav class="seg" aria-label="${L('What to tune', 'Was gestimmt wird')}">${tab('guitar', '', L('Guitar', 'Gitarre'))}${tab('piano', '/piano', L('Piano', 'Klavier'))}${tab('any', '/any', L('Any note', 'Beliebiger Ton'))}</nav>`}</div>
-    <div class="r">${micMeter()}</div></header>`;
-  return which === 'any' ? anyNote(root, head) : which === 'piano' ? piano(root, head, ctx) : guitar(root, head, ctx);
+    <div class="c">${ctx ? ctx.rail : `<b>${L('Tuner', 'Stimmgerät')}</b> · ${which === 'piano' ? L('Piano', 'Klavier') : which === 'any' ? L('Any note', 'Beliebiger Ton') : L('Guitar', 'Gitarre')}`}</div>
+    <div class="r">${micMeter()}${toolsButton()}</div></header>`;
+  const stop = which === 'any' ? anyNote(root, head) : which === 'piano' ? piano(root, head, ctx) : guitar(root, head, ctx);
+  // the grammar of every play screen: what it does by itself under the music, what is tuned at the right end of the dock
+  const hint = root.querySelector('footer.bar > p.auto');
+  if (hint) root.querySelector('.stage')?.append(hint);
+  if (!ctx) root.querySelector('footer.bar')?.insertAdjacentHTML('beforeend', `<nav class="ladder" aria-label="${L('What to tune', 'Was gestimmt wird')}">${[tab('guitar', '', L('Guitar', 'Gitarre')), tab('piano', '/piano', L('Piano', 'Klavier')), tab('any', '/any', L('Any note', 'Beliebiger Ton'))].join('')}</nav>`);
+  return stop;
 };
 
 /** The piano's A, played once: the app adopts its pitch. */

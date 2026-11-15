@@ -1,7 +1,7 @@
 /**
- * The tools: what a player reaches for outside the lessons. A page of them for the instrument in use, and
- * the tools of their own here: a metronome (with the beats of a bar, a subdivision and tap tempo), the chord
- * library to look a shape up in, and a drone to sing against or play over.
+ * The tools of the toolbox (Q, over any page): a metronome (with the beats of a bar, a subdivision and tap
+ * tempo), the chord library to look a shape up in, and a drone to sing against or play over. The tuner and the
+ * hearing check are screens of their own, also in the toolbox.
  */
 import { engine } from '../audio/engine';
 import { L } from '../core/i18n';
@@ -13,54 +13,6 @@ import { $, $$, esc, keys, type Screen } from '../ui/dom';
 import { chordBox, keyChord, LEARN } from '../ui/draw';
 import { frame } from './frame';
 import { pips } from './home';
-
-interface Tool {
-  href: string;
-  name: string;
-  about: string;
-}
-
-/** The tools of each instrument, the most used first. */
-function toolsFor(): Tool[] {
-  const inst = store.settings.instrument;
-  const common: Tool[] = [
-    { href: '#/check', name: L('Hearing check', 'Hörcheck'), about: L('Two minutes: how well the app hears your instrument, your microphone and your room, and what to change.', 'Zwei Minuten: wie gut die App dein Instrument, dein Mikrofon und deinen Raum hört, und was du ändern kannst.') },
-    { href: '#/metronome', name: L('Metronome', 'Metronom'), about: L('The beat to play to: tempo, beats in a bar, a subdivision, tap tempo.', 'Der Schlag zum Mitspielen: Tempo, Schläge pro Takt, Unterteilung, Tempo antippen.') },
-    { href: '#/drone', name: L('Drone', 'Bordunton'), about: L('A note held under you, with its fifth: to sing against, or to play freely over.', 'Ein Ton, der unter dir liegt, mit seiner Quinte: zum Dagegensingen oder zum freien Spielen darüber.') },
-    { href: '#/jam', name: L('Play freely', 'Frei spielen'), about: L('Five notes over a drone or a chord: whatever you play, the app shows what it heard, no score.', 'Fünf Töne über einem Bordun oder einem Akkord: Was du spielst, zeigt die App, ohne Wertung.') },
-  ];
-  if (inst === 'voice')
-    return [
-      { href: '#/range', name: L('Your range', 'Dein Stimmumfang'), about: L('The lowest and the highest note you sing comfortably; songs are moved into it.', 'Der tiefste und der höchste Ton, die du bequem singst; Songs werden hineingelegt.') },
-      { href: '#/match', name: L('Match the tone', 'Töne treffen'), about: L('Five notes sung back, measured in cents.', 'Fünf Töne nachgesungen, in Cent gemessen.') },
-      { href: '#/hold', name: L('Hold a tone', 'Einen Ton halten'), about: L('Five seconds on one note, as steady as you can.', 'Fünf Sekunden auf einem Ton, so ruhig wie möglich.') },
-      { href: '#/ear', name: L('Intervals', 'Intervalle'), about: L('A note given, the distance named: sing the second.', 'Ein Ton gegeben, der Abstand genannt: Sing den zweiten.') },
-      ...common,
-    ];
-  const piano = inst === 'piano';
-  return [
-    piano ? { href: '#/tuner/piano', name: L('Piano pitch', 'Tonhöhe des Klaviers'), about: L('Where your piano’s A is, so that the app hears it right.', 'Wo das A deines Klaviers liegt, damit die App richtig hört.') } : { href: '#/tuner', name: L('Guitar tuner', 'Stimmgerät'), about: L('String by string, which way to turn.', 'Saite für Saite, in welche Richtung du drehst.') },
-    { href: '#/chords', name: L('Chord library', 'Griffbibliothek'), about: piano ? L('Every chord as keys, with fingers; pick one to check it.', 'Jeder Akkord als Tasten, mit Fingern; wähl einen, um ihn zu prüfen.') : L('Every shape the app knows, with fingers; pick one to check it string by string.', 'Jeder Griff, den die App kennt, mit Fingern; wähl einen, um ihn Saite für Saite zu prüfen.') },
-    ...(piano ? [] : [{ href: '#/singalongs', name: L('Sing and play', 'Singen und spielen'), about: L('The chords of a song over its words: accompany yourself; the app hears the guitar.', 'Die Akkorde eines Songs über seinem Text: Begleite dich selbst; die App hört die Gitarre.') }]),
-    ...(piano ? [] : [{ href: '#/strum', name: L('Strumming', 'Schlagmuster'), about: L('Patterns of the right hand: muted, on one chord, with a change.', 'Muster der rechten Hand: abgedämpft, auf einem Akkord, mit Wechsel.') }]),
-    { href: '#/ear', name: L('By ear', 'Nach Gehör'), about: L('Motifs of your song played back, chords told apart.', 'Motive deines Songs nachgespielt, Akkorde unterschieden.') },
-    ...(piano ? [] : [{ href: '#/slur', name: L('Hammer-on and pull-off', 'Hammer-on und Pull-off'), about: L('Notes the left hand makes sound without a pluck: six patterns, the app hears whether each note sounds.', 'Töne, die die linke Hand ohne Zupfen zum Klingen bringt: sechs Muster, die App hört, ob jeder Ton klingt.') }]),
-    { href: '#/rhythm', name: L('Reading rhythm', 'Rhythmus lesen'), about: L('Note values from quarters to sixteenths, played with the click: six levels.', 'Notenwerte von Vierteln bis Sechzehnteln, mit dem Klick gespielt: sechs Stufen.') },
-    { href: '#/compose', name: L('Your own song', 'Dein eigener Song'), about: L('A chord progression of your own, heard, kept and learned like any song.', 'Eine eigene Akkordfolge, angehört, behalten und gelernt wie jeder Song.') },
-    { href: '#/import', name: L('A tab or a melody', 'Eine Tabulatur oder Melodie'), about: piano ? L('A melody of your own, typed by its note names.', 'Eine eigene Melodie, nach Notennamen eingetippt.') : L('A tab found elsewhere, pasted in.', 'Eine Tabulatur von anderswo, eingefügt.') },
-    { href: '#/stride', name: L('Rhythm game', 'Rhythmusspiel'), about: L('Stepping stones in time with the click.', 'Trittsteine im Takt mit dem Klick.') },
-    ...common,
-  ];
-}
-
-export const toolsPage: Screen = (root) => {
-  const inst = store.settings.instrument;
-  const name = { guitar: L('Guitar', 'Gitarre'), piano: L('Piano', 'Klavier'), voice: L('Voice', 'Stimme') }[inst];
-  root.innerHTML = `<div class="page">
-    <div><p class="kick">${L(`Tools · ${name}`, `Werkzeuge · ${name}`)}</p><h1>${L('What you reach for between lessons.', 'Was du zwischen den Lektionen brauchst.')}</h1></div>
-    <div class="cards">${toolsFor().map((t) => `<a class="card" href="${t.href}"><h2>${esc(t.name)}</h2><p>${esc(t.about)}</p></a>`).join('')}</div>
-  </div>`;
-};
 
 /* ───────────────────────── the metronome ───────────────────────── */
 
@@ -96,7 +48,7 @@ export const metronome: Screen = (root) => {
      </div>`,
     `<div class="grp"><button class="btn primary" id="go"><span>${L('Start', 'Starten')}</span> <kbd>${L('Space', 'Leertaste')}</kbd></button><button class="btn quiet" id="slower">−5 <kbd>−</kbd></button><button class="btn quiet" id="faster">+5 <kbd>+</kbd></button><button class="btn" id="tap">${L('Tap the tempo', 'Tempo antippen')} <kbd>T</kbd></button></div>`,
     undefined,
-    ['#/tools', L('Tools', 'Werkzeuge')],
+    ['#/', L('Home', 'Start')],
   );
   const show = (): void => {
     $('#bpm', root).innerHTML = `${bpm} <small>bpm</small>`;
@@ -211,7 +163,7 @@ export const droneTool: Screen = (root) => {
      </div>`,
     `<div class="grp"><button class="btn primary" id="go"><span>${L('Start', 'Starten')}</span> <kbd>${L('Space', 'Leertaste')}</kbd></button></div>`,
     undefined,
-    ['#/tools', L('Tools', 'Werkzeuge')],
+    ['#/', L('Home', 'Start')],
   );
   const show = (): void => void ($('#dname', root).textContent = `${NOTE_NAMES[root12]}${fifth ? ` + ${NOTE_NAMES[(root12 + 7) % 12]}` : ''}`);
   const sound = (): void => {
@@ -274,7 +226,7 @@ export const chordLibrary: Screen = (root) => {
       ]
     : GROUPS();
   root.innerHTML = `<div class="page">
-    <div><a class="btn quiet" href="#/tools">${L('← Tools', '← Werkzeuge')}</a></div>
+    <div class="back"><a class="btn quiet" href="#/">${L('← Home', '← Start')}</a></div>
     <div><p class="kick">${L('Chord library', 'Griffbibliothek')}</p><h1>${piano ? L('Every chord, as keys.', 'Jeder Akkord, als Tasten.') : L('Every shape the app knows.', 'Jeder Griff, den die App kennt.')}</h1>
       <p class="lede">${L('The bars under each one are your level for it. Pick one to check it: the app listens.', 'Die Balken unter jedem sind deine Stufe dafür. Wähl einen, um ihn zu prüfen: Die App hört zu.')}</p></div>
     ${groups.map(([title, ids]) => `<section><h2 class="h2">${esc(title)}</h2><div class="chordgrid">${ids.filter((c) => piano || CHORDS[c]).map(card).join('')}</div></section>`).join('')}

@@ -121,13 +121,13 @@ export const slurTrainer: Screen = (root, [which], ctx) => {
   root.innerHTML = frame(
     `<b>${L('Hammer-on and pull-off', 'Hammer-on und Pull-off')}</b>`,
     `<div class="head"><div class="say"><p class="eyebrow" id="eb"></p><h1 id="h1" aria-live="polite"></h1><p class="sub" id="sub"></p></div></div>
-     <div class="pats seg" role="group" aria-label="${L('Pattern', 'Muster')}">${all.map((p) => `<button data-n="${p.n}" aria-pressed="${p.n === pat.n}">${p.n} · ${esc(p.name)}</button>`).join('')}</div>
      <svg class="fit" id="tab" viewBox="0 0 1180 220" role="img" aria-label="${L('The pattern as tablature, the slurs as arcs over the notes', 'Das Muster als Tabulatur, die Bindungen als Bögen über den Tönen')}"></svg>
      <div class="foot"><p class="fbk info" id="fbk"></p><p class="legend">${L('h hammer-on · p pull-off', 'h Hammer-on · p Pull-off')}</p></div>`,
-    `<div class="grp"><button class="btn" id="again">${L('Start over', 'Von vorn')} <kbd>R</kbd></button></div>
+    `<div class="grp do"><button class="btn" id="again">${L('Start over', 'Von vorn')} <kbd>R</kbd></button></div>
+     <div class="ladder" role="group" aria-label="${L('Pattern', 'Muster')}">${all.map((p) => `<button class="rung" data-n="${p.n}" aria-pressed="${p.n === pat.n}" title="${esc(p.name)}"><b>${p.n}</b><span>${esc(p.name)}</span></button>`).join('')}</div>
      <p class="auto">${L('The app hears whether the second note sounds, not how it was made: a hammer-on keeps one sound going, a new pluck starts another. Listen for it.', 'Die App hört, ob der zweite Ton klingt, nicht wie er entstand: Ein Hammer-on lässt einen Klang weiterlaufen, ein neues Zupfen beginnt einen anderen. Hör darauf.')}</p>`,
     ctx,
-    ['#/tools', L('Tools', 'Werkzeuge')],
+    ['#/learn', L('Learn', 'Lernen')],
   );
 
   const say = (cls: string, html: string): void => {

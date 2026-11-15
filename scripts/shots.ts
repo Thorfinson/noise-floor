@@ -77,9 +77,9 @@ try {
   await page.waitForTimeout(500);
   await page.screenshot({ path: resolve(out, 'voice.png') });
 
-  // the path of the guitar, as a map
+  // Learn: the path of the guitar as a map, and the skills under it
   page = await fresh({ instrument: 'guitar' });
-  await page.goto(base + '#/progress');
+  await page.goto(base + '#/learn');
   await page.waitForSelector('#stage h2');
   await page.waitForTimeout(1200);
   await page.screenshot({ path: resolve(out, 'path.jpg'), type: 'jpeg', quality: 82 });

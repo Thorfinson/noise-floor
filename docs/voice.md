@@ -51,7 +51,7 @@ Thirty-four songs come with their words, each in the language it is sung in: tra
 
 - **Voice gym** and **Song run** at the lighthouse: the tune of each piece of noise is shown with its notes named in the scale and drawn higher and lower. A note counts once held on pitch for a quarter of a second, in any octave; a note held clearly elsewhere breaks the chain. The Mute at the end is a major scale sung up, one seal for each note.
 - **Stepping stones** with the voice: one short sung "ta" on each stone, on a note that changes every bar (do, then mi).
-- **Tools → Drone:** a note held under you, with its fifth, to sing a scale against. **Tools → Play freely:** sing phrases of the pentatonic over a drone; the app shows what it heard, without a score.
+- **Tools (Q) → Drone:** a note held under you, with its fifth, to sing a scale against. **Learn → By ear → Play freely:** sing phrases of the pentatonic over a drone; the app shows what it heard, without a score.
 
 ## The handbook of the voice
 

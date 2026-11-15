@@ -63,16 +63,16 @@ export const practiceBar = (): string =>
   store.settings.practiceInstrument
     ? `<div class="practice" role="group" aria-label="${L('Practice instrument', 'Übungsinstrument')}">
         <span>${L('Practice instrument', 'Übungsinstrument')}</span>
-        <button data-sim="right">${voiced() ? L('Sing it', 'Singen') : L('Play it', 'Spielen')} <kbd>N</kbd></button>
-        <button data-sim="wrong">${L('Wrong note', 'Falscher Ton')} <kbd>W</kbd></button>
+        <button data-sim="right" title="${voiced() ? L('Sing it', 'Singen') : L('Play it', 'Spielen')}"><span class="pl">${voiced() ? L('Sing it', 'Singen') : L('Play it', 'Spielen')}</span> <kbd>N</kbd></button>
+        <button data-sim="wrong" title="${L('Wrong note', 'Falscher Ton')}"><span class="pl">${L('Wrong note', 'Falscher Ton')}</span> <kbd>W</kbd></button>
         ${
           voiced()
-            ? `<button data-sim="muted">${L('Too short', 'Zu kurz')} <kbd>M</kbd></button>`
+            ? `<button data-sim="muted" title="${L('Too short', 'Zu kurz')}"><span class="pl">${L('Too short', 'Zu kurz')}</span> <kbd>M</kbd></button>`
             : store.settings.instrument === 'piano'
-            ? `<button data-sim="muted">${L('Cut short', 'Zu kurz')} <kbd>M</kbd></button>`
-            : `<button data-sim="muted">${L('Muted', 'Abgedämpft')} <kbd>M</kbd></button>
-        <button data-sim="buzz">${L('Buzz', 'Schnarren')} <kbd>B</kbd></button>
-        <button data-sim="damp">${L('Hit muted strings', 'Gedämpft anschlagen')} <kbd>X</kbd></button>`
+            ? `<button data-sim="muted" title="${L('Cut short', 'Zu kurz')}"><span class="pl">${L('Cut short', 'Zu kurz')}</span> <kbd>M</kbd></button>`
+            : `<button data-sim="muted" title="${L('Muted', 'Abgedämpft')}"><span class="pl">${L('Muted', 'Abgedämpft')}</span> <kbd>M</kbd></button>
+        <button data-sim="buzz" title="${L('Buzz', 'Schnarren')}"><span class="pl">${L('Buzz', 'Schnarren')}</span> <kbd>B</kbd></button>
+        <button data-sim="damp" title="${L('Hit muted strings', 'Gedämpft anschlagen')}"><span class="pl">${L('Hit muted strings', 'Gedämpft anschlagen')}</span> <kbd>X</kbd></button>`
         }
       </div>`
     : '';

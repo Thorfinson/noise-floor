@@ -8,7 +8,7 @@
 
 ## Was es ist
 
-- **Drei Spuren: Gitarre, Klavier und Stimme.** Jede hat ihre eigene tägliche Session von etwa einer Viertelstunde (oder fünf Minuten, die genauso zählen), eigene Songs, Spiele, Werkzeuge, ein Handbuch und einen Weg. Umschalten oben rechts.
+- **Drei Spuren: Gitarre, Klavier und Stimme.** Jede hat ihre eigene tägliche Session von etwa einer Viertelstunde (oder fünf Minuten, die genauso zählen), eigene Songs, Spiele, Werkzeuge, ein Handbuch und einen Weg. Umschalten oben links, neben dem Namen.
 - **Die App führt.** Leertaste drücken, und die Session führt dich hindurch: stimmen, die heutigen Akkorde Saite für Saite prüfen, ein kurzes Spiel, zwei Zeilen eines Songs. Am Klavier übernimmt die App zuerst die Stimmung deines Klaviers; bei der Stimme findet sie zuerst deinen Umfang.
 - **Lernen ist ruhig.** Eine Aufgabe nach der anderen: Erst wartet die App auf jeden Ton, dann spielst du mit Klick, dann den ganzen Song im vollen Tempo. Auf jeder Stufe vorher anhören, ein paar Takte in der Schleife üben, das Tempo in 5-%-Schritten von 25 bis 125 % stellen, über einer leisen Begleitung spielen (Kopfhörer) oder ihn als Vortrag spielen und deine Aufnahme Takt für Takt anhören.
 - **Was du gelernt hast, kommt wieder.** Ein Song, der ganz sauber lief, kommt in dein Repertoire und kehrt nach 3, 10, 30, 90 und 180 Tagen zurück, zwei Zeilen aus dem Stand; Akkorde werden in wachsenden Abständen neu bestätigt. **Fortschritt** zeigt den Weg, dein Repertoire und den Verlauf jeder Fähigkeit über die Wochen.

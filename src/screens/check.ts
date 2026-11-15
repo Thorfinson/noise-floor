@@ -49,7 +49,7 @@ export const hearingCheck: Screen = (root) => {
     `<div class="grp"><button class="btn primary" id="go"><span>${L('Start the check', 'Check starten')}</span> <kbd>${L('Space', 'Leertaste')}</kbd></button><button class="btn quiet" id="skip" hidden>${L('Not this one', 'Diesen nicht')} <kbd>→</kbd></button><button class="btn quiet" id="save" hidden>${L('Save the check as files', 'Check als Dateien speichern')}</button><button class="btn quiet" id="fromfile">${L('Check a recording', 'Eine Aufnahme prüfen')}</button><input type="file" id="file" accept="audio/*,.wav,.mp3,.m4a,.ogg,.webm" hidden></div>
      <p class="auto">${L('About two minutes. A recording made elsewhere, of the same things in the same order, can be checked too. Nothing is sent anywhere.', 'Etwa zwei Minuten. Eine anderswo gemachte Aufnahme derselben Dinge in derselben Reihenfolge lässt sich auch prüfen. Nichts wird irgendwohin geschickt.')}</p>`,
     undefined,
-    ['#/tools', L('Tools', 'Werkzeuge')],
+    ['#/', L('Home', 'Start')],
   );
 
   const say = (cls: string, html: string): void => {

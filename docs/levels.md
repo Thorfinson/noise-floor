@@ -37,18 +37,18 @@ Under each song the list says what it asks of you: which of its chords already r
 What is learned is kept by playing it again, spaced out: within half a year half of the accuracy of a skill that is not played is gone (Tatel et al. 2025), and spacing practice over days is what keeps it. So:
 
 - A song, piece or song to sing played clean at full speed all through joins your **repertoire**. It comes back after 3 days, then 10, 30, 90 and 180, each time **from cold**: two lines at full speed, with no run-up, early in the session. A visit that goes well pushes the next one further out; one that falls apart brings the song back the next day, with the click at 85 %. The visits go round the song two lines at a time.
-- **Progress → Repertoire** lists what you can play: since when, its best value, its last cold try, whether it is kept, due or slipped, and when it comes back. From there it can be played from cold or all through at any time, and its recordings heard.
+- **Songs → Your repertoire** lists what you can play: since when, its best value, its last cold try, whether it is kept, due or slipped, and when it comes back. From there it can be played from cold or all through at any time, and its recordings heard.
 - **Chords** are confirmed again the same way: after one day measured clean a chord is due after two days, then after five, twelve, thirty and sixty. The chord check takes the due ones before the others, the longest waiting first.
 
 ## Over the weeks
 
-**Progress → Over the weeks**: the week in four numbers (days played against your goal, minutes played, new best values, songs in your repertoire), the days of the last twelve weeks as a calendar (the darker, the longer), and a small line for each of the six skills measured on most days. Up is always better: a time that falls (seconds for a chord, cents off a note) is drawn falling upwards. Each line has the value of a day on hover, and everything is also there as a table.
+**Progress**: the week in four numbers (days played against your goal, minutes played, new best values, songs in your repertoire), the days of the last twelve weeks as a calendar (the darker, the longer), and a small line for each of the six skills measured on most days. Up is always better: a time that falls (seconds for a chord, cents off a note) is drawn falling upwards. Each line has the value of a day on hover, and everything is also there as a table.
 
 ## The path
 
 ![The path of the guitar as a map](images/path.jpg)
 
-**Path** shows where you are, what you can do and what comes next, as a map: stepping stones over water, one stone for each stage, the wanderer of the rhythm game on the stage you are at, a flame on every stage that is done. Any stone can be picked: under the map its sheet opens with what the stage gives you, how far it is, a button for the next thing to do, and every chord, change or song of it as a tile (done, in work, new, rusty). Nothing is locked. It also says on how many different days something was measured clean, because one good day may be luck.
+**Learn** shows where you are, what you can do and what comes next, as a map: stepping stones over water, one stone for each stage, the wanderer of the rhythm game on the stage you are at, a flame on every stage that is done. Any stone can be picked: under the map its sheet opens with what the stage gives you, how far it is, a button for the next thing to do, and every chord, change or song of it as a tile (done, in work, new, rusty). Nothing is locked. It also says on how many different days something was measured clean, because one good day may be luck.
 
 | | Stages | Beside the path |
 |---|---|---|

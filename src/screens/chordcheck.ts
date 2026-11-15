@@ -106,7 +106,7 @@ export const chordCheck: Screen = (root, ids, ctx) => {
         : `<nav class="chords" aria-label="${L('Chord', 'Akkord')}">${[...new Set(['Em', 'Am', 'E', 'A', 'D', 'C', 'G', 'Dm', 'F', chord.id])]
             .map((id) => CHORDS[id])
             .map((c) => `<a href="#/chord/${encodeURIComponent(c.id)}" aria-current="${c.id === chord.id}">${c.name}</a>`)
-            .join('')}<a href="#/chords">${L('All chords…', 'Alle Griffe …')}</a></nav>`
+            .join('')}<a href="#/chords" data-toolbox="chords">${L('All chords…', 'Alle Griffe …')}</a></nav>`
     }`,
     ctx,
   );

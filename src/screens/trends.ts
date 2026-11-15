@@ -140,7 +140,7 @@ export const trendsPage: Screen = (root) => {
   ];
   root.innerHTML = `<div class="page">
     ${progressTabs('trends')}
-    <div><p class="kick">${L('Over the weeks', 'Über die Wochen')}</p><h1>${L('What your practice did.', 'Was dein Üben bewirkt hat.')}</h1>
+    <div><p class="kick">${L('Progress · over the weeks', 'Fortschritt · über die Wochen')}</p><h1>${L('What your practice did.', 'Was dein Üben bewirkt hat.')}</h1>
       <p class="lede">${L('Measured, not counted: each line is the best value of a day. Progress comes in steps and plateaus; what counts is where the line goes over weeks.', 'Gemessen, nicht gezählt: Jede Linie ist der beste Wert eines Tages. Fortschritt kommt in Stufen und Plateaus; was zählt, ist, wohin die Linie über Wochen geht.')}</p></div>
     <div class="tiles4">${tiles.map(([k, v, s]) => `<div class="stat"><p class="k">${esc(k)}</p><p class="v">${esc(v)}</p><p class="note">${esc(s)}</p></div>`).join('')}</div>
     <section><h2 class="h2">${L('The days you played', 'Die Tage, an denen du gespielt hast')}</h2>${calendar(now)}</section>

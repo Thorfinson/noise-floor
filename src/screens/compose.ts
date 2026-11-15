@@ -56,7 +56,7 @@ export const compose: Screen = (root) => {
   const order = [...known, ...pool.filter((c) => !known.includes(c))];
   let ctx: AudioContext | null = null;
   root.innerHTML = `<div class="page">
-    <div><a class="btn quiet" href="#/tools">${icon('left')}${L('Tools', 'Werkzeuge')}</a></div>
+    <div><a class="btn quiet back" href="#/songs">${icon('left')}${L('Songs', 'Songs')}</a></div>
     <div><p class="kick">${L('Your own song', 'Dein eigener Song')}</p><h1>${L('A chord progression of your own.', 'Eine eigene Akkordfolge.')}</h1>
       <p class="lede">${L('Pick chords bar by bar, or type them: a space between bars, <b>G,D</b> for a bar of two chords, <b>%</b> for the bar before again. Hear it; when it sounds right, keep it and learn it like any song.', 'Wähl Akkorde Takt für Takt oder tipp sie ein: ein Leerzeichen zwischen Takten, <b>G,D</b> für einen Takt mit zwei Akkorden, <b>%</b> für den Takt davor noch einmal. Hör sie dir an; klingt sie richtig, behalte sie und lern sie wie jeden Song.')}</p></div>
     <div class="field"><label for="title">${L('Title', 'Titel')}</label><input id="title" type="text" maxlength="60" placeholder="${L('My song', 'Mein Song')}"></div>
@@ -151,7 +151,7 @@ export const jam: Screen = (root) => {
     `<div class="grp"><button class="btn tog" id="drone" aria-pressed="false">${L('A drone on A (headphones)', 'Bordun auf A (Kopfhörer)')} <kbd>D</kbd></button><button class="btn quiet" id="clear">${L('Clear', 'Leeren')} <kbd>R</kbd></button></div>
      <p class="auto">${L('The drone is for headphones: through speakers the microphone would hear it as notes.', 'Der Bordun ist für Kopfhörer: Über Lautsprecher würde das Mikrofon ihn als Töne hören.')}</p>`,
     undefined,
-    ['#/tools', L('Tools', 'Werkzeuge')],
+    ['#/learn', L('Learn', 'Lernen')],
   );
   const draw = (): void => {
     const last = heard[heard.length - 1];

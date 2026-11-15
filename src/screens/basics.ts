@@ -660,8 +660,8 @@ export function showIntros(root: HTMLElement, ids: string[], done: () => void, r
   let stopHear: () => void = () => undefined;
   root.innerHTML = `<header class="top"><div><a class="btn quiet" id="quit" href="${again ? '#/basics' : '#/'}">${icon(railHtml ? 'x' : 'left')}${quitLabel}</a></div><div class="c">${railHtml || (again ? '' : `<b>${L('Basics', 'Grundlagen')}</b>`)}</div><div class="r">${micMeter()}</div></header>
     <div class="stage"><div class="two intro"><svg class="fit" id="art" viewBox="0 0 520 380" role="img"></svg>
-      <div><p class="eyebrow" id="eb"></p><h1 id="h1"></h1><ul class="points" id="pts"></ul><p class="tip" id="try" hidden></p></div></div></div>${practiceBar()}
-    <footer class="bar"><div class="grp"><button class="btn" id="back">${icon('left')}${L('Back', 'Zurück')} <kbd>←</kbd></button><button class="btn primary" id="ok"><span id="oklbl">${L('Got it', 'Verstanden')}</span> <kbd>${L('Space', 'Leertaste')}</kbd></button></div><p class="auto">${again ? L('The app listens while you try; nothing is measured. The handbook is at the top left.', 'Die App hört zu, während du es ausprobierst; gemessen wird nichts. Das Handbuch erreichst du oben links.') : L('Shown once. You find all of these again under Basics in the menu.', 'Wird nur einmal gezeigt. Unter Grundlagen im Menü findest du sie alle wieder.')}</p></footer>`;
+      <div><p class="eyebrow" id="eb"></p><h1 id="h1"></h1><ul class="points" id="pts"></ul><p class="tip" id="try" hidden></p></div></div><p class="auto">${again ? L('The app listens while you try; nothing is measured. The handbook is at the top left.', 'Die App hört zu, während du es ausprobierst; gemessen wird nichts. Das Handbuch erreichst du oben links.') : L('Shown once. You find all of these again under Learn, in the handbook.', 'Wird nur einmal gezeigt. Unter Lernen, im Handbuch, findest du sie alle wieder.')}</p></div>${practiceBar()}
+    <footer class="bar"><div class="grp"><button class="btn" id="back">${icon('left')}${L('Back', 'Zurück')} <kbd>←</kbd></button><button class="btn primary" id="ok"><span id="oklbl">${L('Got it', 'Verstanden')}</span> <kbd>${L('Space', 'Leertaste')}</kbd></button></div></footer>`;
   const bar = root.querySelector<HTMLElement>('.practice');
 
   function draw(): void {
@@ -670,7 +670,7 @@ export function showIntros(root: HTMLElement, ids: string[], done: () => void, r
     heard = 0;
     $('#art', root).innerHTML = p.art();
     $('#art', root).setAttribute('aria-label', L(`Picture: ${p.title}`, `Bild: ${p.title}`));
-    $('#eb', root).textContent = again ? L('Basics · try it', 'Grundlagen · ausprobieren') : L(`Before you start · ${at + 1} of ${pages.length}`, `Bevor du anfängst · ${at + 1} von ${pages.length}`);
+    $('#eb', root).textContent = again ? L('Handbook · try it', 'Handbuch · ausprobieren') : L(`Before you start · ${at + 1} of ${pages.length}`, `Bevor du anfängst · ${at + 1} von ${pages.length}`);
     if (again) $('#quit', root).setAttribute('href', `#/basics/${p.id}`);
     $('#h1', root).textContent = p.title;
     $('#pts', root).innerHTML = p.points.map((t) => `<li>${esc(t)}</li>`).join('');
@@ -892,6 +892,14 @@ const CHAPTERS = (): Record<Instrument, Chapter[]> => ({
     { title: L('Looking after the hands', 'Die Hände pflegen'), about: L('Resting them, and practising in the head meanwhile.', 'Sie ausruhen, und derweil im Kopf üben.'), ids: ['p-rest'] },
   ],
 });
+/** The handbook of an instrument, chapter by chapter: for the skills on the Learn page. */
+export const handbookOf = (inst: Instrument): Chapter[] => CHAPTERS()[inst];
+/** A page of the handbook: its title, and whether it has something to try. */
+export const pageOf = (id: string): { title: string; tryIt: boolean; art: () => string } | undefined => {
+  const i = INTROS().find((x) => x.id === id);
+  return i ? { title: i.title, tryIt: !!i.tryIt, art: i.art } : undefined;
+};
+
 const ORDER: Record<Instrument, string[]> = { guitar: CHAPTERS().guitar.flatMap((c) => c.ids), piano: CHAPTERS().piano.flatMap((c) => c.ids), voice: CHAPTERS().voice.flatMap((c) => c.ids) };
 const INSTRUMENTS: Instrument[] = ['guitar', 'piano', 'voice'];
 const instName = (i: Instrument): string => (i === 'piano' ? L('piano', 'Klavier') : i === 'voice' ? L('voice', 'Stimme') : L('guitar', 'Gitarre'));
@@ -948,7 +956,7 @@ export const basics: Screen = (root, [id, how]) => {
 
   root.innerHTML = `<div class="page book">
     <div class="bookhead">
-      <div><p class="kick">${L('Basics', 'Grundlagen')} · ${instName(shown)}</p><h1>${L('The handbook', 'Das Handbuch')}</h1>
+      <div><p class="kick">${L('Learn · the handbook', 'Lernen · das Handbuch')} · ${instName(shown)}</p><h1>${L('The handbook', 'Das Handbuch')}</h1>
         <p class="lede">${L('How it is done, page by page. The app shows a page by itself before the step that needs it; here they all are.', 'Wie es geht, Seite für Seite. Die App zeigt jede Seite von selbst vor dem Schritt, der sie braucht; hier stehen sie alle.')}</p></div>
       <div class="readmeter" id="meter"></div>
     </div>
@@ -956,7 +964,7 @@ export const basics: Screen = (root, [id, how]) => {
       <nav class="toc" id="toc" aria-label="${L('Contents', 'Inhalt')}"></nav>
       <article class="leaf" id="leaf" aria-live="polite"></article>
     </div>
-    <p class="note">${L(`The ${instName(others[0])} and the ${instName(others[1])} have handbooks of their own: switch at the top right.`, `${cap(others.map((o) => (o === 'voice' ? 'die Stimme' : o === 'piano' ? 'das Klavier' : 'die Gitarre')).join(' und '))} haben eigene Handbücher: Wechsle oben rechts.`)}</p>
+    <p class="note">${L(`The ${instName(others[0])} and the ${instName(others[1])} have handbooks of their own: switch the instrument at the top left.`, `${cap(others.map((o) => (o === 'voice' ? 'die Stimme' : o === 'piano' ? 'das Klavier' : 'die Gitarre')).join(' und '))} haben eigene Handbücher: Wechsle das Instrument oben links.`)}</p>
   </div>`;
 
   function draw(): void {
