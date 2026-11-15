@@ -41,6 +41,9 @@ export const go = (path: string): void => {
   location.hash = path;
 };
 
+/** The button that opens the toolbox (Q) over a screen that is played at. */
+export const toolsButton = (): string => `<button class="tbx" type="button" data-toolbox title="${L('Tools: tuner, metronome, drone, chords, hearing check', 'Werkzeuge: Stimmgerät, Metronom, Bordunton, Akkorde, Hörcheck')}">${icon('fork')}<span class="lbl">${L('Tools', 'Werkzeuge')}</span> <kbd>Q</kbd></button>`;
+
 export const micMeter = (label = ''): string => `<div class="mic"><span class="m" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span><span class="mic-l">${label}</span></div>`;
 
 type Handlers = Partial<Pick<Listener, 'onLevel' | 'onOnset' | 'onNote' | 'onPitch' | 'onChord' | 'onString' | 'onThud' | 'onPartial'>>;

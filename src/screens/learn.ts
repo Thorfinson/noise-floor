@@ -16,7 +16,7 @@ import { store, type Instrument, type TakeMeta } from '../core/store';
 import { barKey, findPiece, findSong, noteTimes, phraseKey, shapeOf, songLines, stepKeys, stepMidis, type PianoNote, type PianoPiece, type Song, type TabNote } from '../music/content';
 import { enlist, REVIEW_DAYS, reviewed, reviewKey, reviewLines } from '../music/review';
 import { barreStrings, changeTip, chordMidis, chordName, chordNotes, CHORDS, isBlackKey, keyName, keysAlike, keysId, keyTip, noteName, pianoChord, STRING_FULL, STRING_NAMES, stringName, strumIs, type Chord } from '../music/theory';
-import { $, $$, cap, esc, hear, icon, keys, later, learnRing, micMeter, pianoEars, stopTimer, type Screen, type SessionCtx } from '../ui/dom';
+import { $, $$, cap, esc, hear, icon, keys, later, learnRing, micMeter, pianoEars, stopTimer, toolsButton, type Screen, type SessionCtx } from '../ui/dom';
 import { melodyWords } from '../music/accompany';
 import { guitarA4, guitarSetup } from '../music/tuning';
 import { SING_ALONG } from '../music/lyrics';
@@ -26,8 +26,18 @@ import { practiceBar, setSimTarget, type SimTarget } from '../ui/practice';
 import { skillLabel } from './home';
 
 
-export const frame = (where: string, stage: string, bar: string, ctx?: SessionCtx, up: [string, string] = ['#/', L('Home', 'Start')]): string => `<header class="top"><div><a class="btn quiet" href="${ctx ? '#/' : up[0]}">${icon(ctx ? 'x' : 'left')}${ctx ? L('End session', 'Session beenden') : up[1]}</a></div>${ctx ? `<div class="c">${ctx.rail}</div><span id="where" hidden></span>` : `<div class="c" id="where">${where}${store.settings.instrument === 'guitar' && guitarSetup() ? ` · ${guitarSetup()}` : ''}</div>`}<div class="r">${micMeter()}</div></header><p class="sideways">${L('Turn the phone on its side: a line of music needs the width.', 'Dreh das Telefon quer: Eine Zeile Musik braucht die Breite.')}</p>
-  <div class="stage">${stage}</div>${practiceBar()}<footer class="bar">${bar}</footer>`;
+/**
+ * Every screen that is played at, in the same four bands: the top bar (the way out, where you are, what the
+ * app hears), the cue and the music on the stage, and the dock of buttons (do, move, how; the switch of mode
+ * or level always at its right end). What the app does by itself is said under the music, not in a corner of
+ * the dock where the eyes never go while playing.
+ */
+export const frame = (where: string, stage: string, bar: string, ctx?: SessionCtx, up: [string, string] = ['#/', L('Home', 'Start')]): string => {
+  const hint = bar.match(/<p class="auto"[^>]*>[\s\S]*?<\/p>/)?.[0] ?? '';
+  const dock = hint ? bar.replace(hint, '') : bar;
+  return `<header class="top"><div><a class="btn quiet" href="${ctx ? '#/' : up[0]}">${icon(ctx ? 'x' : 'left')}${ctx ? L('End session', 'Session beenden') : up[1]}</a></div>${ctx ? `<div class="c">${ctx.rail}</div><span id="where" hidden></span>` : `<div class="c" id="where">${where}${store.settings.instrument === 'guitar' && guitarSetup() ? ` · ${guitarSetup()}` : ''}</div>`}<div class="r">${micMeter()}${toolsButton()}</div></header><p class="sideways">${L('Turn the phone on its side: a line of music needs the width.', 'Dreh das Telefon quer: Eine Zeile Musik braucht die Breite.')}</p>
+  <div class="stage">${stage}${hint}</div>${practiceBar()}<footer class="bar">${dock}</footer>`;
+};
 
 export const nextStep = (ctx?: SessionCtx): string => (ctx ? `<button class="btn" id="nextstep">${ctx.after === L('the summary', 'die Zusammenfassung') ? L('Finish', 'Abschließen') : L('Next step', 'Nächster Schritt')}${icon('right')}</button>` : '');
 
@@ -260,8 +270,7 @@ function lesson(root: HTMLElement, m: Material, wanted: string | undefined, ctx?
     '',
     `<div class="head">
        ${m.piano ? '' : `<svg id="cbox" class="chordfig" viewBox="0 0 230 210" role="img" aria-label="${L('Chord diagram: where your fingers go for the chord to hold', 'Akkorddiagramm: wo deine Finger für den Akkord hinkommen, den du hältst')}"></svg>`}
-       <div class="say"><p class="eyebrow" id="eb"></p><h1 id="h1" aria-live="polite"></h1><p class="sub" id="sub"></p></div>
-       <div class="ladder" role="group" aria-label="${L('How to practise', 'Wie du übst')}">${RUNGS().map((r, i) => `<button class="rung" id="st${i}" aria-pressed="false"><b>${i + 1}</b><span>${r}<small id="st${i}s"></small></span></button>`).join('')}<p class="rungnote" id="rungnote" aria-live="polite"></p></div>
+       <div class="say"><p class="eyebrow" id="eb"></p><h1 id="h1" aria-live="polite"></h1><p class="sub" id="sub"></p><p class="rungnote" id="rungnote" aria-live="polite"></p></div>
      </div>
      <svg class="fit" id="rowA" viewBox="0 0 1180 ${m.piano ? 180 : 186}" role="img" aria-label="${L(`${m.piano ? 'The notes of this phrase, read left to right' : 'Tablature of this line, read left to right'}, with a marker on the one to play`, `${m.piano ? 'Die Noten dieser Phrase, von links nach rechts gelesen' : 'Tabulatur dieser Zeile, von links nach rechts gelesen'}, mit einer Markierung auf dem, was jetzt dran ist`)}"></svg>
      <svg class="fit" id="rowB" viewBox="0 0 1180 ${m.piano ? 180 : 186}" role="img" aria-label="${L('What comes next', 'Was danach kommt')}" hidden></svg>
@@ -272,8 +281,10 @@ function lesson(root: HTMLElement, m: Material, wanted: string | undefined, ctx?
        <div class="barmap" id="barmap" role="group" aria-label="${L('The recording, bar by bar: pick one to hear it', 'Die Aufnahme, Takt für Takt: wähl einen, um ihn zu hören')}"></div>
        <div class="row"><button class="btn" id="listen">${L('Listen back', 'Anhören')} <kbd>P</kbd></button><button class="btn quiet" id="firsttake" hidden>${L('Your first recording', 'Deine erste Aufnahme')}</button><button class="btn quiet" id="savetake">${L('Save as a file', 'Als Datei speichern')}</button><span class="note" id="takenote"></span></div>
      </div>`,
-    `<div class="grp"><button class="btn quiet" id="prev">${icon('left')}${L('Previous', 'Zurück')} <kbd>←</kbd></button><button class="btn" id="again">${L('Again', 'Nochmal')} <kbd>R</kbd></button><button class="btn" id="hearit">${L('Hear it', 'Anhören')} <kbd>H</kbd></button><button class="btn quiet" id="next">${L('Next', 'Weiter')} <kbd>→</kbd>${icon('right')}</button>${nextStep(ctx)}</div>
-     <div class="grp" id="tempobox" hidden><button class="btn quiet" id="slower" title="${L('Slower by 5%', 'Um 5 % langsamer')}" aria-label="${L('Slower by 5%', 'Um 5 % langsamer')}">−5 % <kbd>−</kbd></button><b id="tempo"></b><button class="btn quiet" id="faster" title="${L('Faster by 5%, up to 125%', 'Um 5 % schneller, bis 125 %')}" aria-label="${L('Faster by 5%', 'Um 5 % schneller')}">+5 % <kbd>+</kbd></button><button class="btn" id="pause"><span>${L('Pause', 'Pause')}</span> <kbd>${L('Space', 'Leertaste')}</kbd></button><button class="btn quiet tog" id="loopbtn" aria-pressed="false" title="${L('The bars on show go round and round with the click, one bar counted in, until L again.', 'Die gezeigten Takte laufen mit dem Klick im Kreis, ein Takt eingezählt, bis wieder L.')}">${L('Loop', 'Schleife')} <kbd>L</kbd></button></div>
+    `<div class="grp do"><button class="btn" id="again">${L('Again', 'Nochmal')} <kbd>R</kbd></button><button class="btn" id="hearit">${L('Hear it', 'Anhören')} <kbd>H</kbd></button></div>
+     <div class="grp move"><button class="btn quiet" id="prev" title="${L('The line before (←)', 'Die Zeile davor (←)')}">${icon('left')}<span class="t">${L('Previous', 'Zurück')}</span> <kbd>←</kbd></button><button class="btn quiet" id="next" title="${L('The next line (→)', 'Die nächste Zeile (→)')}"><span class="t">${L('Next', 'Weiter')}</span> <kbd>→</kbd>${icon('right')}</button>${nextStep(ctx)}</div>
+     <div class="grp how" id="tempobox" hidden><span class="stepper"><button class="btn quiet" id="slower" title="${L('Slower by 5% (−)', 'Um 5 % langsamer (−)')}" aria-label="${L('Slower by 5%', 'Um 5 % langsamer')}">−</button><b id="tempo"></b><button class="btn quiet" id="faster" title="${L('Faster by 5%, up to 125% (+)', 'Um 5 % schneller, bis 125 % (+)')}" aria-label="${L('Faster by 5%', 'Um 5 % schneller')}">+</button></span><button class="btn" id="pause"><span>${L('Pause', 'Pause')}</span> <kbd>${L('Space', 'Leertaste')}</kbd></button><button class="btn quiet tog" id="loopbtn" aria-pressed="false" title="${L('The bars on show go round and round with the click, one bar counted in, until L again.', 'Die gezeigten Takte laufen mit dem Klick im Kreis, ein Takt eingezählt, bis wieder L.')}">${L('Loop', 'Schleife')} <kbd>L</kbd></button></div>
+     <div class="ladder" role="group" aria-label="${L('How to practise', 'Wie du übst')}">${RUNGS().map((r, i) => `<button class="rung" id="st${i}" aria-pressed="false" title="${r}"><b>${i + 1}</b><span>${r}<small id="st${i}s"></small></span></button>`).join('')}</div>
      <details class="more" id="more"><summary class="btn quiet">${L('More', 'Mehr')}</summary><div class="morepanel">
        <p class="k">${L('Loop', 'Schleife')}</p><div class="row"><button class="btn quiet" id="widenl">${L('Take in the bar before', 'Takt davor dazu')} <kbd>[</kbd></button><button class="btn quiet" id="widenr">${L('Take in the bar after', 'Takt danach dazu')} <kbd>]</kbd></button></div>
        <p class="k">${L('Playing along', 'Mitspielen')}</p><div class="row"><button class="btn quiet tog" id="backbtn" aria-pressed="false">${L('Backing: bass and chords', 'Begleitung: Bass und Akkorde')} <kbd>A</kbd></button>${melody ? `<button class="btn quiet tog" id="wordsbtn" aria-pressed="${wordsOn.on}">${L('Words under the notes', 'Text unter den Noten')} <kbd>K</kbd></button>` : ''}${SING_ALONG[m.id] ? `<a class="btn quiet" href="#/singalong/${encodeURIComponent(m.id)}">${L('Sing and play: the words under the chords', 'Singen und spielen: der Text unter den Akkorden')}</a>` : ''}</div><p class="note">${L('Headphones only: through speakers the microphone would hear the backing as your playing.', 'Nur mit Kopfhörern: Über Lautsprecher würde das Mikrofon die Begleitung als dein Spiel hören.')}</p>
@@ -367,6 +378,8 @@ function lesson(root: HTMLElement, m: Material, wanted: string | undefined, ctx?
         ? [pluck, ...(pluck.more ?? [])].filter((x) => x.f > 0).map((x) => ({ s: x.s, f: x.f, fg: x.fg ?? 0 }))
         : [];
     hands.innerHTML = fretboard(dots, pluck, LEARN, m.lines[li].from);
+    // a strum shows nothing on the fretboard the chord picture beside the instruction does not: on a low window it goes first
+    hands.classList.toggle('same', !pluck);
   }
 
   /**
@@ -1512,7 +1525,7 @@ export const chordCheck: Screen = (root, ids, ctx) => {
         : `<nav class="chords" aria-label="${L('Chord', 'Akkord')}">${[...new Set(['Em', 'Am', 'E', 'A', 'D', 'C', 'G', 'Dm', 'F', chord.id])]
             .map((id) => CHORDS[id])
             .map((c) => `<a href="#/chord/${encodeURIComponent(c.id)}" aria-current="${c.id === chord.id}">${c.name}</a>`)
-            .join('')}<a href="#/chords">${L('All chords…', 'Alle Griffe …')}</a></nav>`
+            .join('')}<a href="#/chords" data-toolbox="chords">${L('All chords…', 'Alle Griffe …')}</a></nav>`
     }`,
     ctx,
   );

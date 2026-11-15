@@ -11,16 +11,18 @@ import { $, $$, esc, icon, keys, type Screen } from '../ui/dom';
 import { hasTakes, loadTake, TAKE_RATE, takeFile, takeMeta } from '../core/takes';
 
 /** The progress pages under one entry: the path, the repertoire, the course over weeks. */
+/** Your repertoire belongs to the songs: two tabs, the whole list and the songs you can play. */
 export const progressTabs = (at: 'progress' | 'repertoire' | 'trends'): string =>
-  `<nav class="tabs" aria-label="${L('Progress', 'Fortschritt')}">${(
-    [
-      ['progress', L('Path', 'Weg')],
-      ['repertoire', L('Repertoire', 'Repertoire')],
-      ['trends', L('Over the weeks', 'Über die Wochen')],
-    ] as const
-  )
-    .map(([k, label]) => `<a href="#/${k}"${k === at ? ' aria-current="page"' : ''}>${label}</a>`)
-    .join('')}</nav>`;
+  at !== 'repertoire'
+    ? ''
+    : `<nav class="tabs" aria-label="${L('Songs', 'Songs')}">${(
+        [
+          ['songs', store.settings.instrument === 'piano' ? L('All pieces', 'Alle Stücke') : L('All songs', 'Alle Songs')],
+          ['repertoire', L('Your repertoire', 'Dein Repertoire')],
+        ] as const
+      )
+        .map(([k, label]) => `<a href="#/${k}"${k === at ? ' aria-current="page"' : ''}>${label}</a>`)
+        .join('')}</nav>`;
 
 /** Where a song of the instrument is opened, and with what. */
 export const lessonHref = (inst: Instrument, id: string, rung = ''): string => `#/${inst === 'voice' ? 'sing' : inst === 'piano' ? 'piano' : 'song'}/${encodeURIComponent(id)}${rung ? '/' + rung : ''}`;
@@ -49,6 +51,11 @@ function nearest(inst: Instrument): { id: string; title: string; done: number; o
  * pick and listen to. What weeks of practice did, heard rather than read.
  */
 export const takesPage: Screen = (root, [id]) => {
+  // the recordings belong to a song: without one, the repertoire, where every song with recordings is
+  if (!id) {
+    history.replaceState(null, '', '#/repertoire');
+    return repertoirePage(root, []);
+  }
   const inst = store.settings.instrument;
   const title = everything(inst).find((x) => x.id === id)?.title ?? id;
   const both = (['first', 'last'] as const).map((w) => ({ w, meta: takeMeta(inst, id, w) })).filter((x) => x.meta);

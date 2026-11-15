@@ -285,14 +285,15 @@ export const earTraining: Screen = (root, params, ctx) => {
 
   root.innerHTML = frame(
     `<b>${L('By ear', 'Nach Gehör')}</b> · ${titles[kind]}`,
-    `<div class="head"><div class="say"><p class="eyebrow" id="eb"></p><h1 id="h1" aria-live="polite"></h1><p class="sub" id="sub"></p></div>
-       ${ctx ? '' : `<nav class="seg earkinds" aria-label="${L('Kind', 'Art')}">${(['motif', 'chords', 'sing'] as EarKind[]).map((k) => `<a href="#/ear/${k}" aria-current="${k === kind}">${titles[k]}</a>`).join('')}</nav>`}</div>
+    `<div class="head"><div class="say"><p class="eyebrow" id="eb"></p><h1 id="h1" aria-live="polite"></h1><p class="sub" id="sub"></p></div></div>
      <div class="tiles" id="tiles" role="list" aria-label="${L('This round', 'Diese Runde')}"></div>
      <svg class="fit" id="reveal" viewBox="0 0 1180 ${piano ? 226 : 186}" role="img" aria-label="${L('What was played, shown after asking for it', 'Was gespielt wurde, gezeigt, wenn du darum bittest')}" hidden></svg>
      <div class="foot"><p class="fbk info" id="fbk"></p><p class="legend">${kind === 'chords' ? L(`The chords of this round: ${chords.map((c) => chordName(c, piano)).join(', ')}`, `Die Akkorde dieser Runde: ${chords.map((c) => chordName(c, piano)).join(', ')}`) : L(`From ${source.title}. Any octave counts.`, `Aus ${source.title}. Jede Oktave zählt.`)}</p></div>`,
     `<div class="grp"><button class="btn" id="hearit">${L('Hear it again', 'Nochmal anhören')} <kbd>H</kbd></button><button class="btn quiet" id="show">${kind === 'chords' ? L('Name it', 'Namen zeigen') : L('Show it', 'Zeigen')} <kbd>T</kbd></button><button class="btn quiet" id="skip">${L('Skip', 'Überspringen')} <kbd>→</kbd></button><button class="btn quiet" id="again">${L('New round', 'Neue Runde')} <kbd>R</kbd></button>${nextStep(ctx)}</div>
+     ${ctx ? '' : `<nav class="ladder earkinds" aria-label="${L('Kind', 'Art')}">${(['motif', 'chords', 'sing'] as EarKind[]).map((k, i) => `<a class="rung" href="#/ear/${k}" aria-current="${k === kind}" title="${titles[k]}"><b>${i + 1}</b><span>${titles[k]}</span></a>`).join('')}</nav>`}
      <p class="auto">${L('Nothing is shown before you ask: listen, then play. A slip costs nothing; hear it again and start over.', 'Nichts wird gezeigt, bevor du fragst: hören, dann spielen. Ein Patzer kostet nichts; hör es noch einmal und fang von vorn an.')}</p>`,
     ctx,
+    ['#/learn', L('Learn', 'Lernen')],
   );
 
   const say = (cls: string, html: string): void => {

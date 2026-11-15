@@ -8,19 +8,22 @@ import './ui/practice';
 import { engine } from './audio/engine';
 import { browserLang, L, setLang } from './core/i18n';
 import { store } from './core/store';
-import { $, applyScale, icon, keys, stopAllLater, type Screen } from './ui/dom';
+import { $, applyScale, esc, icon, keys, stopAllLater, type Screen } from './ui/dom';
 import { home, progress, settings } from './screens/home';
 import { tuner } from './screens/tuner';
 import { chordCheck, pianoLesson, songLesson } from './screens/learn';
 import { nfRun, nfStart } from './screens/nf';
 import { importer, library } from './screens/library';
 import { basics, withIntro } from './screens/basics';
+import { learnPage } from './screens/skills';
+import { backdrop, hourNow } from './ui/backdrop';
+import { DAWN } from './ui/watch';
 import { changeDrill } from './screens/changes';
 import { keyCheck } from './screens/keys';
 import { session } from './screens/session';
 import { repertoirePage, takesPage } from './screens/repertoire';
 import { trendsPage } from './screens/trends';
-import { chordLibrary, droneTool, metronome, toolsPage } from './screens/tools';
+import { chordLibrary, droneTool, metronome } from './screens/tools';
 import { compose, jam } from './screens/compose';
 import { earTraining } from './screens/ear';
 import { strumTrainer } from './screens/strum';
@@ -43,11 +46,11 @@ interface Route {
 
 const routes: Record<string, Route> = {
   '': { screen: home, nav: true, mode: 'learn', audio: false },
+  learn: { screen: learnPage, nav: true, mode: 'learn', audio: false },
   progress: { screen: progress, nav: true, mode: 'learn', audio: false },
   repertoire: { screen: repertoirePage, nav: true, mode: 'learn', audio: false },
   takes: { screen: takesPage, nav: true, mode: 'learn', audio: false },
   trends: { screen: trendsPage, nav: true, mode: 'learn', audio: false },
-  tools: { screen: toolsPage, nav: true, mode: 'learn', audio: false },
   chords: { screen: chordLibrary, nav: true, mode: 'learn', audio: false },
   metronome: { screen: metronome, mode: 'learn', audio: true },
   drone: { screen: droneTool, mode: 'learn', audio: true },
@@ -129,6 +132,111 @@ function gate(root: HTMLElement, then: () => void): () => void {
   return keys({ ' ': () => void start(), Enter: () => void start() });
 }
 
+/** The five places, in the order of the number keys. */
+const places = (): [string, string, string][] => [
+  ['', L('Today', 'Heute'), 'today'],
+  ['learn', L('Learn', 'Lernen'), 'learn'],
+  ['songs', store.settings.instrument === 'piano' ? L('Pieces', 'Stücke') : L('Songs', 'Songs'), 'songs'],
+  ['nf', L('Games', 'Spiele'), 'games'],
+  ['progress', L('Progress', 'Fortschritt'), 'progress'],
+];
+/** Pages that belong to a place light up its entry. */
+const PLACE_OF: Record<string, string> = { basics: 'learn', import: 'songs', repertoire: 'songs', takes: 'songs', singalongs: 'songs', compose: 'songs', trends: 'progress' };
+
+/**
+ * The toolbox: tuner, metronome, drone, chords and the hearing check, opened over whatever page is on show (Q,
+ * or the button at the top). The page underneath stays in sight, dimmed; closing the toolbox (Esc) opens it
+ * again where it was.
+ */
+const TOOLS = ['tuner', 'metronome', 'drone', 'chords', 'check'];
+let toolFrom: string | null = null;
+let toolFromTitle = '';
+let lastTool = '';
+const toolHome = (): string => (store.settings.instrument === 'piano' ? 'tuner/piano' : store.settings.instrument === 'voice' ? 'tuner/any' : 'tuner');
+function openToolbox(tool?: string): void {
+  const key = location.hash.replace(/^#\/?/, '').split('/')[0];
+  if (toolFrom !== null && TOOLS.includes(key)) {
+    closeToolbox();
+    return;
+  }
+  toolFrom = location.hash || '#/';
+  toolFromTitle = document.title.split(' · ')[0];
+  location.hash = '#/' + (tool ?? (lastTool || toolHome()));
+}
+function closeToolbox(): void {
+  if (toolFrom === null) return;
+  const back = toolFrom;
+  toolFrom = null;
+  location.hash = back;
+}
+addEventListener('keydown', (e) => {
+  if (e.ctrlKey || e.metaKey || e.altKey || e.defaultPrevented) return;
+  if ((e.target as HTMLElement).closest('input, select, textarea')) return;
+  if (e.key === 'q' || e.key === 'Q') {
+    e.preventDefault();
+    openToolbox();
+  } else if (e.key === 'Escape' && toolFrom !== null) {
+    e.preventDefault();
+    closeToolbox();
+  }
+});
+addEventListener('click', (e) => {
+  const t = e.target as HTMLElement;
+  const open = t.closest<HTMLElement>('[data-toolbox]');
+  if (open) {
+    e.preventDefault();
+    openToolbox(open.dataset.toolbox || undefined);
+    return;
+  }
+  if (t.closest('[data-closetools]')) {
+    e.preventDefault();
+    closeToolbox();
+  }
+  // the instrument menu closes when anything else is clicked
+  const menu = document.querySelector<HTMLDetailsElement>('details.inst[open]');
+  if (menu && !menu.contains(t)) menu.open = false;
+});
+
+/** The toolbox over the page on show: the page stays underneath, inert; the tool is played at in the sheet. */
+function toolbox(root: HTMLElement, key: string, parts: string[], r: Route): void {
+  lastTool = parts.join('/');
+  document.body.dataset.mode = 'learn';
+  document.body.setAttribute('data-fit', '');
+  let behind = root.querySelector<HTMLElement>(':scope > .behind');
+  if (!behind) {
+    behind = document.createElement('div');
+    behind.className = 'behind';
+    behind.inert = true;
+    behind.setAttribute('aria-hidden', 'true');
+    behind.append(...root.childNodes);
+    root.append(behind);
+  }
+  root.querySelectorAll(':scope > .scrim, :scope > .toolbox').forEach((el) => el.remove());
+  const piano = store.settings.instrument === 'piano';
+  const tabs: [string, string][] = [
+    [toolHome(), piano ? L('Piano pitch', 'Tonhöhe') : L('Tuner', 'Stimmgerät')],
+    ['metronome', L('Metronome', 'Metronom')],
+    ['drone', L('Drone', 'Bordunton')],
+    ['chords', L('Chords', 'Akkorde')],
+    ['check', L('Hearing check', 'Hörcheck')],
+  ];
+  root.insertAdjacentHTML(
+    'beforeend',
+    `<div class="scrim" data-closetools></div><aside class="toolbox" role="dialog" aria-modal="true" aria-label="${L('Tools', 'Werkzeuge')}">
+      <header class="tbhead"><h2>${L('Tools', 'Werkzeuge')}</h2><a class="btn quiet" href="${esc(toolFrom ?? '#/')}" data-closetools>${icon('x')}${esc(toolFromTitle ? L(`Back to ${toolFromTitle}`, `Zurück zu ${toolFromTitle}`) : L('Back', 'Zurück'))} <kbd>Esc</kbd></a>
+        <nav class="seg tbtabs" aria-label="${L('Tools', 'Werkzeuge')}">${tabs.map(([href, label]) => `<a href="#/${href}"${href.split('/')[0] === key ? ' aria-current="true"' : ''}>${label}</a>`).join('')}</nav></header>
+      <div class="tbody" id="tbody"></div>
+    </aside>`,
+  );
+  const body = $('#tbody', root);
+  if (r.audio && !engine.running) {
+    cleanup = gate(body, route);
+    return;
+  }
+  playingSince = performance.now();
+  cleanup = r.screen(body, parts.slice(1));
+}
+
 function route(): void {
   stopAllLater();
   countPlaying();
@@ -136,16 +244,22 @@ function route(): void {
   cleanup = undefined;
   const parts = location.hash.replace(/^#\/?/, '').split('/').filter(Boolean).map(decodeURIComponent);
   const r = routes[parts[0] ?? ''] ?? routes[''];
-  document.body.dataset.mode = r.mode;
   // an overview page gets the main navigation above it; one introduction on its own is a page to work through
-  const key = routes[parts[0] ?? ''] ? (parts[0] ?? '') : '';
+  const key = routes[parts[0] ?? ''] ? (parts[0] ?? '') : parts[0] === 'tools' ? 'tools' : '';
+  if (key === 'tools') {
+    // the old address of the tools: the toolbox, over today's page
+    history.replaceState(null, '', '#/');
+    route();
+    openToolbox();
+    return;
+  }
   const titles: Record<string, string> = {
     '': L('Today', 'Heute'),
-    progress: L('Path', 'Weg'),
+    learn: L('Learn', 'Lernen'),
+    progress: L('Progress', 'Fortschritt'),
     repertoire: L('Repertoire', 'Repertoire'),
     takes: L('Recordings', 'Aufnahmen'),
     trends: L('Over the weeks', 'Über die Wochen'),
-    tools: L('Tools', 'Werkzeuge'),
     chords: L('Chord library', 'Griffbibliothek'),
     metronome: L('Metronome', 'Metronom'),
     drone: L('Drone', 'Bordunton'),
@@ -161,7 +275,7 @@ function route(): void {
     settings: L('Settings', 'Einstellungen'),
     session: L('Session', 'Session'),
     tuner: L('Tuner', 'Stimmgerät'),
-    basics: L('Basics', 'Grundlagen'),
+    basics: L('Handbook', 'Handbuch'),
     song: L('Song', 'Song'),
     piano: L('Piece', 'Stück'),
     chord: L('Chord check', 'Akkord-Check'),
@@ -177,11 +291,19 @@ function route(): void {
     hold: L('Hold a tone', 'Einen Ton halten'),
     sing: L('Song', 'Song'),
   };
+  const root = $('#app');
+  // a tool opened from the toolbox: over the page that was on show
+  if (toolFrom !== null && TOOLS.includes(key)) {
+    document.title = `${titles[key]} · Noise Floor`;
+    toolbox(root, key, parts, r);
+    return;
+  }
+  toolFrom = null;
+  document.body.dataset.mode = r.mode;
   document.title = `${titles[key] ?? L('Today', 'Heute')} · Noise Floor`;
   const overview = !!r.nav && !(key === 'basics' && parts[2] === 'try');
   // screens that are played at fill the window and do not scroll; overview pages scroll like any page
   document.body.toggleAttribute('data-fit', r.audio && !overview);
-  const root = $('#app');
   root.innerHTML = '';
   scrollTo(0, 0);
   // reading needs no microphone: only what is played at waits for it
@@ -195,35 +317,20 @@ function route(): void {
     return;
   }
   const inst = store.settings.instrument;
-  const piano = inst === 'piano';
-  const items: [string, string][] = [
-    ['', L('Today', 'Heute')],
-    ['songs', piano ? L('Pieces', 'Stücke') : L('Songs', 'Songs')],
-    ['nf', L('Games', 'Spiele')],
-    ['tools', L('Tools', 'Werkzeuge')],
-    ['basics', L('Basics', 'Grundlagen')],
-    ['progress', L('Progress', 'Fortschritt')],
-  ];
-  // pages that belong to a section light up its entry
-  const at = key === 'import' ? 'songs' : key === 'repertoire' || key === 'trends' || key === 'takes' ? 'progress' : key === 'chords' || key === 'compose' || key === 'singalongs' ? 'tools' : key;
+  const items = places();
+  const at = PLACE_OF[key] ?? key;
   const names: Record<string, string> = { guitar: L('Guitar', 'Gitarre'), piano: L('Piano', 'Klavier'), voice: L('Voice', 'Stimme') };
-  root.innerHTML = `<header class="nav"><a class="brand" href="#/">Noise Floor</a>
-      <nav aria-label="${L('Main', 'Hauptmenü')}">${items.map(([k, label]) => `<a href="#/${k}"${k === at ? ' aria-current="page"' : ''}>${label}</a>`).join('')}</nav>
+  root.innerHTML = `<header class="nav"><div class="navin">
+      <a class="brand" href="#/">Noise Floor</a>
+      <details class="inst"><summary title="${L('Instrument: guitar, piano or voice', 'Instrument: Gitarre, Klavier oder Stimme')}">${icon(inst)}<span class="lbl">${names[inst]}</span><span class="caret" aria-hidden="true">▾</span></summary>
+        <div class="instmenu" role="group" aria-label="${L('Instrument', 'Instrument')}">${(['guitar', 'piano', 'voice'] as const).map((x) => `<button type="button" data-inst="${x}" aria-pressed="${x === inst}">${icon(x)}${names[x]}</button>`).join('')}</div></details>
+      <nav class="places" aria-label="${L('Main', 'Hauptmenü')}">${items.map(([k, label], i) => `<a href="#/${k}"${k === at ? ' aria-current="page"' : ''}>${label}<i aria-hidden="true">${i + 1}</i></a>`).join('')}</nav>
       <div class="navr">
+        <button class="tbx" type="button" data-toolbox title="${L('Tools: tuner, metronome, drone, chords, hearing check', 'Werkzeuge: Stimmgerät, Metronom, Bordunton, Akkorde, Hörcheck')}">${icon('fork')}<span class="lbl">${L('Tools', 'Werkzeuge')}</span> <kbd>Q</kbd></button>
         <a class="gear" href="#/settings"${at === 'settings' ? ' aria-current="page"' : ''} title="${L('Settings', 'Einstellungen')}" aria-label="${L('Settings', 'Einstellungen')}">${icon('gear')}</a>
-        <div class="seg" role="group" aria-label="${L('Instrument', 'Instrument')}">${(['guitar', 'piano', 'voice'] as const).map((x) => `<button data-inst="${x}" aria-pressed="${x === inst}">${names[x]}</button>`).join('')}</div>
-        <div class="seg lang" role="group" aria-label="${L('Language', 'Sprache')}">${(['en', 'de'] as const).map((x) => `<button data-lang="${x}" aria-pressed="${x === store.settings.lang}" lang="${x}" title="${x === 'en' ? 'English' : 'Deutsch'}">${x.toUpperCase()}</button>`).join('')}</div>
       </div>
-    </header><div class="view" id="view"></div>`;
-  root.querySelectorAll<HTMLElement>('.nav [data-lang]').forEach(
-    (b) =>
-      (b.onclick = () => {
-        store.settings.lang = b.dataset.lang === 'de' ? 'de' : 'en';
-        store.save();
-        setLang(store.settings.lang);
-        route();
-      }),
-  );
+    </div></header><div class="view" id="view"></div>
+    <nav class="tabbar" aria-label="${L('Main', 'Hauptmenü')}">${items.map(([k, label, ic]) => `<a href="#/${k}"${k === at ? ' aria-current="page"' : ''}>${icon(ic)}<span>${label}</span></a>`).join('')}</nav>`;
   root.querySelectorAll<HTMLElement>('.nav [data-inst]').forEach(
     (b) =>
       (b.onclick = () => {
@@ -232,7 +339,25 @@ function route(): void {
         route();
       }),
   );
-  cleanup = r.screen($('#view', root), parts.slice(1));
+  const shown = r.screen($('#view', root), parts.slice(1));
+  // the painted world behind the page: each place has its scene (the games paint their own)
+  const scene = at === '' ? `watch:${hourNow()}` : at === 'learn' ? 'marsh:0' : at === 'songs' ? 'watch:2' : at === 'progress' ? 'watch:3' : at === 'settings' ? `watch:${DAWN}` : '';
+  if (scene) backdrop($('#view', root), scene);
+  // the number keys go to the five places, where the page itself has no use for them
+  const placeKeys = (e: KeyboardEvent): void => {
+    if (e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey) return;
+    if ((e.target as HTMLElement).closest('input, select, textarea')) return;
+    const n = Number(e.key);
+    if (Number.isInteger(n) && n >= 1 && n <= items.length && items[n - 1][0] !== key) {
+      e.preventDefault();
+      location.hash = '#/' + items[n - 1][0];
+    }
+  };
+  addEventListener('keydown', placeKeys);
+  cleanup = () => {
+    removeEventListener('keydown', placeKeys);
+    shown?.();
+  };
 }
 
 // a progress file chosen before: whether the browser still lets the app use it, and whether it is newer

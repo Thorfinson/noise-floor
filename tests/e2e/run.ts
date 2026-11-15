@@ -76,6 +76,20 @@ const check = (name: string, ok: boolean, detail = ''): void => {
   const tag = section.getStore()?.name;
   console.log(`${ok ? 'PASS' : 'FAIL'}  ${tag ? `[${tag}] ` : ''}${process.env.E2E_TIMES ? `[${Math.round((Date.now() - began) / 1000)}s] ` : ''}${name}${detail ? '  (' + detail + ')' : ''}`);
 };
+/** The stages beside the path, as the skills of the Learn page show them: every skill opened in turn. */
+const skillStages = async (page: Page): Promise<string> => {
+  const names: string[] = [];
+  for (let i = 0; i < (await page.locator('[data-skill]').count()); i++) {
+    await page.locator('[data-skill]').nth(i).click();
+    names.push(...(await page.locator('.sklevel b').allTextContents()));
+  }
+  return names.join(' | ');
+};
+/** The instrument is chosen in a menu beside the name at the top: open it, then pick. */
+const pickInstrument = async (page: Page, inst: string): Promise<void> => {
+  await page.click('details.inst > summary');
+  await page.click(`.instmenu [data-inst="${inst}"]`);
+};
 const text = (page: Page, sel: string): Promise<string> =>
   page
     .locator(sel)
@@ -506,7 +520,7 @@ const sections: [string, () => Promise<void>][] = [
       await page.waitForSelector('.plan');
       check(
         'home: a session left at step 2 is offered to go on there, with what is done ticked',
-        (await text(page, '#go')).includes('Continue at step 2') && (await page.locator('.plan li.done').count()) === 1 && (await page.locator('.plan li.cur').count()) === 1 && (await text(page, 'h1')).includes('minutes left') && (await page.locator('#anew').count()) === 1,
+        (await text(page, '#go')).includes('Continue at step 2') && (await page.locator('.plan li.done').count()) === 1 && (await page.locator('.plan li.cur').count()) === 1 && /minutes left/i.test(await text(page, '.herosheet .kick')) && (await page.locator('#anew').count()) === 1,
         `${(await text(page, '#go')).replace(/\s+/g, ' ')} · ${await page.locator('.plan li.done').count()} done · ${await text(page, 'h1')}`,
       );
       check('pages: each has its own title', (await page.title()) === 'Today · Noise Floor', await page.title());
@@ -658,9 +672,9 @@ const sections: [string, () => Promise<void>][] = [
       const withChord = await rows();
       check('songs: a search also finds songs by who made them and by a chord', spirituals >= 8 && withChord >= 8 && withChord < 60, `${spirituals} spirituals, ${withChord} with D7`);
       await page.fill('#q', '');
-      await page.click('[data-kind="melody"]');
+      await page.selectOption('#kindsel', 'melody');
       check('songs: the list can be narrowed to tunes on single strings, the riffs and the pentatonic among them', (await rows()) >= 28 && (await rows()) <= 40 && (await text(page, '.lib')).includes('Greensleeves') && (await text(page, '.lib')).includes('Riff 1') && !(await text(page, '.lib')).includes('Skip to My Lou'), `${await rows()} tunes`);
-      await page.click('[data-kind=""]');
+      await page.selectOption('#kindsel', '');
       await page.fill('#q', 'check song');
       await page.click('[data-del]');
       await page.click('[data-del]');
@@ -738,14 +752,14 @@ const sections: [string, () => Promise<void>][] = [
       check('basics: a page with something to try leads to it, and from there back to the same page', (await text(page, '#h1')) === 'What a chord is' && (await page.locator('header.top a[href="#/basics/chord"]').count()) === 1, `${await text(page, '#eb')} | ${await text(page, '#h1')}`);
       await page.goto(base + '?autostart#/basics');
       await page.waitForSelector('#leaf h2');
-      await page.click('.nav [data-inst="piano"]');
+      await pickInstrument(page, 'piano');
       await page.waitForFunction(() => document.querySelectorAll('#toc [data-page]').length === 14, null, { timeout: 3000 }).catch(() => undefined);
       check('basics: the piano has a handbook of its own, with chapters on chords and on what lies beyond five fingers', (await toc()).length === 16 && (await toc()).includes('Finding the keys') && (await toc()).includes('Both hands together: a bass under the melody') && (await toc()).includes('What a chord is, on the piano') && (await toc()).includes('Passing the thumb under') && (await toc()).includes('Broken chords') && !(await toc()).includes('How to strum') && (await page.locator('#toc .chap').count()) === 7 && (await page.locator('#toc .thumb').count()) === 16, `${(await toc()).length} pages in ${await page.locator('#toc .chap').count()} chapters`);
       await page.click('#toc [data-page="p-move"]');
       await page.waitForFunction(() => document.querySelector('#ttl')?.textContent === 'From chord to chord', null, { timeout: 3000 }).catch(() => undefined);
       check('basics: a page of the piano has its picture and says where it comes up', (await page.locator('#leaf .pic svg rect').count()) >= 15 && /chord changes on the piano/.test(await text(page, '#leaf .used')), await text(page, '#leaf .used'));
       await page.screenshot({ path: resolve(out, 'basics-piano.png') });
-      await page.click('.nav [data-inst="guitar"]');
+      await pickInstrument(page, 'guitar');
       await page.waitForFunction(() => document.querySelectorAll('#toc [data-page]').length === 13, null, { timeout: 3000 }).catch(() => undefined);
 
       // the rhythm game: stones in time with the click, the chord changing at every bar line
@@ -877,12 +891,12 @@ const sections: [string, () => Promise<void>][] = [
 
       await page.goto(base + '?autostart#/');
       await page.waitForSelector('#go');
-      await page.click('[data-inst="guitar"]');
+      await pickInstrument(page, 'guitar');
       await page.waitForFunction(() => document.querySelector('[data-inst="guitar"]')?.getAttribute('aria-pressed') === 'true', null, { timeout: 4000 }).catch(() => undefined);
-      await page.goto(base + '?autostart#/progress');
+      await page.goto(base + '?autostart#/learn');
       await page.waitForSelector('#stage h2');
       const stops = await page.locator('.stop').count();
-      check('learning path, guitar: a map with a stone for each stage, the sheet of the stage you are at open under it, the barre ladder beside it', stops === 6 && (await page.locator('.stop[aria-selected="true"]').count()) === 1 && /you are here/i.test(await text(page, '#stage .k')) && /\d+ of \d+/.test(await text(page, '#stage .prog')) && (await text(page, '.sidecards')).includes('The barre ladder') && (await text(page, 'h1')).startsWith('You are at'), `${stops} stones · ${await text(page, 'h1')} · ${await text(page, '#stage .k')} · ${await text(page, '#stage .prog')}`);
+      check('learning path, guitar: a map with a stone for each stage, the sheet of the stage you are at open under it, the barre ladder beside it', stops === 6 && (await page.locator('.stop[aria-selected="true"]').count()) === 1 && /you are here/i.test(await text(page, '#stage .k')) && /\d+ of \d+/.test(await text(page, '#stage .prog')) && (await text(page, 'h1')) === 'The eight open chords ring clean' && (await skillStages(page)).includes('The barre ladder'), `${stops} stones · ${await text(page, 'h1')} · ${await text(page, '#stage .k')} · ${await text(page, '#stage .prog')}`);
       await page.click('#stop-open');
       await page.waitForFunction(() => document.querySelector('#stage h2')?.textContent?.includes('open chords'), null, { timeout: 3000 }).catch(() => undefined);
       check('learning path, guitar: chords that rang clean are marked done, with the measured value', (await page.locator('#stage .items li.done').count()) >= 2 && /s from cold/.test(await text(page, '#stage .items')), (await text(page, '#stage .items')).replace(/\s+/g, ' ').slice(0, 160));
@@ -897,8 +911,13 @@ const sections: [string, () => Promise<void>][] = [
       await page.click('#stop-songs2');
       await page.waitForFunction(() => document.querySelector('#stage h2')?.textContent?.includes('Moderate'), null, { timeout: 3000 }).catch(() => undefined);
       check('learning path, guitar: the map is painted, and any stone on it opens its stage', wayPainted >= 12 && (await text(page, '#stage h2')).includes('Moderate songs') && (await page.locator('#stage .items li').count()) === 5 && (await text(page, '#stage .go')).includes('Go on with'), `${wayPainted} tones · ${await text(page, '#stage h2')} · ${await page.locator('#stage .items li').count()} songs`);
-      await page.click('.sidecard >> nth=0');
-      check('learning path, guitar: what runs beside the path opens the same way', /beside the path/i.test(await text(page, '#stage .k')) && (await text(page, '#stage h2')).includes('barre ladder'), await text(page, '#stage h2'));
+      await page.goto(base + '?autostart#/learn/7');
+      await page.waitForSelector('.sklevel[data-stage="barre"]');
+      await page.click('.sklevel[data-stage="barre"]');
+      check('learning path, guitar: what runs beside the path opens the same way, from the skill it belongs to', /beside the path/i.test(await text(page, '#stage .k')) && (await text(page, '#stage h2')).includes('barre ladder'), await text(page, '#stage h2'));
+      await page.screenshot({ path: resolve(out, 'learn.png'), fullPage: true });
+      await page.goto(base + '?autostart#/progress');
+      await page.waitForSelector('.measured');
       await page.screenshot({ path: resolve(out, 'progress.png'), fullPage: true });
       check('progress: the played skills were measured, each kind folded away under its name', (await page.locator('tbody tr').count()) >= 8 && (await page.locator('details.kind').count()) >= 3,`${await page.locator('tbody tr').count()} rows in ${await page.locator('details.kind').count()} kinds`);
       check('practice instrument: hardly any string had to be played twice to be heard', repeated() <= 2, `${repeated()} repeated`);
@@ -964,7 +983,7 @@ const sections: [string, () => Promise<void>][] = [
       // the piano session from start to finish
       await page.goto(base + '?autostart#/');
       await page.waitForSelector('#go');
-      await page.click('[data-inst="piano"]');
+      await pickInstrument(page, 'piano');
       await page.waitForFunction(() => document.querySelectorAll('.plan li').length === 4, null, { timeout: 4000 }).catch(() => undefined);
       check('piano home: its own steps, with playing by ear before the piece', (await page.locator('.plan li').count()) === 4 && (await text(page, '.plan')).includes('Match the app to your piano') && (await text(page, '.plan')).includes('By ear'), (await text(page, '.plan')).replace(/\s+/g, ' '));
       await page.screenshot({ path: resolve(out, 'home-piano.png') });
@@ -1024,13 +1043,13 @@ const sections: [string, () => Promise<void>][] = [
       await page.waitForSelector('#list li');
       const pieceCount = Number(/(\d+) pieces/i.exec(await text(page, '.kick'))?.[1] ?? 0);
       const levelCounts = (await page.locator('[data-level] small').allTextContents()).map(Number);
-      const kindNames = (await page.locator('[data-kind]').allTextContents()).map((s) => s.trim().toLowerCase()).join('|');
+      const kindNames = (await page.locator('#kindsel option').allTextContents()).map((s) => s.trim().toLowerCase()).join('|');
       check('pieces: the piano has a book of its own, over a hundred pieces over four levels, in three kinds', pieceCount >= 100 && levelCounts.length === 5 && levelCounts.slice(1).every((n) => n >= pieceCount / 7) && levelCounts.slice(1).reduce((a, b) => a + b, 0) === pieceCount && kindNames === 'all kinds|tunes|chords|broken chords', `${pieceCount} pieces · levels ${levelCounts.join('/')} · ${kindNames}`);
       await page.click('[data-level="0"]');
-      await page.click('[data-kind="chords"]');
+      await page.selectOption('#kindsel', 'chords');
       const chordRows = await page.locator('#list li:not(.sep)').count();
-      check('pieces: a kind filters the list, and a piece of chords names its chords and who made the song', chordRows >= 20 && (await page.locator('#list li:not(.sep) .chs').count()) === chordRows && (await page.locator('#list li:not(.sep) .by').count()) === chordRows, `${chordRows} pieces of chords`);
-      await page.click('[data-kind=""]');
+      check('pieces: a kind filters the list, and a piece of chords names its chords and who made the song', chordRows >= 20 && (await page.locator('#list li:not(.sep) .chs2 .chipn').count()) >= chordRows && (await page.locator('#list li:not(.sep) .by').count()) === chordRows, `${chordRows} pieces of chords`);
+      await page.selectOption('#kindsel', '');
       await page.fill('#q', 'spiritual');
       await page.waitForTimeout(250);
       const pianoSpirituals = await page.locator('#list li:not(.sep)').count();
@@ -1177,16 +1196,18 @@ const sections: [string, () => Promise<void>][] = [
       await page.screenshot({ path: resolve(out, 'settings.png'), fullPage: true });
 
       // the learning path: stages with a count, one of them marked as the place the player is at
-      await page.goto(base + '?autostart#/progress');
+      await page.goto(base + '?autostart#/learn');
       await page.waitForSelector('#stage h2');
-      check('learning path, piano: a map of its own, from five fingers over the first chords and their changes to the pieces of each level', (await text(page, 'h1')).startsWith('You are at') && (await page.locator('.stop').count()) === 7 && (await page.locator('.stops').textContent())!.includes('Five fingers, each hand') && (await page.locator('.stops').textContent())!.includes('The first six chords ring') && (await text(page, '.sidecards')).includes('Scales') && (await text(page, '.sidecards')).includes('More chords') && /\d+ of \d+/.test(await text(page, '#stage .prog')), `${await page.locator('.stop').count()} stones · ${await text(page, 'h1')} · ${await text(page, '#stage .prog')}`);
+      check('learning path, piano: a map of its own, from five fingers over the first chords and their changes to the pieces of each level', /stage \d of \d/i.test(await text(page, '.kick')) && (await page.locator('.stop').count()) === 7 && (await page.locator('.stops').textContent())!.includes('Five fingers, each hand') && (await page.locator('.stops').textContent())!.includes('The first six chords ring') && (await skillStages(page)).includes('Scales') && (await skillStages(page)).includes('More chords') && /\d+ of \d+/.test(await text(page, '#stage .prog')), `${await page.locator('.stop').count()} stones · ${await text(page, 'h1')} · ${await text(page, '#stage .prog')}`);
       await page.click('#stop-chords');
       await page.waitForFunction(() => document.querySelector('#stage h2')?.textContent?.includes('six chords'), null, { timeout: 3000 }).catch(() => undefined);
       check('learning path, piano: a chord that rang on the keys is marked done, with the measured value', (await page.locator('#stage .items li').count()) === 6 && (await page.locator('#stage .items li.done').count()) >= 1 && /s from cold/.test(await text(page, '#stage .items')), (await text(page, '#stage .items')).replace(/\s+/g, ' ').slice(0, 120));
       await page.click('#stop-pieces2');
       await page.waitForFunction(() => document.querySelector('#stage h2')?.textContent?.includes('Moderate'), null, { timeout: 3000 }).catch(() => undefined);
       check('learning path, piano: a level of the book is a stage of five pieces, each named with its kind', (await page.locator('#stage .items li').count()) === 5 && /(a tune|chords)/.test(await text(page, '#stage .items')) && (await text(page, '#stage .go')).includes('Go on with'), (await text(page, '#stage .items')).replace(/\s+/g, ' ').slice(0, 120));
-      await page.screenshot({ path: resolve(out, 'progress-piano.png'), fullPage: true });
+      await page.screenshot({ path: resolve(out, 'learn-piano.png'), fullPage: true });
+      await page.goto(base + '?autostart#/progress');
+      await page.waitForSelector('.measured');
       check('progress, piano: the scale played on the keys was measured', (await page.locator('.measured').innerHTML()).includes('C major scale'), `${await page.locator('tbody tr').count()} rows`);
       check('practice instrument, piano: hardly any key had to be played twice to be heard', repeated() <= 2, `${repeated()} repeated`);
       check('practice instrument, piano: no script errors', errors.length === 0, errors.join(' | '));
@@ -1291,23 +1312,31 @@ const sections: [string, () => Promise<void>][] = [
       // the library: favourites, played lately, playable now, one chord short
       await page.goto(base + '?autostart#/songs');
       await page.waitForSelector('.lib li');
-      await page.click('[data-pick="ready"]');
+      await page.selectOption('#picksel', 'ready');
       await page.waitForTimeout(200);
       const ready = await page.locator('.lib li:not(.sep)').count();
       check('songs: playable now: songs whose chords all ring already', ready >= 3 && (await text(page, '.lib')).includes('Tom Dooley') === false && /The chord that opens most songs: .+/.test(await text(page, '.keychord')), `${ready} playable | ${await text(page, '.keychord')}`);
-      await page.click('[data-pick=""]');
+      await page.selectOption('#picksel', '');
       await page.locator('[data-fav]').first().click();
-      await page.click('[data-pick="favs"]');
+      await page.selectOption('#picksel', 'favs');
       await page.waitForTimeout(200);
       check('songs: a star makes a favourite, and favourites can be shown alone', (await page.locator('.lib li:not(.sep)').count()) === 1, `${await page.locator('.lib li:not(.sep)').count()} favourites`);
-      await page.click('[data-pick="recent"]');
+      await page.selectOption('#picksel', 'recent');
       await page.waitForTimeout(200);
       check('songs: the ones opened lately, the latest first', (await text(page, '.lib li:not(.sep) >> nth=0')).includes('Ode to Joy') || (await text(page, '.lib li:not(.sep) >> nth=0')).includes('Amazing Grace'), (await text(page, '.lib li:not(.sep) >> nth=0')).slice(0, 60));
 
-      // the tools: their own page, the metronome, the chord library
-      await page.goto(base + '?autostart#/tools');
-      await page.waitForSelector('.cards');
-      check('tools: a page of tools for the instrument', (await page.locator('.cards .card').count()) >= 9 && (await text(page, '.cards')).includes('Metronome') && (await text(page, '.cards')).includes('Chord library'), `${await page.locator('.cards .card').count()} tools`);
+      // the toolbox: Q over any page opens the tuner in a sheet, the page waiting underneath; Esc goes back to it
+      await page.goto(base + '?autostart#/songs');
+      await page.waitForSelector('#list li');
+      await page.keyboard.press('q');
+      await page.waitForSelector('.toolbox #tbody .top', { timeout: 4000 }).catch(() => undefined);
+      const boxOpen = { tabs: await page.locator('.toolbox .tbtabs a').count(), behind: await page.locator('.behind #list li').count(), at: await page.evaluate(() => location.hash) };
+      await page.click('.toolbox .tbtabs a[href="#/metronome"]');
+      await page.waitForSelector('.toolbox #beats', { timeout: 4000 }).catch(() => undefined);
+      const boxTab = await page.locator('.toolbox #beats').count();
+      await page.keyboard.press('Escape');
+      await page.waitForFunction(() => location.hash === '#/songs' && !document.querySelector('.toolbox'), null, { timeout: 4000 }).catch(() => undefined);
+      check('toolbox: Q opens the tools over the page, its tabs switch tool, Esc goes back to the page', boxOpen.tabs === 5 && boxOpen.behind >= 1 && boxOpen.at.startsWith('#/tuner') && boxTab === 1 && (await page.evaluate(() => location.hash)) === '#/songs' && (await page.locator('.toolbox').count()) === 0, JSON.stringify({ ...boxOpen, boxTab }));
       await page.goto(base + '?autostart#/metronome');
       await page.waitForSelector('#beats');
       for (let i = 0; i < 4; i++) {
@@ -1424,7 +1453,7 @@ const sections: [string, () => Promise<void>][] = [
       const big = await look('song/ode-guitar/1', { instrument: 'guitar', uiScale: 1.3 }, '#rowA text.tn', async (p) => ({ fret: await drawn(p, '#rowA text.tn'), h1: await drawn(p, 'h1'), btn: await drawn(p, '.bar .btn'), root: await p.evaluate(() => parseFloat(getComputedStyle(document.documentElement).fontSize)) }));
       const readRoot = await look('songs', { instrument: 'guitar', uiScale: 1.3 }, '#list li', (p) => p.evaluate(() => parseFloat(getComputedStyle(document.documentElement).fontSize)));
       check('reading from a metre: the largest type makes the numbers and the instruction of a play screen larger and leaves its buttons; a page to read grows as a whole', big.fret >= tune.fret * 1.2 && big.h1 >= tune.h1 * 1.2 && Math.abs(big.btn - tune.btn) < 0.5 && Math.abs(big.root - 16) < 0.1 && Math.abs(readRoot - 20.8) < 0.1, `frets ${big.fret.toFixed(1)}, instruction ${big.h1.toFixed(1)}, buttons ${big.btn} (was ${tune.btn}), type of a page to read ${readRoot}px`);
-      const rows = await look('song/amazing-grace-chords/2', { instrument: 'guitar', lang: 'de' }, '#rowA', (p) => p.evaluate(() => new Set([...document.querySelectorAll('.bar > *')].filter((el) => el.getBoundingClientRect().width > 0).map((el) => Math.round(el.getBoundingClientRect().top))).size));
+      const rows = await look('song/amazing-grace-chords/2', { instrument: 'guitar', lang: 'de' }, '#rowA', (p) => p.evaluate(() => new Set([...document.querySelectorAll('.bar > *')].filter((el) => el.getBoundingClientRect().width > 0).map((el) => Math.round((el.getBoundingClientRect().top + el.getBoundingClientRect().height / 2) / 12))).size));
       check('reading from a metre: the bar under a lesson stays one row at 1440 wide, in German too, and leaves its room to the music', rows === 1, `${rows} rows`);
 
       // a left-handed guitar: the fretboard's nut on the right, the chord picture's high e string on the left
@@ -1515,9 +1544,9 @@ const sections: [string, () => Promise<void>][] = [
       };
       const txt = (p: Page, sel: string): Promise<string> => p.locator(sel).first().innerText({ timeout: 3000 }).catch(() => '');
 
-      // the settings are a gear beside the instrument; six places to learn stay in the row
-      const nav = await visit('', {}, '.plan', async (p) => ({ links: await p.locator('.nav nav a').count(), gear: await p.locator('.nav .gear').getAttribute('title') }));
-      check('navigation: six places in the row, the settings a gear beside the instrument', nav.links === 6 && nav.gear === 'Settings', JSON.stringify(nav));
+      // five places in the row; the toolbox and the gear on the right; the instrument a menu beside the name
+      const nav = await visit('', {}, '.plan', async (p) => ({ links: await p.locator('.nav .places a').count(), gear: await p.locator('.nav .gear').getAttribute('title'), tools: await p.locator('.nav .tbx').count(), inst: await p.locator('.nav details.inst [data-inst]').count() }));
+      check('navigation: five places in the row, the toolbox and the settings on the right, the instrument a menu beside the name', nav.links === 5 && nav.gear === 'Settings' && nav.tools === 1 && nav.inst === 3, JSON.stringify(nav));
 
       // the tempo by hand, from 25 % to 125 %
       const tempo = await visit('song/amazing-grace-chords/2', { instrument: 'guitar' }, '#tempo', async (p) => {
@@ -1617,10 +1646,18 @@ const sections: [string, () => Promise<void>][] = [
       check('repertoire: whether coming back keeps the songs, or why it is too early to say', /Does coming back keep them\?/.test(stay) && /Too early to say/.test(stay), stay.slice(0, 120));
       const file = await visit('settings', { instrument: 'guitar' }, '#filemsg', async (p) => ({ msg: await txt(p, '#filemsg'), btn: await p.locator('#filenew').count() }));
       check('progress file: offered in the settings, to keep the progress in a file of your own', /in a file you choose/.test(file.msg) && file.btn === 1, file.msg.slice(0, 80));
-      const beside = (p: Page): Promise<string[]> => p.locator('.sidecard b').allTextContents();
-      const path = await visit('progress', { instrument: 'guitar' }, '.sidecard', beside);
-      const pathPiano = await visit('progress', { instrument: 'piano' }, '.sidecard', beside);
-      check('path: reading rhythm and slurs beside the guitar path, both hands together and rhythm beside the piano path', path.includes('Rhythm') && path.includes('Slurs') && pathPiano.includes('Together') && pathPiano.includes('Rhythm'), `${path.join(', ')} | ${pathPiano.join(', ')}`);
+      // what runs beside the path belongs to a skill on the Learn page: every skill opened in turn, its stages read
+      const beside = async (p: Page): Promise<string[]> => {
+        const names: string[] = [];
+        for (let i = 0; i < (await p.locator('[data-skill]').count()); i++) {
+          await p.locator('[data-skill]').nth(i).click();
+          names.push(...(await p.locator('.sklevel b').allTextContents()));
+        }
+        return names;
+      };
+      const path = await visit('learn', { instrument: 'guitar' }, '[data-skill]', beside);
+      const pathPiano = await visit('learn', { instrument: 'piano' }, '[data-skill]', beside);
+      check('path: reading rhythm and slurs among the skills of the guitar, both hands together and rhythm among those of the piano', path.includes('Rhythm') && path.includes('Slurs') && pathPiano.includes('Together') && pathPiano.includes('Rhythm'), `${path.join(', ')} | ${pathPiano.join(', ')}`);
 
       // phones, standing and lying: nothing to scroll sideways, the bar in the window, lying the music with room
       const misfits: string[] = [];
@@ -1713,7 +1750,7 @@ const sections: [string, () => Promise<void>][] = [
 
       await page.goto(base + '?autostart#/');
       await page.waitForSelector('.plan');
-      check('voice: the first session finds the range, then tones sung back, a game of sung patterns and a song', (await page.locator('.plan li').count()) === 5 && (await text(page, '.plan')).includes('Find your range') && (await text(page, '.plan')).includes('Match the tone') && (await text(page, '.plan')).includes('Intervals by ear') && (await text(page, '.plan')).includes('Voice gym') && (await text(page, '[data-inst="voice"]')) === 'Voice', (await text(page, '.plan')).replace(/\s+/g, ' '));
+      check('voice: the first session finds the range, then tones sung back, a game of sung patterns and a song', (await page.locator('.plan li').count()) === 5 && (await text(page, '.plan')).includes('Find your range') && (await text(page, '.plan')).includes('Match the tone') && (await text(page, '.plan')).includes('Intervals by ear') && (await text(page, '.plan')).includes('Voice gym') && !!(await page.locator('.instmenu [data-inst="voice"]').textContent())?.includes('Voice'), (await text(page, '.plan')).replace(/\s+/g, ' '));
       await page.screenshot({ path: resolve(out, 'voice-home.png') });
 
       // step 1: the range, a low note held and a high one
@@ -1801,24 +1838,26 @@ const sections: [string, () => Promise<void>][] = [
       await page.goto(base + '?autostart#/basics');
       await page.waitForSelector('#toc');
       check('voice: the voice has a handbook of its own', (await page.locator('#toc .chap').count()) === 5 && (await raw('#toc')).includes('Standing and breathing') && (await raw('#toc')).includes('A second voice') &&(await raw('.bookhead .kick')).includes('voice'), (await raw('#toc')).slice(0, 160));
-      await page.goto(base + '?autostart#/progress');
+      await page.goto(base + '?autostart#/learn');
       await page.waitForSelector('#stage h2');
-      check('voice: the path of the voice goes from finding it over sung patterns to songs', (await page.locator('.stop').count()) === 6 && (await raw('.stops')).includes('Your voice, found and in tune') && (await raw('.stops')).includes('Steps and leaps, sung') && /scale/i.test(await raw('.sidecards')), `${await page.locator('.stop').count()} stones · ${await raw('.stops')} · ${await raw('.sidecards')}`);
+      check('voice: the path of the voice goes from finding it over sung patterns to songs', (await page.locator('.stop').count()) === 6 && (await raw('.stops')).includes('Your voice, found and in tune') && (await raw('.stops')).includes('Steps and leaps, sung') && /scale/i.test(await skillStages(page)), `${await page.locator('.stop').count()} stones · ${await raw('.stops')} · ${await skillStages(page)}`);
       await page.goto(base + '?autostart#/stride');
       await page.waitForSelector('#brief');
       check('voice: Stepping stones with the voice: a sung “ta” on a note that changes every bar', (await text(page, '#brief')).includes('sung “ta”') && (await text(page, '#brief')).includes('The note changes at every bar line'), (await text(page, '#brief .how')).replace(/\s+/g, ' ').slice(0, 140));
 
-      // the whole app in German: the language switch at the top, kept
-      await page.goto(base + '?autostart#/');
-      await page.waitForSelector('.nav [data-lang="de"]');
-      await page.click('.nav [data-lang="de"]');
+      // the whole app in German: the language is chosen in the settings, and kept
+      await page.goto(base + '?autostart#/settings');
+      await page.waitForSelector('#lang');
+      await page.selectOption('#lang', 'de');
       await page.waitForFunction(() => document.documentElement.lang === 'de', null, { timeout: 4000 }).catch(() => undefined);
-      check('german: the switch at the top turns the app German', (await text(page, '.nav nav')).replace(/\s+/g, ' ') === 'Heute Songs Spiele Werkzeuge Grundlagen Fortschritt' && (await page.locator('.nav .gear').getAttribute('title')) === 'Einstellungen' && (await raw('[data-inst="voice"]')) === 'Stimme' && (await raw('h1')).startsWith('Heute') && /(Heutige Session|Weiter mit Schritt)/.test(await raw('#go')), `${await raw('.nav nav')} · ${await raw('[data-inst="voice"]')} · ${await raw('#go')}`);
+      await page.goto(base + '?autostart#/');
+      await page.waitForSelector('.plan');
+      check('german: the language chosen in the settings turns the app German', (await page.locator('.nav .places a').allTextContents()).map((t) => t.replace(/\d/g, '').trim()).join(' ') === 'Heute Lernen Songs Spiele Fortschritt' && (await page.locator('.nav .gear').getAttribute('title')) === 'Einstellungen' && (await raw('[data-inst="voice"]')) === 'Stimme' && (await raw('.herosheet .kick')).startsWith('Heute') && /(Heutige Session|Weiter mit Schritt)/.test(await raw('#go')), `${await raw('.nav nav')} · ${await raw('[data-inst="voice"]')} · ${await raw('#go')}`);
       await page.reload();
       await page.waitForSelector('.plan');
-      check('german: the language is kept', (await text(page, 'h1')).startsWith('Heute'), await text(page, 'h1'));
+      check('german: the language is kept', /^heute/i.test(await text(page, '.herosheet .kick')), await text(page, '.herosheet .kick'));
       await page.screenshot({ path: resolve(out, 'german-home.png') });
-      await page.click('[data-inst="guitar"]');
+      await pickInstrument(page, 'guitar');
       await page.waitForFunction(() => document.querySelector('[data-inst="guitar"]')?.getAttribute('aria-pressed') === 'true', null, { timeout: 4000 }).catch(() => undefined);
       check('german: the guitar plan in German', (await text(page, '.plan')).includes('Stimmen') && (await text(page, '.plan')).includes('Akkord-Check'), (await text(page, '.plan')).replace(/\s+/g, ' ').slice(0, 160));
       await page.goto(base + '?autostart#/song/scarborough-fair');

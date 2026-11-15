@@ -40,7 +40,7 @@ From one line the app works out the song's level, its piano version and, for a t
 
 To the app, for everybody: add a line to `src/music/songbook.ts` and open a pull request that names the published source you compared it with (see [Contributing](../CONTRIBUTING.md)). The song must be in the public domain in the USA and the EU.
 
-For yourself only: **Tools → Your own song** makes a chord progression of your own into a song (on the piano, a piece of chords); **Songs → Add a song from a tab** on the guitar, **Add a melody of your own** on the piano or with the voice. It is kept in your browser.
+For yourself only: **Songs → Your own song** makes a chord progression of your own into a song (on the piano, a piece of chords); **Songs → Add a song from a tab** on the guitar, **Add a melody of your own** on the piano or with the voice. It is kept in your browser.
 
 The exercises are in `src/music/exercises.ts`, the words of the songs to sing in `src/music/lyrics.ts` (one syllable per note, checked by the tests).
 

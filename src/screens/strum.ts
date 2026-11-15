@@ -60,15 +60,17 @@ export const strumTrainer: Screen = (root, [pid, stageParam, a, b], ctx?: Sessio
     `<b>${L('Strumming', 'Anschlagen')}</b> · ${esc(pattern.name)}`,
     `<div class="head">
        <svg id="cbox" class="chordfig" viewBox="0 0 230 210" role="img" aria-label="${L('The chord to hold', 'Der Akkord zum Halten')}"></svg>
-       <div class="say"><p class="eyebrow" id="eb"></p><h1 id="h1" aria-live="polite"></h1><p class="sub" id="sub"></p></div>
-       <div class="ladder" role="group" aria-label="${L('Steps', 'Schritte')}">${[L('Muted strings', 'Abgedämpft'), L('One chord', 'Ein Akkord'), L('With a change', 'Mit Wechsel')].map((r, i) => `<button class="rung" id="st${i}" aria-pressed="false"><b>${i + 1}</b><span>${r}</span></button>`).join('')}<p class="rungnote" id="rungnote"></p></div>
+       <div class="say"><p class="eyebrow" id="eb"></p><h1 id="h1" aria-live="polite"></h1><p class="sub" id="sub"></p><p class="rungnote" id="rungnote"></p></div>
      </div>
      <svg class="fit" id="pat" viewBox="0 0 1180 230" role="img" aria-label="${L('The pattern, two bars, read left to right: arrows down and up, the count under them', 'Das Muster, zwei Takte, von links nach rechts: Pfeile ab und auf, darunter die Zählzeiten')}"></svg>
      <div class="pats seg" role="group" aria-label="${L('Pattern', 'Muster')}">${STRUM_PATTERNS().map((p) => `<a href="#/strum/${p.id}" aria-current="${p.id === pattern.id}">${esc(p.name)}</a>`).join('')}</div>
      <div class="foot"><p class="fbk info" id="fbk"></p><p class="legend">${L('↓ down across all strings · ↑ up across the thin ones · • the hand passes in the air', '↓ ab über alle Saiten · ↑ auf über die dünnen · • die Hand geht in der Luft vorbei')}</p></div>`,
-    `<div class="grp"><button class="btn primary" id="go"><span>${L('Start', 'Starten')}</span> <kbd>${L('Space', 'Leertaste')}</kbd></button><button class="btn quiet" id="slower" aria-label="${L('Slower', 'Langsamer')}">−5 <kbd>−</kbd></button><b id="bpm"></b><button class="btn quiet" id="faster" aria-label="${L('Faster', 'Schneller')}">+5 <kbd>+</kbd></button>${nextStep(ctx)}</div>
+    `<div class="grp do"><button class="btn primary" id="go"><span>${L('Start', 'Starten')}</span> <kbd>${L('Space', 'Leertaste')}</kbd></button>${nextStep(ctx)}</div>
+     <div class="grp how"><span class="stepper"><button class="btn quiet" id="slower" title="${L('Slower by 5 (−)', 'Um 5 langsamer (−)')}" aria-label="${L('Slower', 'Langsamer')}">−</button><b id="bpm"></b><button class="btn quiet" id="faster" title="${L('Faster by 5 (+)', 'Um 5 schneller (+)')}" aria-label="${L('Faster', 'Schneller')}">+</button></span></div>
+     <div class="ladder" role="group" aria-label="${L('Steps', 'Schritte')}">${[L('Muted strings', 'Abgedämpft'), L('One chord', 'Ein Akkord'), L('With a change', 'Mit Wechsel')].map((r, i) => `<button class="rung" id="st${i}" aria-pressed="false" title="${r}"><b>${i + 1}</b><span>${r}</span></button>`).join('')}</div>
      <p class="auto">${L('The app hears when each stroke falls. Count out loud: it is what keeps the hand in time.', 'Die App hört, wann jeder Anschlag fällt. Zähl laut mit: Das hält die Hand im Takt.')}</p>`,
     ctx,
+    ['#/learn', L('Learn', 'Lernen')],
   );
 
   const say = (cls: string, html: string): void => {

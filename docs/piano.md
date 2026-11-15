@@ -44,7 +44,7 @@ The next step (**Pieces → Both hands together**, or the stage of that name bes
 ## Add your own
 
 - **Pieces → Add a melody of your own**: type note names, for example `E4 E4 F4 G4 | G4:2 F#4(3)`: `:2` makes a note twice as long, `(3)` gives it a finger.
-- **Tools → Your own song**: a chord progression of your own, made into a piece of chords to strike.
+- **Pieces → Your own song**: a chord progression of your own, made into a piece of chords to strike.
 
 ## The app's own piano
 

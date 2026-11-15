@@ -8,7 +8,7 @@
 
 ## What it is
 
-- **Three tracks: guitar, piano and voice.** Each has its own daily session of about a quarter of an hour (or five minutes, which count as fully), its own songs, games, tools, handbook and path. Switch at the top right.
+- **Three tracks: guitar, piano and voice.** Each has its own daily session of about a quarter of an hour (or five minutes, which count as fully), its own songs, games, tools, handbook and path. Switch at the top left, beside the name.
 - **The app leads.** Press Space and the session takes you through it: tune up, check today's chords string by string, a short game, two lines of a song. On the piano the app first adopts your piano's pitch; with the voice it first finds your range.
 - **Learning is calm.** One task at a time: first the app waits for every note, then you play with the click, then the whole song at full speed. Hear it first on every rung, loop a few bars, set the tempo in steps of 5 % from 25 % to 125 %, play over a soft backing (headphones), or play it as a performance and listen back to your recording, bar by bar.
 - **What you learned comes back.** A song played clean all through joins your repertoire and returns after 3, 10, 30, 90 and 180 days, two lines from cold; chords are confirmed again at growing gaps. **Progress** shows the path, your repertoire, and the course of every skill over the weeks.

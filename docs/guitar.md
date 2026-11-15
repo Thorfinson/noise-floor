@@ -46,11 +46,11 @@ The second level of these (backing, by ear, resting the hands, words, performanc
 - **Chord change** (`#/change/Em/Am`): three times there and back without a clock, with how the change is made, then one calm minute in which every clean change is counted. 30 clean changes a minute keep a song going; at 60 a change no longer needs practice.
 - **Small shapes.** F♯m and Bm also come as small shapes on four strings, the step before the full barre (**Settings → Small shapes for barre chords**). Songs show them until the full barre has rung clean.
 - **Stage check.** When all eight open chords ring clean, the learning path offers a check: all eight in a row, from memory.
-- **Chord library** (`#/chords`, under **Tools**): every shape the app knows, in groups (open, sevenths, colours, small shapes, full barre, power chords), with your level for each; pick one to check it.
+- **Chord library** (`#/chords`, in the toolbox: **Q** → **Chords**): every shape the app knows, in groups (open, sevenths, colours, small shapes, full barre, power chords), with your level for each; pick one to check it.
 
 ## The strumming hand
 
-**Tools → Strumming** (`#/strum/folk`): a pattern of strokes down and up, read left to right, with the count under it ("1 + 2 + …"), played to the click in three steps: on muted strings, counting out loud; on one chord the left hand already knows; with a change of chord at the bar line. Two clean takes lead to the next step, then to a faster tempo. The app hears when each stroke falls, not which way the hand moved: the arrows are there to be followed, the timing is what is judged. The patterns: every beat, eighths, down down-up, down down-up up-down-up, three-four, six-eight, sixteenths.
+**Learn → The strumming hand → Strumming** (`#/strum/folk`): a pattern of strokes down and up, read left to right, with the count under it ("1 + 2 + …"), played to the click in three steps: on muted strings, counting out loud; on one chord the left hand already knows; with a change of chord at the bar line. Two clean takes lead to the next step, then to a faster tempo. The app hears when each stroke falls, not which way the hand moved: the arrows are there to be followed, the timing is what is judged. The patterns: every beat, eighths, down down-up, down down-up up-down-up, three-four, six-eight, sixteenths.
 
 ## Beyond open chords
 
@@ -65,25 +65,25 @@ In the song list they are tagged "exercise" and have a filter of their own. The 
 
 ## By ear
 
-**Tools → By ear** (`#/ear`): the app plays, you play it back, without looking. *Play it back*: two to four notes from the song you are learning (longer as the ear gets better). *Which chord?*: one of the chords that ring for you, told apart by playing it. *Sing it, then play it*: the motif sung first, then found on the instrument. A round counts how many were found at the first try, without asking to see them (T).
+**Learn → By ear** (`#/ear`): the app plays, you play it back, without looking. *Play it back*: two to four notes from the song you are learning (longer as the ear gets better). *Which chord?*: one of the chords that ring for you, told apart by playing it. *Sing it, then play it*: the motif sung first, then found on the instrument. A round counts how many were found at the first try, without asking to see them (T).
 
 ## Playing freely and your own song
 
-- **Tools → Play freely** (`#/jam`): the minor pentatonic at the fifth fret, over a drone on A if you like (headphones). Whatever you play, the app shows on the fretboard and in a row, blue in the scale, amber outside it. No score, no clock.
-- **Tools → Your own song** (`#/compose`): a chord progression of your own, chord by chord (the ones that ring for you first), a strumming or picking pattern, a tempo. **Hear it** plays it without the microphone; **Keep it and learn it** makes it a song like any other.
+- **Learn → Riffs, power chords, the pentatonic → Play freely** (`#/jam`): the minor pentatonic at the fifth fret, over a drone on A if you like (headphones). Whatever you play, the app shows on the fretboard and in a row, blue in the scale, amber outside it. No score, no clock.
+- **Songs → Your own song** (`#/compose`): a chord progression of your own, chord by chord (the ones that ring for you first), a strumming or picking pattern, a tempo. **Hear it** plays it without the microphone; **Keep it and learn it** makes it a song like any other.
 - **Songs → Add a song from a tab**: paste a text tab (six lines, bars split by `|`, numbers in one column are played together; spacing can be read as rhythm). It gets a level like every other song.
 
 ## Sing and play
 
-**Tools → Sing and play** (`#/singalong/…`, also from a song's **More**): the chords of a song over its words, four bars a line, with the click counted in; under headphones the melody to sing to, or a backing. The app listens to the guitar only, and a bar turns green when its chord was heard in it. Nothing is measured: on real recordings with a singer mixed in as loud as the guitar, the chord of 94 % of the stretches was still heard, but 13 % of the strums were covered by the voice (5 % without it). Seven songs: Oh! Susanna, Skip to My Lou, Auld Lang Syne, Jingle Bells, La Cucaracha, Drunken Sailor and Amazing Grace.
+**Songs → Sing and play** (`#/singalong/…`, also from a song's **More**): the chords of a song over its words, four bars a line, with the click counted in; under headphones the melody to sing to, or a backing. The app listens to the guitar only, and a bar turns green when its chord was heard in it. Nothing is measured: on real recordings with a singer mixed in as loud as the guitar, the chord of 94 % of the stretches was still heard, but 13 % of the strums were covered by the voice (5 % without it). Seven songs: Oh! Susanna, Skip to My Lou, Auld Lang Syne, Jingle Bells, La Cucaracha, Drunken Sailor and Amazing Grace.
 
 ## Reading rhythm
 
-**Tools → Reading rhythm** (`#/rhythm`): two bars of 4/4 in note values on one line, with the count under each note, played with the click on muted strings: quarters and halves, eighths, rests, dotted quarters, off the beat, sixteenths. Two clean takes bring the next rhythm, every rhythm of a level clean the next level. The app hears when each stroke falls, as in the strumming trainer.
+**Learn → First things → Reading rhythm** (`#/rhythm`): two bars of 4/4 in note values on one line, with the count under each note, played with the click on muted strings: quarters and halves, eighths, rests, dotted quarters, off the beat, sixteenths. Two clean takes bring the next rhythm, every rhythm of a level clean the next level. The app hears when each stroke falls, as in the strumming trainer.
 
 ## Hammer-on and pull-off
 
-**Tools → Hammer-on and pull-off** (`#/slur`): six patterns on the G and B strings, the slurs drawn as arcs with h and p over the tab. The app follows the pitch and waits until each note sounds; a hammer-on struck too softly, or a pull-off that does not pluck the string, gives no second note, which is the commonest fault. Tested on real recordings: the pitch reached the note of 21 slides of 21 on three electric guitars, and the second of recorded notes joined without a new attack 143 times of 144. Whether a note was hammered or plucked again the app cannot hear (an onset is reported either way): a hammer-on keeps one sound going, and the ear can tell.
+**Learn → Single notes → Hammer-on and pull-off** (`#/slur`): six patterns on the G and B strings, the slurs drawn as arcs with h and p over the tab. The app follows the pitch and waits until each note sounds; a hammer-on struck too softly, or a pull-off that does not pluck the string, gives no second note, which is the commonest fault. Tested on real recordings: the pitch reached the note of 21 slides of 21 on three electric guitars, and the second of recorded notes joined without a new attack 143 times of 144. Whether a note was hammered or plucked again the app cannot hear (an onset is reported either way): a hammer-on keeps one sound going, and the ear can tell.
 
 ## Capo and tunings
 

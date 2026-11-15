@@ -17,7 +17,7 @@ npm start
 
 ## Finding your way
 
-At the top: **Today**, **Songs** (or **Pieces**), **Games**, **Tools**, **Basics** (the handbook) and **Progress**; at the right the gear of the **Settings**, **Guitar**, **Piano** or **Voice**, and **EN** or **DE** (at first the app follows the language of your browser). **Progress** has three tabs: **Path** (the map of stages), **Repertoire** (what you can play, and when it comes back) and **Over the weeks** (the days you played, and a line for each skill). **Tools** has the tuner, a metronome, the chord library, a drone, strumming, playing by ear, playing freely, and your own songs.
+Beside the name at the top left, the instrument: **Guitar**, **Piano** or **Voice**. Then five places, also on the number keys 1 to 5: **Today**, **Learn** (the path as a map, and every skill with its pages of the handbook, what to practise it with and your level), **Songs** (or **Pieces**; your repertoire is a tab there), **Games** and **Progress** (the weeks, and everything measured). At the right: **Tools** (or the key **Q**), a toolbox that opens over any page, even in the middle of a song, with the tuner, a metronome, a drone, the chord library and the hearing check; **Esc** goes back to where you were. Then the gear of the **Settings**, where the language is chosen (at first the app follows the language of your browser). On a phone the five places are at the bottom of the screen.
 
 ## The first session
 
@@ -27,7 +27,7 @@ On the start page, **Today** shows the plan for the day: five or six steps, abou
 
 **Your own plan.** Under the plan, **Change the plan** puts a box before every step: leave out what you do not need, and it stays out every day until you bring it back. Before you begin a new song, the start page offers it with two others to choose from (of another kind, or one whose chords all ring already), each with what it asks; after a song is done the summary does the same.
 
-The first time a step comes up, a short page of the handbook explains it, with a picture and sometimes something to try while the app listens. All of them are under **Basics** too.
+The first time a step comes up, a short page of the handbook explains it, with a picture and sometimes something to try while the app listens. All of them are under **Learn** too, with the skill they belong to, and in the whole handbook (`#/basics`).
 
 | | Guitar | Piano | Voice |
 |---|---|---|---|
@@ -49,8 +49,8 @@ The start page counts the week (Monday to Sunday) against a goal of days, four u
 
 1. Put the laptop or microphone within about a metre of the instrument. For an electric guitar, the microphone needs to hear the amp or the unplugged strings.
 2. **Guitar:** the session starts with the tuner. **Piano:** the session starts by measuring the A above middle C, because an old piano is rarely at 440 Hz. **Voice:** the first session finds your range.
-3. Beside the level meter at the top right, every screen that listens shows what it heard last ("Heard: Am"): if the app gets something wrong, you see whether it was the hands or the ears.
-4. **Once: the hearing check** (**Tools → Hearing check**, or **Settings**): two seconds of quiet, then the six open strings, four chords and a muted hit (on the piano five keys and three chords, with the voice five notes). The app says how many it heard right, how loud your room and your instrument reach the microphone, how far out of tune it is, and what to change; **Save the check as files** puts the recording and a report in your downloads folder, to send to whoever helps. Run it where and as you play, also on a phone or a tablet; or record the same things with another device and load the recording with **Check a recording**.
+3. At the top right, every screen that listens shows what it heard last ("Heard: Am"): if the app gets something wrong, you see whether it was the hands or the ears.
+4. **Once: the hearing check** (the toolbox, **Q** → **Hearing check**, or **Settings**): two seconds of quiet, then the six open strings, four chords and a muted hit (on the piano five keys and three chords, with the voice five notes). The app says how many it heard right, how loud your room and your instrument reach the microphone, how far out of tune it is, and what to change; **Save the check as files** puts the recording and a report in your downloads folder, to send to whoever helps. Run it where and as you play, also on a phone or a tablet; or record the same things with another device and load the recording with **Check a recording**.
 5. **Reading from the instrument.** In a window of 1440 by 900 or more, the fret numbers and chord names of a lesson are drawn about 30 pixels high, the size display guidelines ask for numbers and names that change and are read at a glance from a metre. If they are too small from where you sit, **Settings → Size of the type** makes them, the instruction and what the app says larger on the screens you play at, while the buttons keep their size so that the music keeps its room; everywhere else the whole page grows. A small window gives the music less room: full screen (F11) helps.
 6. If nothing reacts, see [Troubleshooting](troubleshooting.md).
 
