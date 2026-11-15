@@ -1,5 +1,5 @@
 /** Reading the user's own material: a guitar tab pasted as text, and a melody typed as note names. */
-import { L } from '../core/i18n';
+import { L, lang, type Lang } from '../core/i18n';
 import type { Bar, PianoNote, TabNote } from './content';
 
 export interface TabImport {
@@ -11,11 +11,14 @@ export interface TabImport {
 
 const MAX_FRET = 24;
 
-/** A line of a tab: an optional string name, then mostly dashes, fret numbers and bar lines. */
+/** A line of a tab: an optional string name (a German tab calls the B string H), then mostly dashes, fret numbers and bar lines. */
 function tabBody(line: string): string | null {
-  const m = /^\s*[A-Ga-g]?[#b]?\s*([|:\-].*)$/.exec(line);
+  const m = /^\s*[A-Ha-h]?[#b]?\s*([|:\-].*)$/.exec(line);
   if (!m) return null;
-  const body = m[1].replace(/\s+$/, '');
+  let body = m[1].replace(/\s+$/, '');
+  // what follows the last bar line without a dash is a remark ("| x2", "| repeat"), not notes
+  const end = body.lastIndexOf('|');
+  if (end >= 0 && !body.slice(end + 1).includes('-')) body = body.slice(0, end + 1);
   if ((body.match(/-/g)?.length ?? 0) < 3) return null;
   return /^[-0-9|:hpbrstvxHPBRSTVX/\\~()^.*<>= ]+$/.test(body) ? body : null;
 }
@@ -115,11 +118,22 @@ export interface NotesImport {
 const PITCH: Record<string, number> = { c: 0, d: 2, e: 4, f: 5, g: 7, a: 9, b: 11, h: 11 };
 
 /**
+ * How a melody is typed: the line over the box it is typed into (src/screens/library.ts). It says how B is read,
+ * which German and English name differently.
+ */
+export const notesHelp = (): string =>
+  L(
+    'Note names with their octave, left to right: <b>E4 E4 F4 G4</b>. A new line starts a new phrase. <b>F#4</b> and <b>Bb3</b> are black keys, <b>C4:2</b> is twice as long, <b>E4(3)</b> is played with finger 3. <b>H</b> is read as B, as German writes it; with the app in German, a plain <b>B</b> is B♭.',
+    'Notennamen mit ihrer Oktave, von links nach rechts: <b>E4 E4 F4 G4</b>. Eine neue Zeile beginnt eine neue Phrase. <b>F#4</b> und <b>B3</b> (oder <b>Bb3</b>) sind schwarze Tasten, <b>H3</b> ist die weiße Taste rechts daneben, <b>C4:2</b> ist doppelt so lang, <b>E4(3)</b> wird mit Finger 3 gespielt.',
+  );
+
+/**
  * Reads a melody typed as note names: "E4 E4 F4 G4 | G4 F4 E4 D4". A new line or "|" starts a new phrase.
  * Sharps and flats are written F#4 and Bb3, a length after a colon (C4:2 is twice as long), a finger in
- * brackets (E4(3)). An octave that is left out is taken from the note before.
+ * brackets (E4(3)). An octave that is left out is taken from the note before. H is always B natural, Bb and B♭
+ * always B flat; a plain B is read as the language of the app names it: B natural in English, B flat in German.
  */
-export function parseNotes(text: string): NotesImport {
+export function parseNotes(text: string, language: Lang = lang()): NotesImport {
   const problems: string[] = [];
   const phrases: PianoNote[][] = [];
   let octave = 4;
@@ -133,7 +147,10 @@ export function parseNotes(text: string): NotesImport {
         continue;
       }
       if (m[3]) octave = Number(m[3]);
-      const midi = 12 * (octave + 1) + PITCH[m[1].toLowerCase()] + (m[2] === '#' || m[2] === '♯' ? 1 : m[2] ? -1 : 0);
+      const letter = m[1].toLowerCase();
+      // in German a B without a sign is B flat (B natural is H)
+      const pitch = letter === 'b' && !m[2] && language === 'de' ? 10 : PITCH[letter];
+      const midi = 12 * (octave + 1) + pitch + (m[2] === '#' || m[2] === '♯' ? 1 : m[2] ? -1 : 0);
       if (midi < 38 || midi > 96) {
         if (problems.length < 6) problems.push(L(`${token} is outside the range the app listens to (D2 to C7).`, `${token} liegt außerhalb des Bereichs, den die App hört (D2 bis C7).`));
         continue;

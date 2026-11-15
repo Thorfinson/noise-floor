@@ -32,7 +32,7 @@ export const LYRICS: Record<string, string[]> = {
   'haenschen-klein~voice': ['Häns- chen klein ging al- lein', 'in die wei- te Welt hin- ein', 'Stock und Hut steht ihm gut', 'ist gar wohl- ge- mut', 'A- ber Mut- ter wei- net sehr', 'hat ja nun kein Häns- chen mehr', 'Da be- sinnt sich das Kind', 'eilt nach Haus ge- schwind'],
   'kuckuck~voice': ['Ku- ckuck, Ku- ckuck', "ruft's aus dem Wald", 'Las- set uns sin- gen', 'tan- zen und sprin- gen', 'Früh- ling, Früh- ling', 'wird es nun bald'],
   'au-clair~voice': ['Au clair de la lu- ne', 'mon a- mi Pier- rot', 'Prê- te- moi ta plu- me', 'pour é- crire un mot', 'Ma chan- delle est mor- te', "je n'ai plus de feu", 'Ou- vre- moi ta por- te', "pour l'a- mour de Dieu"],
-  'amazing-grace-piano~voice': ['A- ma- zing _ grace, how sweet the sound', 'that saved a _ wretch like me'],
+  'amazing-grace-piano~voice': ['A- ma- zing _ grace, how sweet the sound', 'that saved a _ wretch like me!', 'I once _ was _ lost, but now _ am _ found,', 'was blind, but _ now I see.'],
   'auld-lang-syne~voice': ['Should auld ac- quain- tance be for- got, and', 'ne- ver brought to mind? Should', 'auld ac- quain- tance be for- got, and', "days o' auld lang syne"],
   'jingle-bells~voice': ['Jin- gle bells, jin- gle bells', 'jin- gle all the way', 'Oh what fun it is to ride in a', 'one- horse o- pen sleigh, hey!', 'Jin- gle bells, jin- gle bells', 'jin- gle all the way', 'Oh what fun it is to ride in a', 'one- horse o- pen sleigh'],
   'skip-to-my-lou~voice': ['Lou, Lou, skip to my Lou', 'Lou, Lou, skip to my Lou', 'Lou, Lou, skip to my Lou', 'Skip to my Lou, my dar- ling'],

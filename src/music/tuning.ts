@@ -21,7 +21,7 @@ export const TUNINGS = (): Tuning[] => [
   { id: 'standard', name: L('Standard: E A D G B E', 'Standard: E A D G H E'), strings: [0, 0, 0, 0, 0, 0], lessons: true },
   { id: 'half', name: L('Half a step down: E♭ A♭ D♭ G♭ B♭ E♭', 'Einen Halbton tiefer: Es As Des Ges B Es'), strings: [-1, -1, -1, -1, -1, -1], lessons: true },
   { id: 'whole', name: L('A whole step down: D G C F A D', 'Einen Ganzton tiefer: D G C F A D'), strings: [-2, -2, -2, -2, -2, -2], lessons: true },
-  { id: 'dropd', name: 'Drop D: D A D G B E', strings: [-2, 0, 0, 0, 0, 0], lessons: false },
+  { id: 'dropd', name: L('Drop D: D A D G B E', 'Drop D: D A D G H E'), strings: [-2, 0, 0, 0, 0, 0], lessons: false },
   { id: 'openg', name: L('Open G: D G D G B D', 'Open G: D G D G H D'), strings: [-2, -2, 0, 0, 0, -2], lessons: false },
   { id: 'opend', name: L('Open D: D A D F♯ A D', 'Open D: D A D Fis A D'), strings: [-2, 0, 0, -1, -2, -2], lessons: false },
   { id: 'dadgad', name: 'DADGAD', strings: [-2, 0, 0, 0, -2, -2], lessons: false },
