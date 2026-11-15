@@ -39,6 +39,17 @@ describe('a song as it sounds, to hear before learning it', () => {
     expect(line2.samples.length).toBeLessThan(whole.samples.length / 2);
   });
 
+  it('keeps an upbeat longer than a beat, from the start and before a later line', () => {
+    const saints = findSong('saints-chords');
+    const sm = songMaterial(saints);
+    const st = tuneOf(saints)!.melody;
+    const lead = -Math.min(...st.map((n) => n.u));
+    expect(lead).toBeGreaterThan(1.5);
+    const whole = songSound(sm, { sr: 8000, speed: 1, instrument: false, tune: st });
+    // the sound begins early enough for the whole upbeat ("Oh when the")
+    expect(whole.t0).toBeGreaterThanOrEqual(lead * sm.noteDur);
+  });
+
   it('can leave out the tune or the chords', () => {
     const sr = 16000;
     const quiet = (b: Float32Array) => b.every((x) => x === 0);

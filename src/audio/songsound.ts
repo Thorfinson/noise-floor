@@ -50,8 +50,12 @@ export function songSound(m: Material, o: SongSoundOpts): SongSound {
   const [first, last] = o.lines ?? [0, m.lines.length - 1];
   const from = starts[first];
   const to = starts[last] + m.lines[last].units;
-  // the tune's notes in those lines, and the upbeat that leads into the first of them (up to a beat before it)
-  const tune = (o.tune ?? []).filter((n) => n.u >= from - m.beat - 1e-6 && n.u < to - 1e-6);
+  // the tune's notes in those lines, and the upbeat that leads into the first of them: from the start of the
+  // song, the whole of the song's upbeat (three beats for the Saints); before a later line, as much as that
+  // upbeat lasts, at least a beat
+  const all = o.tune ?? [];
+  const upbeat = Math.max(m.beat, -Math.min(0, ...all.map((n) => n.u)));
+  const tune = all.filter((n) => (first === 0 || n.u >= from - upbeat - 1e-6) && n.u < to - 1e-6);
   // an upbeat of the tune before the first line asked for: the sound begins early enough to hold it
   const lead = Math.max(0, from - Math.min(from, ...tune.map((n) => n.u)));
   const ring = m.piano ? 1.2 : 1.8;
