@@ -703,13 +703,17 @@ const sections: [string, () => Promise<void>][] = [
       check('song page: playing the song lights up its words and chords as they come', lit.now === 1 && lit.sung >= 1 && lit.chord === 'G', JSON.stringify(lit));
       await page.click('#sp-play');
       await page.screenshot({ path: resolve(out, 'song-page.png'), fullPage: true });
-      // a song the app has no tune for says so, and offers a recording to search for
+      // a song without words has its tune written for it (Tom Dooley); one with no tune at all (the four-chord
+      // exercise) says so, and offers a recording to search for
       await page.goto(base + '?autostart#/songs/tom-dooley');
+      await page.waitForSelector('.songp');
+      check('song page: a song without words is heard with its tune too', (await page.locator('#sp-tune').count()) === 1 && (await text(page, '.sp-listen .note')).includes('tune and the chords'), await text(page, '.sp-listen .note'));
+      await page.goto(base + '?autostart#/songs/four-chords');
       await page.waitForSelector('.songp');
       check('song page: without a tune it says so, plays the chords, and offers a recording to search for', (await text(page, '.sp-note')).includes('no tune for this song yet') && (await page.locator('.sp-note a[target="_blank"][rel~="noopener"]').count()) === 1 && (await page.locator('#sp-tune').count()) === 0, await text(page, '.sp-note'));
       await page.click('#sp-start');
-      await page.waitForFunction(() => location.hash.startsWith('#/song/tom-dooley'), null, { timeout: 4000 }).catch(() => undefined);
-      check('song page: its button opens the lesson', (await page.evaluate(() => location.hash)).startsWith('#/song/tom-dooley'), await page.evaluate(() => location.hash));
+      await page.waitForFunction(() => location.hash.startsWith('#/song/four-chords'), null, { timeout: 4000 }).catch(() => undefined);
+      check('song page: its button opens the lesson', (await page.evaluate(() => location.hash)).startsWith('#/song/four-chords'), await page.evaluate(() => location.hash));
       await page.goto(base + '?autostart#/songs');
       await page.waitForSelector('.lib');
       await page.fill('#q', 'scarborough');

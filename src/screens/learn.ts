@@ -355,7 +355,7 @@ function lesson(root: HTMLElement, m: Material, wanted: string | undefined, ctx?
   /** The top bar: the line on show (the title is the way out, on the left), its part, who the song is by, the capo. */
   const where = (li: number): void => {
     const part = m.partOf(m.lines[li].bars[0]);
-    $('#where', root).innerHTML = `<b>${L(`${cap(m.unit)} ${li + 1} of ${n}`, `${unitDe(m)} ${li + 1} von ${n}`)}</b>${part && part !== 'All' ? ` · ${esc(part.toLowerCase())}` : ''}${m.by ? ` · ${esc(m.by)}` : ''}${!m.piano && guitarSetup() ? ` · ${guitarSetup()}` : ''}`;
+    $('#where', root).innerHTML = `<b>${L(`${cap(m.unit)} ${li + 1} of ${n}`, `${unitDe(m)} ${li + 1} von ${n}`)}</b>${part && part !== 'All' ? ` · ${esc(part.toLowerCase())}` : ''}${m.by ? ` · ${esc(m.by === 'Traditional' ? L('Traditional', 'Traditionell') : m.by)}` : ''}${!m.piano && guitarSetup() ? ` · ${guitarSetup()}` : ''}`;
   };
   /**
    * A model to listen to before playing: the line as it should sound, a little slower than full speed.
