@@ -103,14 +103,29 @@ function gate(root: HTMLElement, then: () => void): () => void {
   root.innerHTML = `<div class="gate">
     <p class="kick">Noise Floor</p>
     <h1>${L('Ready to listen?', 'Bereit zum Zuhören?')}</h1>
-    <p id="gmsg">${store.settings.mic ? (store.settings.instrument === 'voice' ? L('The app needs your microphone to hear your voice. Nothing is sent anywhere; a take you sing to its end is kept in this browser for you to listen back to.', 'Die App braucht dein Mikrofon, um deine Stimme zu hören. Nichts wird irgendwohin geschickt; einen bis zum Ende gesungenen Durchgang behält dieser Browser für dich zum Anhören.') : L('The app needs your microphone to hear your instrument. Nothing is sent anywhere; a take you play to its end is kept in this browser for you to listen back to.', 'Die App braucht dein Mikrofon, um dein Instrument zu hören. Nichts wird irgendwohin geschickt; einen bis zum Ende gespielten Durchgang behält dieser Browser für dich zum Anhören.')) : L('The microphone is switched off in the settings. You can use the practice instrument.', 'Das Mikrofon ist in den Einstellungen ausgeschaltet. Du kannst das Übungsinstrument benutzen.')}</p>
+    <p id="gmsg">${engine.lost ? L('The microphone stopped: it was unplugged, or another program took it over. Check it, then start listening again.', 'Das Mikrofon ist verstummt: Es wurde ausgesteckt, oder ein anderes Programm hat es übernommen. Prüf es und starte dann das Zuhören neu.') : store.settings.mic ? (store.settings.instrument === 'voice' ? L('The app needs your microphone to hear your voice. Nothing is sent anywhere; a take you sing to its end is kept in this browser for you to listen back to.', 'Die App braucht dein Mikrofon, um deine Stimme zu hören. Nichts wird irgendwohin geschickt; einen bis zum Ende gesungenen Durchgang behält dieser Browser für dich zum Anhören.') : L('The app needs your microphone to hear your instrument. Nothing is sent anywhere; a take you play to its end is kept in this browser for you to listen back to.', 'Die App braucht dein Mikrofon, um dein Instrument zu hören. Nichts wird irgendwohin geschickt; einen bis zum Ende gespielten Durchgang behält dieser Browser für dich zum Anhören.')) : L('The microphone is switched off in the settings. You can use the practice instrument.', 'Das Mikrofon ist in den Einstellungen ausgeschaltet. Du kannst das Übungsinstrument benutzen.')}</p>
     <button class="btn primary big" id="gstart">${L('Start listening', 'Zuhören starten')} <kbd>${L('Space', 'Leertaste')}</kbd></button>
   </div>`;
   let busy = false;
+  // the player went elsewhere while the browser asked about the microphone: nothing of this page may come back
+  let left = false;
+  // the microphone could not be opened: from then on the button and the keys go on with the practice instrument
+  let without = false;
   const start = async (): Promise<void> => {
-    if (busy) return;
+    if (busy || left) return;
+    if (without) return then();
     busy = true;
-    await engine.start({ mic: store.settings.mic, deviceId: store.settings.deviceId || undefined });
+    try {
+      await engine.start({ mic: store.settings.mic, deviceId: store.settings.deviceId || undefined });
+    } finally {
+      busy = false;
+    }
+    if (left) return;
+    if (!engine.running) {
+      // nothing runs, not even the practice instrument: say why; the button tries again
+      $('#gmsg', root).textContent = engine.startError;
+      return;
+    }
     if (store.settings.mic && !engine.micOn) {
       // no microphone: say so, and carry on with the practice instrument so the app is still usable
       store.settings.practiceInstrument = true;
@@ -118,27 +133,49 @@ function gate(root: HTMLElement, then: () => void): () => void {
         `The microphone could not be opened (${engine.micError || 'no device'}). The practice instrument is switched on instead; check the browser's microphone permission to use your own.`,
         `Das Mikrofon ließ sich nicht öffnen (${engine.micError || 'kein Gerät'}). Stattdessen ist das Übungsinstrument eingeschaltet; prüfe die Mikrofon-Erlaubnis des Browsers, um dein eigenes zu benutzen.`,
       );
-      $('#gstart', root).textContent = L('Continue', 'Weiter');
-      $('#gstart', root).onclick = then;
-      busy = false;
+      $('#gstart', root).innerHTML = `${L('Continue', 'Weiter')} <kbd>${L('Space', 'Leertaste')}</kbd>`;
+      without = true;
       return;
     }
     then();
   };
   $('#gstart', root).onclick = () => void start();
-  return keys({ ' ': () => void start(), Enter: () => void start() });
+  const stopKeys = keys({ ' ': () => void start(), Enter: () => void start() });
+  return () => {
+    left = true;
+    stopKeys();
+  };
 }
+
+/** On a screen that is played at, with the listener: a microphone that stops there sends the player back to the gate. */
+let listening = false;
+engine.onLost = () => {
+  if (listening) route();
+};
 
 function route(): void {
   stopAllLater();
   countPlaying();
   cleanup?.();
   cleanup = undefined;
-  const parts = location.hash.replace(/^#\/?/, '').split('/').filter(Boolean).map(decodeURIComponent);
-  const r = routes[parts[0] ?? ''] ?? routes[''];
+  listening = false;
+  const parts = location.hash
+    .replace(/^#\/?/, '')
+    .split('/')
+    .filter(Boolean)
+    .map((p) => {
+      // a link with a broken %-escape is taken as it stands, rather than leaving the page empty
+      try {
+        return decodeURIComponent(p);
+      } catch {
+        return p;
+      }
+    });
+  // only the routes themselves: "toString" or "constructor" in the address is no page
+  const key = Object.hasOwn(routes, parts[0] ?? '') ? (parts[0] ?? '') : '';
+  const r = routes[key];
   document.body.dataset.mode = r.mode;
   // an overview page gets the main navigation above it; one introduction on its own is a page to work through
-  const key = routes[parts[0] ?? ''] ? (parts[0] ?? '') : '';
   const titles: Record<string, string> = {
     '': L('Today', 'Heute'),
     progress: L('Path', 'Weg'),
@@ -185,13 +222,14 @@ function route(): void {
   root.innerHTML = '';
   scrollTo(0, 0);
   // reading needs no microphone: only what is played at waits for it
-  if (r.audio && !overview && !engine.running) {
+  if (r.audio && !overview && (!engine.running || engine.lost)) {
     cleanup = gate(root, route);
     return;
   }
   if (!overview) {
     playingSince = performance.now();
     cleanup = r.screen(root, parts.slice(1));
+    listening = r.audio;
     return;
   }
   const inst = store.settings.instrument;

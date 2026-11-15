@@ -215,7 +215,8 @@ export const droneTool: Screen = (root) => {
   );
   const show = (): void => void ($('#dname', root).textContent = `${NOTE_NAMES[root12]}${fifth ? ` + ${NOTE_NAMES[(root12 + 7) % 12]}` : ''}`);
   const sound = (): void => {
-    if (on) engine.drone(fifth ? [base(), base() + 7] : [base()], 0.4);
+    // the note named, at the tuning reference: not moved by a capo or a lowered tuning the last lesson left in the listener
+    if (on) engine.drone(fifth ? [base(), base() + 7] : [base()], 0.4, store.settings.instrument === 'piano' ? store.settings.pianoA4 : store.settings.a4);
   };
   const toggle = (): void => {
     on = !on;
