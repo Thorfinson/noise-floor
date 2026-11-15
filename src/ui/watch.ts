@@ -12,9 +12,9 @@
  *
  * Nothing in here decides anything: the rules are in game/run.ts.
  */
-import { LAND_Y, Run, type Boss, type Foe } from '../game/run';
+import { LAND_Y, Run, SLOTS, type Boss, type Foe } from '../game/run';
 import { L } from '../core/i18n';
-import { blot, clamp, cloudShape, css, ease, finish, grain, hash, lerp, mist, mix, noise, painted, pigment, prng, rgb, rough, roundRect, shape, Sparks, Surface, TAU, Tints, wash, type Pt, type RGB } from './scene';
+import { BAD, blot, calm, clamp, cloudShape, css, ease, GLOW, GOLD, hash, lerp, mist, mix, MONO, noise, NOW, painted, PAPER, paperFinish, petals, prng, rgbs, rough, roundRect, SANS, shape, Sparks, stain, Surface, TAU, Tints, wash, type Pt, type RGB } from './scene';
 
 /** An hour of the evening: a handful of colours, and what is in the sky. */
 interface Hour {
@@ -45,20 +45,27 @@ interface Hour {
   night: boolean;
 }
 
-const hour = (c: string[], cover: number, body: Hour['body'], extra: Partial<Hour> = {}): Hour => {
-  const [paper, skyA, skyB, disc, ring, far, mid, near, seaA, seaB, line, dark, accent] = c.map(rgb);
-  return { paper, skyA, skyB, cover, disc, ring, body, far, mid, near, seaA, seaB, line, dark, accent, stars: 0, rain: 0, aurora: 0, night: false, ...extra };
-};
+/** The colours of an hour by name, as they are written: '#f8efe6'. */
+type HourColours = Record<'paper' | 'skyA' | 'skyB' | 'disc' | 'ring' | 'far' | 'mid' | 'near' | 'seaA' | 'seaB' | 'line' | 'dark' | 'accent', string>;
+
+const hour = (c: HourColours, cover: number, body: Hour['body'], extra: Partial<Hour> = {}): Hour => ({ ...rgbs(c), cover, body, stars: 0, rain: 0, aurora: 0, night: false, ...extra });
 
 /** Rose evening, amber, teal dusk, indigo night, storm, the darkest hour with its northern lights, and the dawn of a run that was won. */
 const HOURS: Hour[] = [
-  hour(['#f8efe6', '#f3c3c0', '#f9dccb', '#fffaf2', '#f4a99c', '#e9b7b4', '#d58a92', '#a94f63', '#f4d2c9', '#e0959e', '#fffaf2', '#4a2233', '#c8455a'], 0.5, 'sun'),
-  hour(['#f9efdc', '#f6cf98', '#f3b488', '#fff8e6', '#ee9a5c', '#ecc294', '#d98c5f', '#a04f3c', '#f7d9ac', '#e39a6c', '#fffaf0', '#4a2a26', '#b8492f'], 0.6, 'sun'),
-  hour(['#eef3ee', '#bfdcd6', '#8fc0be', '#fdfbf4', '#86b8ba', '#9cc3c4', '#5f9aa0', '#2c6676', '#b9d8d4', '#64a0a6', '#f6fbf8', '#173a47', '#e0745c'], 0.72, 'moon', { stars: 0.4 }),
-  hour(['#e3e8f3', '#8498c8', '#4d5f9e', '#fbfbf6', '#b3c1e6', '#6a7db4', '#3c4b88', '#212b5e', '#7a8ec0', '#384784', '#eef2ff', '#131a3f', '#f0c26a'], 0.94, 'moon', { stars: 1, night: true }),
-  hour(['#e4e2ea', '#9a97b4', '#646180', '#e9e8f0', '#8d8aa8', '#77748f', '#4f4c6c', '#2b2945', '#8a87a4', '#444262', '#f0eff6', '#1c1b30', '#d9c06a'], 0.94, 'none', { rain: 1, night: true }),
-  hour(['#dbe9e8', '#2f627c', '#1d4160', '#f4fbf6', '#7fd0c0', '#2f5c74', '#1c4058', '#0f2639', '#30647a', '#153348', '#d9fff0', '#0a1c2c', '#9ff0d0'], 0.96, 'moon', { stars: 1, aurora: 1, night: true }),
-  hour(['#fbf3e4', '#fddfa8', '#f7c29e', '#fffdf2', '#f4aa5e', '#dbc4d8', '#b39ac4', '#7a659f', '#fbdfb6', '#eda888', '#ffffff', '#3a2f5a', '#e2543c'], 0.55, 'sun'),
+  // the rose evening
+  hour({ paper: '#f8efe6', skyA: '#f3c3c0', skyB: '#f9dccb', disc: '#fffaf2', ring: '#f4a99c', far: '#e9b7b4', mid: '#d58a92', near: '#a94f63', seaA: '#f4d2c9', seaB: '#e0959e', line: '#fffaf2', dark: '#4a2233', accent: '#c8455a' }, 0.5, 'sun'),
+  // amber
+  hour({ paper: '#f9efdc', skyA: '#f6cf98', skyB: '#f3b488', disc: '#fff8e6', ring: '#ee9a5c', far: '#ecc294', mid: '#d98c5f', near: '#a04f3c', seaA: '#f7d9ac', seaB: '#e39a6c', line: '#fffaf0', dark: '#4a2a26', accent: '#b8492f' }, 0.6, 'sun'),
+  // teal dusk
+  hour({ paper: '#eef3ee', skyA: '#bfdcd6', skyB: '#8fc0be', disc: '#fdfbf4', ring: '#86b8ba', far: '#9cc3c4', mid: '#5f9aa0', near: '#2c6676', seaA: '#b9d8d4', seaB: '#64a0a6', line: '#f6fbf8', dark: '#173a47', accent: '#e0745c' }, 0.72, 'moon', { stars: 0.4 }),
+  // indigo night
+  hour({ paper: '#e3e8f3', skyA: '#8498c8', skyB: '#4d5f9e', disc: '#fbfbf6', ring: '#b3c1e6', far: '#6a7db4', mid: '#3c4b88', near: '#212b5e', seaA: '#7a8ec0', seaB: '#384784', line: '#eef2ff', dark: '#131a3f', accent: '#f0c26a' }, 0.94, 'moon', { stars: 1, night: true }),
+  // the storm
+  hour({ paper: '#e4e2ea', skyA: '#9a97b4', skyB: '#646180', disc: '#e9e8f0', ring: '#8d8aa8', far: '#77748f', mid: '#4f4c6c', near: '#2b2945', seaA: '#8a87a4', seaB: '#444262', line: '#f0eff6', dark: '#1c1b30', accent: '#d9c06a' }, 0.94, 'none', { rain: 1, night: true }),
+  // the darkest hour, with its northern lights
+  hour({ paper: '#dbe9e8', skyA: '#2f627c', skyB: '#1d4160', disc: '#f4fbf6', ring: '#7fd0c0', far: '#2f5c74', mid: '#1c4058', near: '#0f2639', seaA: '#30647a', seaB: '#153348', line: '#d9fff0', dark: '#0a1c2c', accent: '#9ff0d0' }, 0.96, 'moon', { stars: 1, aurora: 1, night: true }),
+  // the dawn of a run that was won
+  hour({ paper: '#fbf3e4', skyA: '#fddfa8', skyB: '#f7c29e', disc: '#fffdf2', ring: '#f4aa5e', far: '#dbc4d8', mid: '#b39ac4', near: '#7a659f', seaA: '#fbdfb6', seaB: '#eda888', line: '#ffffff', dark: '#3a2f5a', accent: '#e2543c' }, 0.55, 'sun'),
 ];
 export const DAWN = HOURS.length - 1;
 export const STORM = 4;
@@ -71,20 +78,16 @@ export function hourOf(wave: number, waves: number): number {
 }
 
 const WHITE: RGB = [255, 255, 255];
-const GOLD: RGB = [246, 196, 92];
-const GLOW: RGB = [255, 236, 178];
-const BAD: RGB = [226, 84, 60];
-const PAPER = '#fbf5ea';
-const NOW: RGB = [30, 106, 168];
 const NOW_NIGHT: RGB = [142, 204, 255];
-/** the lanes the noise flies in, by the place the rules gave it; never two in a row on the same one */
-const SLOT_X = [430, 770, 210, 1000, 590, 880, 330];
+/** the lanes the noise flies in, by the place the rules gave it (SLOTS); never two in a row on the same one */
 const LANES4 = [1, 3, 0, 2, 1, 3, 0];
 const LANES3 = [1, 2, 0, 1, 2, 0, 1];
-const MONO = '"IBM Plex Mono", ui-monospace, Consolas, monospace';
-const SANS = '"IBM Plex Sans", "Segoe UI", system-ui, sans-serif';
 /** how large the noise is drawn: its shapes are written about forty units wide */
 const SIZE = 1.9;
+/** a picture narrower than this (in drawing units) has no room for a slip beside its piece of noise */
+const NARROW = 560;
+/** how far beyond its ring the Mute reaches with the letters of its seals */
+const MUTE_REACH = 64;
 
 interface Geo {
   W: number;
@@ -105,24 +108,9 @@ interface Geo {
   dr: number;
 }
 
-/** Colour that soaks into what is under it: a stain with a soft edge. */
-function stain(ctx: CanvasRenderingContext2D, x: number, y: number, r: number, c: RGB, a: number): void {
-  if (a <= 0 || r <= 0) return;
-  const g = ctx.createRadialGradient(x, y, 0, x, y, r);
-  g.addColorStop(0, css(c, a));
-  g.addColorStop(0.5, css(c, a * 0.5));
-  g.addColorStop(1, css(c, 0));
-  ctx.fillStyle = g;
-  ctx.beginPath();
-  ctx.arc(x, y, r, 0, TAU);
-  ctx.fill();
-}
-
 export class Watch {
   private readonly s: Surface;
   private readonly tints = new Tints();
-  private readonly paper = grain();
-  private readonly settled = pigment();
   private readonly clouds = [3, 8, 14].map((seed) => cloudShape(seed));
   private readonly sparks = new Sparks();
   private readonly coast = noise(11);
@@ -157,12 +145,17 @@ export class Watch {
 
   constructor(canvas: HTMLCanvasElement, at = 0) {
     this.s = new Surface(canvas);
-    this.shown = this.wanted = clamp(Math.round(at), 0, HOURS.length - 1);
+    this.shown = this.wanted = clamp(Math.round(at), 0, DAWN - 1);
   }
 
-  /** The hour the picture turns to. */
+  /** The hour the picture turns to. The dawn is not one of them: it comes only at the end of a run that was won. */
   aim(at: number): void {
-    this.wanted = clamp(Math.round(at), 0, HOURS.length - 1);
+    this.wanted = clamp(Math.round(at), 0, DAWN - 1);
+  }
+
+  /** Reads the size of the picture, at the start of a frame, before the screen writes into the page (see Surface.measure). */
+  measure(): void {
+    this.s.measure(this.over);
   }
 
   private geo(): Geo {
@@ -184,7 +177,7 @@ export class Watch {
   /** Where a piece of noise is in the picture. */
   private place(f: Foe, g: Geo): { x: number; y: number } {
     const p = f.y / LAND_Y;
-    const slot = Math.max(0, SLOT_X.indexOf(f.x));
+    const slot = Math.max(0, SLOTS.indexOf(f.x));
     const lanes = g.bh > 280 ? 4 : 3;
     const lane = (lanes === 4 ? LANES4 : LANES3)[slot];
     const top = g.bt + 58;
@@ -582,8 +575,10 @@ export class Watch {
     const h = HOURS[this.fade > 0.5 ? this.wanted : this.shown];
     const ink = h.night ? h.paper : h.dark;
     const lock = h.night ? NOW_NIGHT : NOW;
-    const sx = this.shake > 0.2 ? (Math.random() - 0.5) * this.shake : 0;
-    const sy = this.shake > 0.2 ? (Math.random() - 0.5) * this.shake : 0;
+    // asked for less motion: no shaking, no flicker, no flashes of light
+    const still = calm();
+    const sx = !still && this.shake > 0.2 ? (Math.random() - 0.5) * this.shake : 0;
+    const sy = !still && this.shake > 0.2 ? (Math.random() - 0.5) * this.shake : 0;
     const ctx = this.s.begin(sx, sy);
     if (this.old) ctx.drawImage(this.old, -4, -4, g.W + 8, g.H + 8);
     ctx.globalAlpha = this.old ? ease(this.fade) : 1;
@@ -644,7 +639,8 @@ export class Watch {
     else if (boss && !this.ending) look = this.sealAt(g, boss, Math.min(boss.at, boss.steps.length - 1));
     const lampOn = !(this.ending && !this.won);
     const power = run ? 0.5 + 0.5 * (run.integrity / run.maxIntegrity) : 1;
-    const flick = this.blow > 0 ? 0.55 + 0.45 * Math.sin(this.t * 70) * Math.sin(this.t * 23) : 1;
+    // after a blow the lamp flickers, or, held still, burns lower for a moment
+    const flick = this.blow > 0 ? (still ? 0.7 : 0.55 + 0.45 * Math.sin(this.t * 70) * Math.sin(this.t * 23)) : 1;
     const lamp = lampOn ? power * flick : Math.max(0, 1 - this.ending * 1.5) * 0.6;
     if (look) {
       const want = Math.atan2(look.y - g.ly, look.x - g.lx);
@@ -659,7 +655,7 @@ export class Watch {
         const p = this.place(f, g);
         seen.add(f.id);
         this.pos.set(f.id, p);
-        if (p.x < g.W + 60) this.foe(ctx, f, p, f === locked, h, ink, lock, moving);
+        if (p.x < g.W + 60) this.foe(ctx, g, f, p, f === locked, h, ink, lock, moving);
       }
       for (const id of this.struck.keys()) if (!seen.has(id)) this.struck.delete(id);
     }
@@ -688,7 +684,7 @@ export class Watch {
 
     this.leaves(ctx, g, h);
     this.weather(ctx, g, h, dt, true);
-    if (this.flash > 0.01) {
+    if (!still && this.flash > 0.01) {
       ctx.fillStyle = css(WHITE, this.flash * 0.55);
       ctx.fillRect(-20, -20, g.W + 40, g.H + 40);
     }
@@ -696,15 +692,14 @@ export class Watch {
       ctx.fillStyle = css(h.dark, Math.min(0.5, this.ending * 0.4));
       ctx.fillRect(-20, -20, g.W + 40, g.H + 40);
     }
-    // bare paper at the top, where the score is written
-    mist(ctx, -20, g.W + 20, g.bt + 14, -10, h.paper, 0.96);
-    finish(this.s, this.paper, this.settled);
+    paperFinish(this.s, g.bt, h.paper);
   }
 
   /** Rain and far lightning in a storm; petals on the wind otherwise. */
   private weather(ctx: CanvasRenderingContext2D, g: Geo, h: Hour, dt: number, front: boolean): void {
     if (!front) {
-      if (h.rain < 0.3) return;
+      // far lightning, with its flash, is left out for whoever asked for less motion
+      if (h.rain < 0.3 || calm()) return;
       this.nextFlash -= dt;
       if (this.nextFlash <= 0) {
         this.nextFlash = 4 + Math.random() * 7;
@@ -728,18 +723,7 @@ export class Watch {
       return;
     }
     // petals, or whatever the wind has picked up, drifting in from the sea
-    for (let i = 0; i < 16; i++) {
-      const x = g.W * (1.1 - (((hash(i, 61) + this.t * (0.012 + 0.014 * hash(i, 62))) % 1) * 1.2));
-      const y = g.bt + g.bh * (0.1 + 0.9 * hash(i, 63)) + 18 * Math.sin(this.t * (0.6 + hash(i, 64)) + i);
-      ctx.save();
-      ctx.translate(x, y);
-      ctx.rotate(this.t * (0.8 + hash(i, 65)) + i);
-      ctx.fillStyle = css(i % 3 ? h.accent : h.disc, 0.75);
-      ctx.beginPath();
-      ctx.ellipse(0, 0, 3.4, 1.5, 0, 0, TAU);
-      ctx.fill();
-      ctx.restore();
-    }
+    petals(ctx, this.t, 16, g.W, g.bt + g.bh * 0.1, g.bh * 0.9, [h.accent, h.disc]);
   }
 
   /** The lamp and its beam: warm light laid over the picture. */
@@ -838,8 +822,14 @@ export class Watch {
     for (let i = 0; i < 7; i++) plant(g.W * 0.9 + i * 19 + 10 * hash(i, 76), g.bb - 36 + 18 * hash(i, 77), 30 + 56 * hash(i, 78), i + 10);
   }
 
-  /** One piece of noise with its slip of paper: a blot of ink with a life of its own. */
-  private foe(ctx: CanvasRenderingContext2D, f: Foe, p: { x: number; y: number }, locked: boolean, h: Hour, ink: RGB, lock: RGB, moving: boolean): void {
+  /**
+   * One piece of noise with its slip of paper: a blot of ink with a life of its own. The slip rides beside
+   * it; in a narrow picture (a phone held upright) there is no room beside it, and the piece and its slip
+   * are drawn a little smaller, the slip under it, so that both stay in the picture.
+   */
+  private foe(ctx: CanvasRenderingContext2D, g: Geo, f: Foe, p: { x: number; y: number }, locked: boolean, h: Hour, ink: RGB, lock: RGB, moving: boolean): void {
+    const under = g.W < NARROW;
+    const k = under ? clamp(g.W / NARROW, 0.75, 1) : 1;
     const since = this.t - (this.struck.get(f.id) ?? -9);
     const flash = clamp(1 - since / 0.16);
     const x = p.x + 9 * clamp(1 - since / 0.2);
@@ -851,10 +841,10 @@ export class Watch {
     const seed = Number(f.id.replace(/\D/g, '')) || 1;
 
     // the ink has bled a little into the wet sky around it
-    stain(ctx, x, y, 62, h.dark, h.night ? 0.3 : 0.2);
+    stain(ctx, x, y, 62 * k, h.dark, h.night ? 0.3 : 0.2);
     ctx.save();
     ctx.translate(x, y);
-    ctx.scale(SIZE, SIZE);
+    ctx.scale(SIZE * k, SIZE * k);
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
     if (f.shape === 0) {
@@ -948,11 +938,14 @@ export class Watch {
     }
     ctx.restore();
 
-    // how much of its phrase is done
-    const below = y + 20 * SIZE;
-    for (let k = 0; k < f.need; k++) {
-      ctx.fillStyle = k < f.hit ? css(GOLD) : css(ink, 0.3);
-      ctx.fillRect(x + 1 - f.need * 5 + k * 10, below, 8, 4);
+    // how much of its phrase is done, and its name: under the blot
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.scale(k, k);
+    const below = 20 * SIZE;
+    for (let i = 0; i < f.need; i++) {
+      ctx.fillStyle = i < f.hit ? css(GOLD) : css(ink, 0.3);
+      ctx.fillRect(1 - f.need * 5 + i * 10, below, 8, 4);
     }
     ctx.font = `600 10.5px ${MONO}`;
     ctx.textAlign = 'center';
@@ -960,22 +953,32 @@ export class Watch {
     ctx.strokeStyle = css(h.night ? h.dark : h.paper, 0.6);
     ctx.lineWidth = 3;
     ctx.lineJoin = 'round';
-    ctx.strokeText(f.id, x, below + 18);
-    ctx.fillText(f.id, x, below + 18);
+    ctx.strokeText(f.id, 0, below + 18);
+    ctx.fillText(f.id, 0, below + 18);
+    ctx.restore();
 
-    // the slip of paper it carries
-    const cx = x + 30 * SIZE;
-    const cy = y - 27;
+    // the slip of paper it carries: beside it, or under it in a narrow picture, never out of the picture
+    const wide = 138;
+    const tall = 54;
+    const sx = under ? clamp(x - (wide / 2) * k, 6, g.W - 6 - wide * k) : x + 30 * SIZE;
+    const sy = under ? y + (below + 40) * k : y - 27;
+    ctx.save();
+    ctx.translate(sx, sy);
+    ctx.scale(k, k);
     const ph = f.phrase;
+    ctx.font = `600 10.5px ${MONO}`;
     ctx.textAlign = 'left';
+    ctx.strokeStyle = css(h.night ? h.dark : h.paper, 0.6);
+    ctx.lineWidth = 3;
+    ctx.lineJoin = 'round';
     ctx.fillStyle = css(ink, locked ? 0.95 : 0.85);
-    ctx.strokeText(ph.kind === 'chg' ? L('CHANGE', 'WECHSEL') : ph.label, cx + 2, cy - 6);
-    ctx.fillText(ph.kind === 'chg' ? L('CHANGE', 'WECHSEL') : ph.label, cx + 2, cy - 6);
+    ctx.strokeText(ph.kind === 'chg' ? L('CHANGE', 'WECHSEL') : ph.label, 2, -6);
+    ctx.fillText(ph.kind === 'chg' ? L('CHANGE', 'WECHSEL') : ph.label, 2, -6);
     ctx.shadowColor = css(h.dark, 0.3);
     ctx.shadowBlur = 10;
     ctx.shadowOffsetY = 3;
     ctx.fillStyle = PAPER;
-    roundRect(ctx, cx, cy, 138, 54, 4);
+    roundRect(ctx, 0, 0, wide, tall, 4);
     ctx.fill();
     ctx.shadowColor = 'transparent';
     ctx.shadowBlur = 0;
@@ -991,51 +994,55 @@ export class Watch {
       ctx.lineWidth = 0.8;
       ctx.beginPath();
       for (let l = 0; l < 6; l++) {
-        ctx.moveTo(cx + 6, cy + 8 + l * 7.6);
-        ctx.lineTo(cx + 132, cy + 8 + l * 7.6);
+        ctx.moveTo(6, 8 + l * 7.6);
+        ctx.lineTo(132, 8 + l * 7.6);
       }
       ctx.stroke();
       const sp = Math.min(32, 118 / ph.notes.length);
       ctx.font = `600 11px ${MONO}`;
       ctx.textAlign = 'center';
-      ph.notes.forEach((n, k) => {
-        const nx = cx + 14 + k * sp;
-        const ny = cy + 8 + (5 - n.s) * 7.6;
+      ph.notes.forEach((n, i) => {
+        const nx = 14 + i * sp;
+        const ny = 8 + (5 - n.s) * 7.6;
         ctx.fillStyle = PAPER;
         ctx.fillRect(nx - 5, ny - 5.5, 10, 11);
-        ctx.fillStyle = k < f.hit ? dim : locked && k === f.hit ? now : text;
+        ctx.fillStyle = i < f.hit ? dim : locked && i === f.hit ? now : text;
         ctx.fillText(String(n.f), nx, ny + 4);
       });
     } else if (ph.kind === 'keys') {
-      const midis = ph.keys.map((k) => k.midi);
+      const midis = ph.keys.map((n) => n.midi);
       const hi = Math.max(...midis);
       const lo = Math.min(hi - 4, ...midis);
       const step = Math.min(24, 120 / midis.length);
-      midis.forEach((m, k) => {
-        ctx.fillStyle = k < f.hit ? dim : locked && k === f.hit ? now : text;
-        ctx.fillRect(cx + 10 + k * step, cy + 8 + ((hi - m) / (hi - lo)) * 32, step - 4, 6);
+      midis.forEach((m, i) => {
+        ctx.fillStyle = i < f.hit ? dim : locked && i === f.hit ? now : text;
+        ctx.fillRect(10 + i * step, 8 + ((hi - m) / (hi - lo)) * 32, step - 4, 6);
       });
     } else {
       ctx.font = `700 ${ph.label.length > 10 ? 14 : 18}px ${SANS}`;
       ctx.textAlign = 'center';
       ctx.fillStyle = locked ? now : text;
-      ctx.fillText(ph.label, cx + 69, cy + 33);
+      ctx.fillText(ph.label, 69, 33);
     }
+    ctx.restore();
     if (locked) {
-      // the frame of what the lamp is on
+      // the frame of what the lamp is on, round the piece and its slip
       ctx.strokeStyle = css(lock);
       ctx.lineWidth = 2;
       ctx.beginPath();
-      const [x0, y0, x1, y1] = [x - 30 * SIZE, y - 28 * SIZE, cx + 148, below + 26];
+      const [x0, y0, x1, y1] = under
+        ? [Math.min(x - 30 * SIZE * k, sx) - 6 * k, y - 28 * SIZE * k, Math.max(x + 30 * SIZE * k, sx + wide * k) + 6 * k, sy + (tall + 8) * k]
+        : [x - 30 * SIZE, y - 28 * SIZE, sx + wide + 10, y + below + 26];
+      const c = 14 * k;
       for (const [px, py, dx, dy] of [
         [x0, y0, 1, 1],
         [x1, y0, -1, 1],
         [x1, y1, -1, -1],
         [x0, y1, 1, -1],
       ]) {
-        ctx.moveTo(px + dx * 14, py);
+        ctx.moveTo(px + dx * c, py);
         ctx.lineTo(px, py);
-        ctx.lineTo(px, py + dy * 14);
+        ctx.lineTo(px, py + dy * c);
       }
       ctx.stroke();
     }
@@ -1049,8 +1056,10 @@ export class Watch {
   }
 
   private muteAt(g: Geo): { cx: number; cy: number; R: number } {
-    const R = clamp((g.hz - g.bt) * 0.27, 46, 104);
-    return { cx: lerp(g.lx, g.W, 0.56), cy: Math.max(g.bt + R + 50, g.bt + (g.hz - g.bt) * 0.5), R };
+    // the letters of the seals stand R + 44 from the middle: the whole ring stays in the picture, a narrow one too
+    const R = Math.min(clamp((g.hz - g.bt) * 0.27, 46, 104), Math.max(30, g.W / 2 - MUTE_REACH));
+    const cx = clamp(lerp(g.lx, g.W, 0.56), R + MUTE_REACH, g.W - R - MUTE_REACH);
+    return { cx, cy: Math.max(g.bt + R + 50, g.bt + (g.hz - g.bt) * 0.5), R };
   }
 
   /** The Mute: a black disc that swallows the light, held shut by a ring of seals. */
@@ -1107,7 +1116,8 @@ export class Watch {
         ctx.setLineDash([3, 7]);
       } else {
         const bad = now && res ? 1 : 0;
-        const c = now ? mix(lock, BAD, bad * (0.5 + 0.5 * Math.sin(this.t * 30))) : ink;
+        // a seal that failed flashes red, or, held still, is just red
+        const c = now ? mix(lock, BAD, bad * (calm() ? 0.75 : 0.5 + 0.5 * Math.sin(this.t * 30))) : ink;
         if (now) stain(ctx, sx, sy, 40, c, 0.35 + 0.15 * Math.sin(this.t * 5));
         ctx.strokeStyle = css(c, now ? 1 : 0.7);
         ctx.lineWidth = now ? 12 : 8;
@@ -1136,8 +1146,16 @@ export class Watch {
     ctx.strokeStyle = css(h.night ? h.dark : h.paper, 0.7 * (1 - gone));
     ctx.lineWidth = 3.5;
     ctx.lineJoin = 'round';
-    const caption = L(`THE MUTE · ${b.name.toUpperCase()} · ${down} OF ${n} SEALS DOWN`, `DIE STILLE · ${b.name.toUpperCase()} · ${down} VON ${n} SIEGELN GEBROCHEN`);
-    ctx.strokeText(caption, cx, Math.min(g.hz - 8, cy + R + 74));
-    ctx.fillText(caption, cx, Math.min(g.hz - 8, cy + R + 74));
+    const what = L(`THE MUTE · ${b.name.toUpperCase()}`, `DIE STILLE · ${b.name.toUpperCase()}`);
+    const count = L(`${down} OF ${n} SEALS DOWN`, `${down} VON ${n} SIEGELN GEBROCHEN`);
+    // on one line where it fits, otherwise on two; never out of the picture
+    const lines = ctx.measureText(`${what} · ${count}`).width <= g.W - 16 ? [`${what} · ${count}`] : [what, count];
+    const half = Math.max(...lines.map((t) => ctx.measureText(t).width)) / 2;
+    const tx = clamp(cx, Math.min(g.W / 2, half + 8), Math.max(g.W / 2, g.W - half - 8));
+    const ty = Math.min(g.hz - 8 - 17 * (lines.length - 1), cy + R + 74);
+    lines.forEach((t, i) => {
+      ctx.strokeText(t, tx, ty + 17 * i);
+      ctx.fillText(t, tx, ty + 17 * i);
+    });
   }
 }

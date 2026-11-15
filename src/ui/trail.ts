@@ -13,7 +13,7 @@
  *
  * The rules are in game/stride.ts; this only draws what they say.
  */
-import { blot, clamp, css, finish, grain, hash, lerp, mist, mix, painted, pigment, prng, rgb, rough, roundRect, shape, Sparks, Surface, TAU, wash, type Pt, type RGB } from './scene';
+import { BAD, blot, calm, clamp, css, GLOW, GOLD, hash, lerp, mist, mix, MONO, NOW, painted, PAPER, paperFinish, petals, prng, rgbs, rough, roundRect, SANS, shape, Sparks, stain, Surface, TAU, wash, type Pt, type RGB } from './scene';
 // in the drawing methods below, L is the land; the language is only asked for in make()
 import { L } from '../core/i18n';
 
@@ -42,30 +42,23 @@ interface Land {
   night: boolean;
 }
 
-const make = (name: [string, string], c: string[], cover: number, sun: [number, number, number], motif: Land['motif'], stars = 0, night = false): Land => {
-  const [paper, skyA, skyB, disc, ring, far, mid, near, dark, waterA, waterB, accent] = c.map(rgb);
-  // the name is a getter, read when it is shown, in the language of that moment
-  return { get name() { return L(name[0], name[1]); }, paper, skyA, skyB, cover, disc, ring, sun, far, mid, near, dark, waterA, waterB, accent, motif, stars, night };
-};
+/** The colours of a land by name, as they are written: '#f6f1e6'. */
+type LandColours = Record<'paper' | 'skyA' | 'skyB' | 'disc' | 'ring' | 'far' | 'mid' | 'near' | 'dark' | 'waterA' | 'waterB' | 'accent', string>;
+
+// the name is a getter, read when it is shown, in the language of that moment
+const make = (name: [string, string], c: LandColours, cover: number, sun: [number, number, number], motif: Land['motif'], stars = 0, night = false): Land => ({ get name() { return L(name[0], name[1]); }, ...rgbs(c), cover, sun, motif, stars, night });
 
 export const LANDS: Land[] = [
-  make(['The birch marsh at first light', 'Das Birkenmoor im ersten Licht'], ['#f6f1e6', '#f7d6c0', '#cfe4d6', '#fffaf0', '#f4c0a0', '#cbdccc', '#9fc0ac', '#55857a', '#1c3d3a', '#dcebe0', '#92bfae', '#e0674f'], 0.5, [0.7, 0.36, 0.3], 'birch'),
-  make(['The pinewood at noon', 'Der Kiefernwald am Mittag'], ['#f3f5ef', '#cbe5ee', '#e6f0e2', '#ffffff', '#b9dce6', '#bfd9de', '#84b4be', '#3a7c8a', '#143d48', '#d3e8ec', '#78b0bd', '#f0b83c'], 0.6, [0.24, 0.72, 0.13], 'pine'),
-  make(['The heath in the evening', 'Die Heide am Abend'], ['#f9eedd', '#f6c688', '#f1a676', '#fff6e0', '#ee9456', '#ebbc90', '#d2875a', '#9a4836', '#47221f', '#f8dcb4', '#de966a', '#2f7f86'], 0.62, [0.74, 0.3, 0.34], 'bare'),
-  make(['The coast at dusk', 'Die Küste in der Dämmerung'], ['#ece9f3', '#a99bd2', '#7d74b8', '#fbfaf4', '#c7bdea', '#a59dce', '#786eae', '#443d7c', '#1b1943', '#b1a6d5', '#6a62a4', '#f2c063'], 0.9, [0.3, 0.74, 0.07], 'needle', 0.9, true),
+  make(['The birch marsh at first light', 'Das Birkenmoor im ersten Licht'], { paper: '#f6f1e6', skyA: '#f7d6c0', skyB: '#cfe4d6', disc: '#fffaf0', ring: '#f4c0a0', far: '#cbdccc', mid: '#9fc0ac', near: '#55857a', dark: '#1c3d3a', waterA: '#dcebe0', waterB: '#92bfae', accent: '#e0674f' }, 0.5, [0.7, 0.36, 0.3], 'birch'),
+  make(['The pinewood at noon', 'Der Kiefernwald am Mittag'], { paper: '#f3f5ef', skyA: '#cbe5ee', skyB: '#e6f0e2', disc: '#ffffff', ring: '#b9dce6', far: '#bfd9de', mid: '#84b4be', near: '#3a7c8a', dark: '#143d48', waterA: '#d3e8ec', waterB: '#78b0bd', accent: '#f0b83c' }, 0.6, [0.24, 0.72, 0.13], 'pine'),
+  make(['The heath in the evening', 'Die Heide am Abend'], { paper: '#f9eedd', skyA: '#f6c688', skyB: '#f1a676', disc: '#fff6e0', ring: '#ee9456', far: '#ebbc90', mid: '#d2875a', near: '#9a4836', dark: '#47221f', waterA: '#f8dcb4', waterB: '#de966a', accent: '#2f7f86' }, 0.62, [0.74, 0.3, 0.34], 'bare'),
+  make(['The coast at dusk', 'Die Küste in der Dämmerung'], { paper: '#ece9f3', skyA: '#a99bd2', skyB: '#7d74b8', disc: '#fbfaf4', ring: '#c7bdea', far: '#a59dce', mid: '#786eae', near: '#443d7c', dark: '#1b1943', waterA: '#b1a6d5', waterB: '#6a62a4', accent: '#f2c063' }, 0.9, [0.3, 0.74, 0.07], 'needle', 0.9, true),
 ];
 
 /** how far apart two beats are on the water, in drawing units */
 export const BEAT_W = 132;
 /** how wide a strip of land is before it repeats */
 const STRIP = 2200;
-const GOLD: RGB = [246, 196, 92];
-const GLOW: RGB = [255, 236, 178];
-const BAD: RGB = [226, 84, 60];
-const PAPER = '#fbf5ea';
-const NOW = '#1e6aa8';
-const MONO = '"IBM Plex Mono", ui-monospace, Consolas, monospace';
-const SANS = '"IBM Plex Sans", "Segoe UI", system-ui, sans-serif';
 
 export type StoneState = 'ahead' | 'hit' | 'wrong' | 'missed';
 
@@ -98,25 +91,10 @@ interface Geo {
   ground: number;
 }
 
-/** Colour that soaks into what is under it: a stain with a soft edge. */
-function stain(ctx: CanvasRenderingContext2D, x: number, y: number, r: number, c: RGB, a: number): void {
-  if (a <= 0 || r <= 0) return;
-  const g = ctx.createRadialGradient(x, y, 0, x, y, r);
-  g.addColorStop(0, css(c, a));
-  g.addColorStop(0.5, css(c, a * 0.5));
-  g.addColorStop(1, css(c, 0));
-  ctx.fillStyle = g;
-  ctx.beginPath();
-  ctx.arc(x, y, r, 0, TAU);
-  ctx.fill();
-}
-
 export class Trail {
   private readonly s: Surface;
   private readonly lnd: Land;
   private readonly seed: number;
-  private readonly paper = grain();
-  private readonly settled = pigment();
   private readonly sparks = new Sparks();
   /** the element the game happens in front of */
   over: Element | null = null;
@@ -446,6 +424,11 @@ export class Trail {
 
   // ───────────────────────── every frame
 
+  /** Reads the size of the picture, at the start of a frame, before the screen writes into the page (see Surface.measure). */
+  measure(): void {
+    this.s.measure(this.over);
+  }
+
   draw(v: TrailView, ts: number): void {
     const dt = this.last ? Math.min(0.1, Math.max(0, ts - this.last)) : 0;
     this.last = ts;
@@ -571,7 +554,7 @@ export class Trail {
       ctx.shadowOffsetY = 0;
       ctx.font = `700 19px ${SANS}`;
       ctx.textAlign = 'left';
-      ctx.fillStyle = NOW;
+      ctx.fillStyle = css(NOW);
       ctx.fillText(name, x + 10, ground - 75);
     }
 
@@ -602,7 +585,8 @@ export class Trail {
         const born = this.t - (this.litAt.get(i) ?? this.t);
         const c = state === 'wrong' ? BAD : GOLD;
         const pop = 1 + 0.9 * clamp(1 - born / 0.25);
-        const flick = 0.85 + 0.15 * Math.sin(this.t * 11 + i * 2.3);
+        // the flames flicker, unless less motion was asked for
+        const flick = calm() ? 1 : 0.85 + 0.15 * Math.sin(this.t * 11 + i * 2.3);
         stain(ctx, x, ground - 6, 44 * pop, state === 'wrong' ? BAD : GLOW, 0.7 * flick);
         stain(ctx, x, ground + 24, 30, c, 0.3);
         ctx.fillStyle = css(c);
@@ -627,7 +611,7 @@ export class Trail {
         ctx.fillStyle = css(L.dark, 0.75);
         ctx.fillText(sub, x, ground + 64, unit - 14);
         if (i === map.mark) {
-          ctx.strokeStyle = NOW;
+          ctx.strokeStyle = css(NOW);
           ctx.lineWidth = 2.6;
           ctx.beginPath();
           ctx.ellipse(x, ground + 7, rx + 9, 16, 0, 0, TAU);
@@ -686,18 +670,7 @@ export class Trail {
     this.sparks.draw(ctx);
 
     // petals on the air, and what goes by in front
-    for (let i = 0; i < 14; i++) {
-      const x = W * (1.1 - (((hash(i, 61) + this.t * (0.012 + 0.014 * hash(i, 62)) + cam * 0.0001) % 1) * 1.2));
-      const y = g.bt + g.bh * (0.08 + 0.8 * hash(i, 63)) + 18 * Math.sin(this.t * (0.6 + hash(i, 64)) + i);
-      ctx.save();
-      ctx.translate(x, y);
-      ctx.rotate(this.t * (0.8 + hash(i, 65)) + i);
-      ctx.fillStyle = css(i % 3 ? L.accent : L.disc, 0.75);
-      ctx.beginPath();
-      ctx.ellipse(0, 0, 3.4, 1.5, 0, 0, TAU);
-      ctx.fill();
-      ctx.restore();
-    }
+    petals(ctx, this.t, 14, W, g.bt + g.bh * 0.08, g.bh * 0.8, [L.accent, L.disc], cam * 0.0001);
     if (this.front && !map) lay(this.front, 1.55, g.bb - 84, 150);
     // the day ends well: light spreads from the beacon
     if (this.ending && this.kept) {
@@ -705,8 +678,7 @@ export class Trail {
       ctx.fillRect(0, 0, W, H);
     }
     // bare paper at the top, where the count is written
-    mist(ctx, -20, W + 20, g.bt + 14, -10, L.paper, 0.96);
-    finish(this.s, this.paper, this.settled);
+    paperFinish(this.s, g.bt, L.paper);
   }
 
   /** A lighthouse far off on the coast, its light turning: where the way leads. */
@@ -770,7 +742,7 @@ export class Trail {
     ctx.fillRect(x - 14, y - 56, 28, 6);
     if (this.ending && this.kept) {
       const k = clamp(this.ending / 0.5);
-      const flick = 0.85 + 0.15 * Math.sin(this.t * 13);
+      const flick = calm() ? 1 : 0.85 + 0.15 * Math.sin(this.t * 13);
       stain(ctx, x, y - 70, 200 * k, GLOW, 0.75 * flick);
       ctx.fillStyle = css(GOLD);
       ctx.beginPath();
