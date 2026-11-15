@@ -84,7 +84,10 @@ export function staffLine(notes: PianoNote[], look: (i: number) => StepLook, p: 
     const l = look(i);
     const ink = l === 'cur' ? p.now : l === 'done' ? p.good : l === 'miss' ? p.bad : l === 'off' || l === 'hide' ? p.line : p.text;
     const len = n.len ?? 1;
-    const hollow = len >= 2;
+    // a dotted length is one and a half of a plain one: head, stem and flags are those of the plain one
+    const dotted = [0.375, 0.75, 1.5, 3].some((d) => Math.abs(len - d) < 1e-6);
+    const plain = dotted ? len / 1.5 : len;
+    const hollow = plain >= 2;
     if (l === 'cur') h += `<rect x="${x - 22}" y="${trebleTop - 26}" width="44" height="${(two ? bassBottom : trebleBottom) - trebleTop + 52}" rx="10" fill="${p.now}" opacity="0.1"/><path d="M${x - 8} ${trebleTop - 30}h16l-8 11z" fill="${p.now}"/>`;
     if (l === 'hide') {
       h += `<text x="${x}" y="${trebleTop + 2 * gap + 8}" class="rn" fill="${p.faint}">?</text>`;
@@ -94,7 +97,7 @@ export function staffLine(notes: PianoNote[], look: (i: number) => StepLook, p: 
     const low = !!n.left;
     const placed = keysOf.map((k) => head(x, k, n.chord ?? n.over, low, ink, hollow));
     // the stem: up from the lowest head when the notes sit low, down from the highest when they sit high
-    if (len < 4) {
+    if (plain < 4) {
       const mid = (Math.max(...placed.map((q) => q.step)) + Math.min(...placed.map((q) => q.step))) / 2;
       const up = mid < (low ? BASS_BOTTOM : TREBLE_BOTTOM) + 4;
       const ys = placed.map((q) => q.y);
@@ -102,15 +105,14 @@ export function staffLine(notes: PianoNote[], look: (i: number) => StepLook, p: 
       const y1 = up ? Math.max(...ys) : Math.min(...ys);
       const y2 = up ? Math.min(...ys) - 46 : Math.max(...ys) + 46;
       h += `<line x1="${sx}" x2="${sx}" y1="${y1}" y2="${y2}" stroke="${ink}" stroke-width="2.2"/>`;
-      // an eighth has a flag, a sixteenth two
-      const flags = len <= 0.26 ? 2 : len <= 0.51 ? 1 : 0;
+      // an eighth has a flag, a sixteenth two (a dotted eighth too: it is an eighth with a dot)
+      const flags = plain <= 0.26 ? 2 : plain <= 0.51 ? 1 : 0;
       for (let f = 0; f < flags; f++) {
         const fy = y2 + (up ? f * 9 : -f * 9);
         h += `<path d="M${sx} ${fy}q12 ${up ? 8 : -8} 10 ${up ? 26 : -26}" fill="none" stroke="${ink}" stroke-width="2.4"/>`;
       }
     }
-    // a dotted length: one and a half of a plain one
-    if ([0.75, 1.5, 3].some((d) => Math.abs(len - d) < 1e-6)) h += `<circle cx="${x + 15}" cy="${placed[placed.length - 1].y - 3}" r="2.6" fill="${ink}"/>`;
+    if (dotted) h +=`<circle cx="${x + 15}" cy="${placed[placed.length - 1].y - 3}" r="2.6" fill="${ink}"/>`;
     if (o.names) {
       const name = n.chord ? pianoChord(n.chord).name : keyName(n.midi, n.over);
       h += `<text x="${x}" y="${low ? bassBottom + 40 : trebleBottom + 50}" class="fn" fill="${l === 'cur' ? p.now : p.muted}">${name}</text>`;
