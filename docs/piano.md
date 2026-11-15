@@ -25,7 +25,7 @@ A chord is shown as a stretch of keyboard with the finger on each key; its lowes
 - **Chords struck as a whole** where the song is strummed on the beat or lively; **broken into keys** (up and back, or rocking between bottom and top) where it is picked and calm. A song of broken chords also comes in a basic version of whole chords.
 - A song is played in the key in which its chords lie best under the hand, most of all on white keys, so it is often not in the key of its guitar version; the list says which chords it has on the guitar.
 
-The lessons have the same rungs, loop, tempo, backing, recordings and performance as on the guitar (see [Guitar](guitar.md#lessons)).
+A piece opens its page first, as a song does on the guitar (see [A song's page](guitar.md#a-songs-page)): hear it, the chords it asks for, the way through it phrase by phrase. The lessons have the same rungs, loop, tempo, backing, recordings and performance as on the guitar (see [Guitar](guitar.md#lessons)).
 
 ## Both hands
 

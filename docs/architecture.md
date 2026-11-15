@@ -14,6 +14,7 @@ src/audio        hearing and sounding
   synth.ts         synthesized guitar, piano and singing voice (for the practice instrument and the tests)
   backing.ts       the soft bass and chords under playing along
   wav.ts           reading and writing sound files, resampling for listening back
+  songsound.ts     a song as it sounds, to hear before learning it: its tune sung over its strums, any speed, any lines
 src/core         state and measures, without drawing
   skills.ts        measured skill: kinds, thresholds, levels, rusty, due again, the first value of a day, the course of days
   store.ts         settings, skills, history, reviews, favourites, practice time, the week, your plan and own songs (localStorage)
@@ -36,7 +37,8 @@ src/music        what is played
   strums.ts        the strumming patterns of the trainer, and which one a song uses
   lyrics.ts        words of the songs to sing, one syllable per note; where a held note is sung twice
   harmony.ts       a second voice a third below a tune
-  accompany.ts     a song's words over its chords bar by bar, and the words under the notes of a tune
+  accompany.ts     a song's words over its chords bar by bar, the words under the notes of a tune, a song's tune (tuneOf)
+  tunes.ts         the tunes of songs of chords that have no words, laid over their bars
   rhythms.ts       the rhythms to read, in note values, level by level
   tuning.ts        the capo and the tunings of the guitar; the A it is heard with
   path.ts          the learning path
@@ -53,6 +55,8 @@ src/screens      one file per screen or family of screens; each is a function (r
   chordcheck.ts    the chord check, string by string, and the check at the end of a stage
   takepanel.ts     a take at full speed bar by bar, listening back, the player's own count of slips
   frame.ts         the page around a lesson-like screen, the step button, news of levels
+  songpage.ts      a song's page before it is played (#/songs/<id>): hear it, what it asks, the way through it; in a
+                   session, a song not begun yet heard first
   sing.ts          the voice's range, tones, held tones and songs (words, less help, a second voice)
   session.ts       the plan of the day, the short session, the summary
   ear.ts           by ear: motifs, chords, sung then played; intervals for the voice

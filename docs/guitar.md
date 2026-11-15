@@ -7,10 +7,18 @@
 3. **Chord check.** Three open chords a session, with the fingering in a diagram and in words: first the ones today's lines of the song need, then other new ones, easiest first (Em, Am, E, A, D, C, G, Dm), then the ones whose time has come to be confirmed again, then the ones that need it most. Hold the chord and pluck one string at a time: each is called clean, muted, buzzing, or the wrong string. A string that will not ring is left for next time after three tries; <kbd>←</kbd> goes back a string, <kbd>→</kbd> skips one. A chord that already rings is asked for from memory: its picture stays hidden until you press S or a string does not ring.
 4. **One change, then the game.** The session takes the change that is furthest from 30 a minute, has you make it without a clock (the app waits and says how: which fingers stay down, which keep their shape and move together), then counts it over one calm minute, and only then starts a short run of chord changes with chords that have already rung clean.
 5. **By ear, or the strumming hand.** Three motifs of the song to play back before its tab is shown (for a song of strummed chords: three chords you know, told apart by their sound). When the song's strumming pattern is new and its chords already ring, the strumming trainer takes this place: a new chord never comes together with a new pattern. On a day with an old song from cold, this step is left out.
-6. **The song.** Two lines of the song you are learning.
+6. **The song.** Two lines of the song you are learning. A song not begun yet is heard first: its tune over its chords, the words lighting up as they are sung; then its first line.
 7. **The hard chord**, last and optional: a barre chord the song needs, otherwise the next one on the way to F♯m and Bm.
 
 **Only 5 minutes** on the start page is the first step and the song; it counts as fully as the whole session.
+
+## A song's page
+
+A song in the list (and **Your song** on the start page) opens its page first (`#/songs/<id>`), in three parts:
+
+1. **Hear it first.** The tune sung over the strummed chords, slower or as written, the tune or the chords each on or off; the words light up as they are sung, the chord over them as it comes. A song the app has no tune for yet plays its chords alone and says so, with a link that searches for a recording (on YouTube, in a new tab; nothing is sent until you click it).
+2. **What it asks of you.** Its chords, those you can already play and those that are new (each with the way to learn it first), its strumming as arrows over the count, and how a line of strums is written.
+3. **Your way through it.** Every line with its two rungs (learned without a clock, then with the click and its tempo), the whole song, and keeping it in the repertoire. One button says what comes next: the next line, the click, or the whole song.
 
 ## Lessons
 
