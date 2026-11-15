@@ -7,11 +7,14 @@
 import { Listener } from './listener';
 import { chime, click, strum, tone, voiceTone, type Articulation, type Chime } from './synth';
 import { CHORDS, chordNotes, OPEN_STRINGS, pianoChord } from '../music/theory';
+import { L } from '../core/i18n';
 
+// All the channels of the input, averaged: an interface that ignores the request for one channel may bring
+// the instrument in on its second.
 const TAP = `class Tap extends AudioWorkletProcessor{
   constructor(){super();this.buf=new Float32Array(512);this.n=0}
-  process(inputs){const ch=inputs[0]&&inputs[0][0];const len=ch?ch.length:128;
-    for(let i=0;i<len;i++){this.buf[this.n++]=ch?ch[i]:0;if(this.n===512){this.port.postMessage([this.buf.slice(0),currentTime+(i+1)/sampleRate]);this.n=0}}
+  process(inputs){const chs=inputs[0]||[];const nc=chs.length;const len=nc?chs[0].length:128;
+    for(let i=0;i<len;i++){let v=0;for(let c=0;c<nc;c++)v+=chs[c][i];this.buf[this.n++]=nc?v/nc:0;if(this.n===512){this.port.postMessage([this.buf.slice(0),currentTime+(i+1)/sampleRate]);this.n=0}}
     return true}}
 registerProcessor('tap',Tap)`;
 
@@ -23,6 +26,8 @@ export interface EngineOptions {
 /** How long before a chord is struck on the practice piano the one before it is let go, in seconds. */
 const LIFT = 0.05;
 
+const reason = (err: unknown): string => (err instanceof Error ? err.message : String(err));
+
 export class AudioEngine {
   ctx: AudioContext | null = null;
   listener: Listener | null = null;
@@ -31,7 +36,18 @@ export class AudioEngine {
   micError = '';
   /** name of the microphone in use */
   micLabel = '';
+  /** why listening could not start at all, if it could not: then nothing runs, not even the practice instrument */
+  startError = '';
+  /** the microphone stopped while it was in use (unplugged, taken by another program): start again to reopen it */
+  lost = false;
+  /** told when that happens */
+  onLost?: () => void;
   private stream: MediaStream | null = null;
+  /** counts starts and stops: a start that finds it changed after an await has been overtaken and closes what it opened */
+  private gen = 0;
+  private starting: Promise<void> | null = null;
+  /** takes away what watches the microphone and the audio clock */
+  private unwatch: (() => void) | null = null;
   /** audio clock minus listener clock, seconds */
   private offset: number | null = null;
   /** sounding notes of the practice instrument; a guitar string or a piano key can only sound one at a time */
@@ -39,60 +55,103 @@ export class AudioEngine {
   private ticks = new Set<AudioBufferSourceNode>();
   /** high tick plain and accented, low click plain and accented */
   private tickBuf: AudioBuffer[] | null = null;
-  /** what the listener is given, kept for saving to a file */
-  private rec: { blocks: Float32Array[]; left: number; sampleRate: number } | null = null;
+  /** what the listener is given from the moment `from` (listener clock) on, kept for saving to a file */
+  private rec: { blocks: Float32Array[]; left: number; sampleRate: number; from: number } | null = null;
 
   get running(): boolean {
     return !!this.listener;
   }
 
-  /** Must be called from a click or key press: browsers only start audio on a user action. */
-  async start(opts: EngineOptions): Promise<void> {
-    if (this.ctx) await this.stop();
-    // a fixed rate keeps the analysis windows the same length in time on every sound card
-    const ctx = new AudioContext({ latencyHint: 'interactive', sampleRate: 48000 });
-    const url = URL.createObjectURL(new Blob([TAP], { type: 'application/javascript' }));
-    await ctx.audioWorklet.addModule(url);
-    URL.revokeObjectURL(url);
-    const tap = new AudioWorkletNode(ctx, 'tap', { numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [1] });
-    const listener = new Listener(ctx.sampleRate);
-    tap.port.onmessage = (e: MessageEvent<[Float32Array, number]>) => this.block(e.data[0], e.data[1]);
+  /**
+   * Must be called from a click or key press: browsers only start audio on a user action. A second call
+   * while one is still under way (a double click during the browser's question about the microphone) waits
+   * for that one instead of opening a second microphone. Never fails: see running, micError and startError.
+   */
+  start(opts: EngineOptions): Promise<void> {
+    if (this.starting) return this.starting;
+    const p = this.begin(opts)
+      .catch((err) => {
+        this.startError = this.micError = L(`The browser would not start its audio (${reason(err)}).`, `Der Browser wollte sein Audio nicht starten (${reason(err)}).`);
+      })
+      .finally(() => {
+        if (this.starting === p) this.starting = null;
+      });
+    this.starting = p;
+    return p;
+  }
 
-    // a silent source keeps the tap running when there is no microphone
-    const keepAlive = ctx.createConstantSource();
-    keepAlive.offset.value = 0;
-    keepAlive.connect(tap);
-    keepAlive.start();
-    const mute = ctx.createGain();
-    mute.gain.value = 0;
-    tap.connect(mute).connect(ctx.destination);
-
+  private async begin(opts: EngineOptions): Promise<void> {
+    const gen = ++this.gen;
+    if (this.ctx) await this.close();
     this.micOn = false;
     this.micError = '';
     this.micLabel = '';
-    if (opts.mic) {
-      const open = (deviceId?: string): Promise<MediaStream> =>
-        navigator.mediaDevices.getUserMedia({
-          audio: {
-            // these three are made for speech and would chew up an instrument
-            echoCancellation: false,
-            noiseSuppression: false,
-            autoGainControl: false,
-            channelCount: 1,
-            ...(deviceId ? { deviceId: { exact: deviceId } } : {}),
-          },
-        });
-      try {
-        // a chosen microphone that is unplugged today must not leave the app deaf: fall back to the default one
-        this.stream = await (opts.deviceId ? open(opts.deviceId).catch(() => open()) : open());
-        ctx.createMediaStreamSource(this.stream).connect(tap);
-        this.micOn = true;
-        this.micLabel = this.stream.getAudioTracks()[0]?.label ?? '';
-      } catch (err) {
-        this.micError = err instanceof Error ? err.message : String(err);
+    this.startError = '';
+    let side: { ctx: AudioContext; tap: AudioWorkletNode } | null = null;
+    let stream: MediaStream | null = null;
+    const release = (): void => {
+      stream?.getTracks().forEach((t) => t.stop());
+      stream = null;
+    };
+    // a stop() or a newer start came in while this one waited: what it opened is closed again
+    const overtaken = (): boolean => {
+      if (gen === this.gen) return false;
+      release();
+      void side?.ctx.close().catch(() => undefined);
+      return true;
+    };
+    if (overtaken()) return;
+    try {
+      // A fixed rate keeps the analysis windows the same length in time on every sound card. Firefox cannot
+      // take a microphone into a context whose rate is not the device's, though (NotSupportedError, Mozilla
+      // bug 1388586): then everything is opened once more at the rate the browser picks, which the listener
+      // copes with too.
+      for (const rate of [48000, 0]) {
+        side = await this.open(rate);
+        if (overtaken() || !opts.mic) break;
+        try {
+          stream = await this.mic(opts.deviceId);
+        } catch (err) {
+          // not allowed, or there is none: listening goes on with the practice instrument
+          this.micError = reason(err);
+          break;
+        }
+        if (overtaken()) break;
+        try {
+          side.ctx.createMediaStreamSource(stream).connect(side.tap);
+          this.micOn = true;
+          this.micError = '';
+          this.micLabel = stream.getAudioTracks()[0]?.label ?? '';
+          break;
+        } catch (err) {
+          // the microphone must not stay switched on for nothing (its light on, and no app hearing it)
+          release();
+          this.micError = reason(err);
+          if (!rate) break;
+          const old = side;
+          side = null;
+          await old.ctx.close().catch(() => undefined);
+          if (overtaken()) break;
+        }
       }
+      if (overtaken() || !side) return;
+      if (side.ctx.state === 'suspended') await side.ctx.resume();
+      if (overtaken()) return;
+    } catch (err) {
+      release();
+      void side?.ctx.close().catch(() => undefined);
+      if (gen !== this.gen) return;
+      // AudioWorklet is only there on a secure page: https, or localhost on this computer
+      this.startError = this.micError = !window.isSecureContext
+        ? L('Listening needs a secure page: open the app over https, or as localhost on this computer. (The address of a dev server in your network, opened on a phone, is not secure.)', 'Zuhören braucht eine sichere Seite: Öffne die App über https oder als localhost auf diesem Computer. (Die Adresse eines Entwicklungsservers in deinem Netz, auf dem Handy geöffnet, ist nicht sicher.)')
+        : L(`The browser would not start its audio (${reason(err)}).`, `Der Browser wollte sein Audio nicht starten (${reason(err)}).`);
+      return;
     }
-    if (ctx.state === 'suspended') await ctx.resume();
+    const { ctx, tap } = side;
+    this.ctx = ctx;
+    this.stream = stream;
+    this.listener = new Listener(ctx.sampleRate);
+    this.lost = false;
     this.offset = null;
     this.tickBuf = [0, 1, 2, 3].map((i) => {
       const samples = click(ctx.sampleRate, i % 2 === 1, 1, i >= 2);
@@ -100,26 +159,129 @@ export class AudioEngine {
       buf.getChannelData(0).set(samples);
       return buf;
     });
-    this.ctx = ctx;
-    this.listener = listener;
+    tap.port.onmessage = (e: MessageEvent<[Float32Array, number]>) => this.block(e.data[0], e.data[1]);
+    this.watch(ctx, stream);
   }
 
+  /** An audio context at this rate (0: the browser's own) with the tap in it, which hands every block to the listener. */
+  private async open(rate: number): Promise<{ ctx: AudioContext; tap: AudioWorkletNode }> {
+    const ctx = new AudioContext(rate ? { latencyHint: 'interactive', sampleRate: rate } : { latencyHint: 'interactive' });
+    try {
+      const url = URL.createObjectURL(new Blob([TAP], { type: 'application/javascript' }));
+      try {
+        await ctx.audioWorklet.addModule(url);
+      } finally {
+        URL.revokeObjectURL(url);
+      }
+      const tap = new AudioWorkletNode(ctx, 'tap', { numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [1] });
+      // a silent source keeps the tap running when there is no microphone
+      const keepAlive = ctx.createConstantSource();
+      keepAlive.offset.value = 0;
+      keepAlive.connect(tap);
+      keepAlive.start();
+      const mute = ctx.createGain();
+      mute.gain.value = 0;
+      tap.connect(mute).connect(ctx.destination);
+      return { ctx, tap };
+    } catch (err) {
+      await ctx.close().catch(() => undefined);
+      throw err;
+    }
+  }
+
+  private mic(deviceId?: string): Promise<MediaStream> {
+    const open = (id?: string): Promise<MediaStream> =>
+      navigator.mediaDevices.getUserMedia({
+        audio: {
+          // these three are made for speech and would chew up an instrument
+          echoCancellation: false,
+          noiseSuppression: false,
+          autoGainControl: false,
+          channelCount: 1,
+          ...(id ? { deviceId: { exact: id } } : {}),
+        },
+      });
+    // a chosen microphone that is unplugged today must not leave the app deaf: fall back to the default one
+    return deviceId ? open(deviceId).catch(() => open()) : open();
+  }
+
+  /**
+   * A microphone that is unplugged or taken by another program, or an audio clock that the system stops
+   * (a call on an iPhone, a laptop's lid): the app must not go on as if it were hearing.
+   */
+  private watch(ctx: AudioContext, stream: MediaStream | null): void {
+    const track = stream?.getAudioTracks()[0];
+    const live = (): boolean => !!track && track.readyState === 'live' && !track.muted && ctx.state === 'running';
+    const lose = (): void => {
+      if (this.ctx !== ctx || this.lost) return;
+      this.lost = true;
+      this.micOn = false;
+      this.micError = L('the microphone stopped', 'das Mikrofon ist verstummt');
+      this.onLost?.();
+    };
+    // muted for a while (the system took it for a call), or the clock stopped: not hearing, until it comes back
+    const changed = (): void => {
+      if (this.ctx !== ctx || this.lost || !track) return;
+      if (track.readyState === 'ended') lose();
+      else this.micOn = live();
+    };
+    // a stopped clock only runs again on a click or a key, so the next one starts it
+    const wake = (): void => {
+      if (this.ctx === ctx && ctx.state !== 'running' && ctx.state !== 'closed') void ctx.resume().catch(() => undefined);
+    };
+    track?.addEventListener('ended', lose);
+    track?.addEventListener('mute', changed);
+    track?.addEventListener('unmute', changed);
+    ctx.addEventListener('statechange', changed);
+    navigator.mediaDevices?.addEventListener('devicechange', changed);
+    addEventListener('pointerdown', wake, true);
+    addEventListener('keydown', wake, true);
+    this.unwatch = () => {
+      track?.removeEventListener('ended', lose);
+      track?.removeEventListener('mute', changed);
+      track?.removeEventListener('unmute', changed);
+      ctx.removeEventListener('statechange', changed);
+      navigator.mediaDevices?.removeEventListener('devicechange', changed);
+      removeEventListener('pointerdown', wake, true);
+      removeEventListener('keydown', wake, true);
+    };
+  }
+
+  /** Stops listening. A start that is still under way is overtaken: it closes what it opens. */
   async stop(): Promise<void> {
+    this.gen++;
+    this.starting = null;
+    await this.close();
+  }
+
+  private async close(): Promise<void> {
+    this.unwatch?.();
+    this.unwatch = null;
     this.stream?.getTracks().forEach((t) => t.stop());
     this.stream = null;
-    await this.ctx?.close().catch(() => undefined);
+    const ctx = this.ctx;
     this.ctx = null;
     this.listener = null;
     this.micOn = false;
+    this.lost = false;
     this.voices.clear();
     this.ticks.clear();
     this.rec = null;
+    this.tickBuf = null;
+    // they belonged to the context that is closing
+    this.droneSrc = null;
+    this.model = null;
+    await ctx?.close().catch(() => undefined);
   }
 
-  /** From now on keep what the listener is given, for this many seconds at most. */
+  /**
+   * From now on keep what the listener is given, for this many seconds at most. "Now" is engine.now(): blocks
+   * that were still waiting from before it (the page was busy making the accompaniment) are not kept, so the
+   * recording begins exactly at the moment the caller takes for its start.
+   */
   record(seconds: number): void {
     const sampleRate = this.ctx?.sampleRate ?? 48000;
-    this.rec = { blocks: [], left: Math.round(seconds * sampleRate), sampleRate };
+    this.rec = { blocks: [], left: Math.round(seconds * sampleRate), sampleRate, from: this.now() };
   }
 
   /** How many seconds have been kept so far. */
@@ -159,9 +321,15 @@ export class AudioEngine {
       v.pos += n;
       if (v.pos >= v.buf.length) this.voices.delete(id);
     }
-    if (this.rec && this.rec.left > 0) {
-      this.rec.blocks.push(b.slice());
-      this.rec.left -= b.length;
+    const rec = this.rec;
+    if (rec && rec.left > 0) {
+      // this block begins at l.time; what lies before the moment the recording was asked for is left out
+      const skip = Math.max(0, Math.round((rec.from - l.time) * rec.sampleRate));
+      if (skip < b.length) {
+        const kept = b.slice(skip, skip + rec.left);
+        rec.blocks.push(kept);
+        rec.left -= kept.length;
+      }
     }
     l.push(b);
     this.offset = endTime - l.time;
@@ -232,8 +400,10 @@ export class AudioEngine {
   /**
    * A drone: notes held as long as it is on, soft and even, through the speakers only. For singing against
    * and for playing freely over. Several notes sound together (a root and its fifth). Empty stops it.
+   * a4 is the pitch of A it is tuned to; left out, the listener's, which is whatever the last screen set
+   * (a capo or a guitar tuned down moves it).
    */
-  drone(midis: number[], volume = 0.4): void {
+  drone(midis: number[], volume = 0.4, a4 = this.listener?.a4 ?? 440): void {
     const ctx = this.ctx;
     if (this.droneSrc) {
       const old = this.droneSrc;
@@ -253,7 +423,6 @@ export class AudioEngine {
     const n = Math.round(4 * sr);
     const buf = ctx.createBuffer(1, n, sr);
     const out = buf.getChannelData(0);
-    const a4 = this.listener?.a4 ?? 440;
     for (const m of midis) {
       const f = a4 * Math.pow(2, (m - 69) / 12);
       const cycles = Math.round((f * n) / sr);

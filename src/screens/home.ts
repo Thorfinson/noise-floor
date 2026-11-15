@@ -511,10 +511,18 @@ export const settings: Screen = (root) => {
 
   // microphone test: level and the last note heard
   let stopTest: () => void = () => undefined;
+  // The page was left while the browser asked about the microphone: what comes back after that must not
+  // take the listener over from the page that is on show now.
+  let left = false;
+  const ready = async (): Promise<boolean> => {
+    if (!engine.running || engine.lost) await engine.start({ mic: s.mic, deviceId: s.deviceId || undefined });
+    return !left;
+  };
   $('#test', root).onclick = async () => {
     stopTest();
-    if (!engine.running) await engine.start({ mic: s.mic, deviceId: s.deviceId || undefined });
+    if (!(await ready())) return;
     await listMics();
+    if (left) return;
     $('#testout', root).hidden = false;
     $('#heard', root).textContent = '';
     $('#testmsg', root).textContent = engine.micOn
@@ -559,7 +567,8 @@ export const settings: Screen = (root) => {
   };
   recBtn.onclick = async () => {
     if (recTimer) return endRecording(true);
-    if (!engine.running) await engine.start({ mic: s.mic, deviceId: s.deviceId || undefined });
+    // (a second click while the microphone opens finds the recording already begun)
+    if (!(await ready()) || recTimer) return;
     if (!engine.micOn) {
       $('#recmsg', root).textContent = s.mic
         ? L(`The microphone could not be opened (${engine.micError || 'no device'}). Check the browser's permission for this page.`, `Das Mikrofon ließ sich nicht öffnen (${engine.micError || 'kein Gerät'}). Prüfe die Erlaubnis des Browsers für diese Seite.`)
@@ -592,16 +601,20 @@ export const settings: Screen = (root) => {
   };
   // Six low clicks through the speakers; the microphone hears them come back. No playing needed.
   let measuring = 0;
+  let stopMeasure: () => void = () => undefined;
   $('#latmeasure', root).onclick = async () => {
     if (measuring) return;
+    // taken at once: a second click while the microphone opens must not start a second measurement
+    measuring = -1;
     stopTest();
-    if (!engine.running) await engine.start({ mic: s.mic, deviceId: s.deviceId || undefined });
+    if (!(await ready())) return;
     if (!engine.micOn) {
+      measuring = 0;
       $('#latmsg', root).textContent = L('This needs the microphone, and the sound must come from speakers, not headphones.', 'Dafür braucht es das Mikrofon, und der Klang muss aus Lautsprechern kommen, nicht aus Kopfhörern.');
       return;
     }
     const heard: number[] = [];
-    const stop = hear(root, { onOnset: (e) => heard.push(e.time) }, (l) => (l.noteDetection = false));
+    const stop = (stopMeasure = hear(root, { onOnset: (e) => heard.push(e.time) }, (l) => (l.noteDetection = false)));
     const first = engine.now() + 0.8;
     const clicks = Array.from({ length: 6 }, (_, k) => first + k * 0.5);
     for (const t of clicks) engine.tick(t, false, 1, true);
@@ -707,9 +720,11 @@ export const settings: Screen = (root) => {
     $('#reset', root).textContent = L('Erased', 'Gelöscht');
   };
   return () => {
+    left = true;
     stopTest();
     endRecording(false);
     clearTimeout(measuring);
+    stopMeasure();
     engine.clearTicks();
   };
 };

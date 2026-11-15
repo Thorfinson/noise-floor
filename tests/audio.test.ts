@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { yin } from '../src/audio/yin';
 import { decodeWav, encodeWav } from '../src/audio/wav';
-import { chime, addNoise, click, mixInto, strum, tone } from '../src/audio/synth';
+import { chime, addNoise, click, mixInto, strum, tone, voiceTone, type ToneOpts } from '../src/audio/synth';
 import { CHORDS, chordMidis, chordNotes, midiToFreq, OPEN_STRINGS } from '../src/music/theory';
 import { Listener } from '../src/audio/listener';
-import { listen, onStrings, sequence, SR } from './helpers';
+import { listen, onStrings, sequence, SR, type Heard } from './helpers';
 
 describe('yin', () => {
   it('finds the pitch of single notes across the guitar range within 5 cents', () => {
@@ -123,6 +123,27 @@ describe('note detection', () => {
     mixInto(sig, tone({ sr: SR, midi: 55, dur: 0.3, art: 'muted' }), SR);
     const h = listen(sig);
     expect(h.notes).toEqual([]);
+  });
+
+  it('keeps its measure of the room through a stretch of digital silence', () => {
+    const l = new Listener(SR);
+    let gate = 0;
+    l.onLevel = (e) => (gate = e.gateDb);
+    const feed = (sig: Float32Array): void => {
+      for (let i = 0; i < sig.length; i += 128) l.push(sig.subarray(i, i + 128));
+    };
+    const room = (seconds: number, seed: number): Float32Array => {
+      const sig = new Float32Array(seconds * SR);
+      addNoise(sig, 0.003, seed);
+      return sig;
+    };
+    feed(room(2, 1));
+    const before = gate;
+    // a microphone muted for ten seconds sends nothing but zeros
+    feed(new Float32Array(10 * SR));
+    feed(room(1, 2));
+    expect(before).toBeGreaterThan(-50);
+    expect(Math.abs(gate - before)).toBeLessThan(1);
   });
 });
 
@@ -320,6 +341,121 @@ describe('measuring one partial', () => {
       });
       expect(got.length, `A = ${a4}`).toBeGreaterThan(10);
       for (const f of got) expect(Math.abs(1200 * Math.log2(f / a4)), `A = ${a4}, measured ${f.toFixed(2)}`).toBeLessThan(2);
+    }
+  });
+});
+
+describe('at 44.1 kHz, the rate a browser falls back to when it cannot record at 48 kHz', () => {
+  const sr = 44100;
+  function hear(sig: Float32Array, setup?: (l: Listener) => void, during?: (l: Listener, t: number) => void): Heard {
+    const l = new Listener(sr);
+    const heard: Heard = { onsets: [], notes: [], chords: [], strings: [] };
+    l.onOnset = (e) => heard.onsets.push(e);
+    l.onNote = (e) => heard.notes.push(e);
+    l.onChord = (e) => heard.chords.push(e);
+    l.onString = (e) => heard.strings.push(e);
+    setup?.(l);
+    for (let i = 0; i < sig.length; i += 128) {
+      during?.(l, i / sr);
+      l.push(sig.subarray(i, Math.min(sig.length, i + 128)));
+    }
+    return heard;
+  }
+  const notes = (list: (Partial<ToneOpts> & { midi: number })[], gap: number, ringFor = 1.8): Float32Array => {
+    const out = new Float32Array(Math.floor((0.5 + list.length * gap + 1.2) * sr));
+    list.forEach((n, i) => mixInto(out, tone({ sr, dur: ringFor, seed: i + 1, ...n }), (0.5 + i * gap) * sr));
+    addNoise(out, 0.0015);
+    return out;
+  };
+
+  it('hears every note of the guitar range while another string rings, and an arpeggio over a held chord', () => {
+    const wrong: string[] = [];
+    for (let midi = 40; midi <= 79; midi++) {
+      const other = midi < 60 ? midi + 7 : midi - 8;
+      const got = hear(notes([{ midi: other }, { midi }], 0.5)).notes.map((n) => n.midi);
+      if (got.length !== 2 || got[1] !== midi) wrong.push(`${midi} heard as ${got.join(',')}`);
+    }
+    expect(wrong).toEqual([]);
+    const arp = [45, 57, 60, 64, 60, 57, 48, 55, 60, 64, 60, 55];
+    const h = hear(notes(arp.map((midi) => ({ midi })), 0.3));
+    expect(h.onsets.length).toBe(arp.length);
+    expect(h.notes.map((n) => n.midi)).toEqual(arp);
+  });
+
+  it('hears piano notes, also the same key struck twice', () => {
+    const keys = [76, 75, 76, 75, 76, 71, 74, 72, 69, 69, 60, 64];
+    expect(hear(notes(keys.map((midi) => ({ midi, piano: true })), 0.35)).notes.map((n) => n.midi)).toEqual(keys);
+  });
+
+  it('names strummed chords one after the other', () => {
+    const ids = ['Em', 'Am', 'C', 'D', 'G'];
+    const wrong: string[] = [];
+    for (const first of ids) {
+      for (const second of ids) {
+        if (first === second) continue;
+        const sig = new Float32Array(sr * 3);
+        mixInto(sig, strum(chordNotes(CHORDS[first]), sr, 0.88), 0.5 * sr);
+        mixInto(sig, strum(chordNotes(CHORDS[second]), sr, 1.5), 1.4 * sr);
+        addNoise(sig, 0.0015);
+        const got = hear(sig, (l) => {
+          l.noteDetection = false;
+          l.chordCandidates = ids;
+        }).chords.map((c) => c.best);
+        if (got.join(',') !== `${first},${second}`) wrong.push(`${first} then ${second}: heard ${got.join(',')}`);
+      }
+    }
+    expect(wrong).toEqual([]);
+  });
+
+  it('tells a clean string from a muted and a buzzing one, and hears muted hits as thuds', () => {
+    const fsm = chordMidis(CHORDS['F#m']) as number[];
+    const arts = ['clean', 'clean', 'clean', 'muted', 'clean', 'buzz'] as const;
+    const sig = new Float32Array(sr * 6);
+    fsm.forEach((midi, i) => mixInto(sig, tone({ sr, midi, dur: 4, art: arts[i], seed: i + 3 }), (0.5 + i * 0.8) * sr));
+    addNoise(sig, 0.0015);
+    let next = 0;
+    const h = hear(
+      sig,
+      (l) => (l.noteDetection = false),
+      (l, t) => {
+        if (next < fsm.length && t >= 0.3 + next * 0.8) l.startStringCheck(fsm[next++]);
+      },
+    );
+    expect(h.strings.map((s) => s.result)).toEqual([...arts]);
+
+    const hits = new Float32Array(sr * 4);
+    addNoise(hits, 0.0015);
+    for (const at of [1, 1.4]) mixInto(hits, strum(OPEN_STRINGS, sr, 0.3, { art: 'muted', amp: 0.2 }, 4), at * sr);
+    mixInto(hits, strum(chordNotes(CHORDS.Em), sr, 1.5), 2.2 * sr);
+    const thuds: number[] = [];
+    const after = hear(hits, (l) => {
+      l.noteDetection = false;
+      l.chordCandidates = ['Em', 'Am', 'C'];
+      l.onThud = (e) => thuds.push(e.time);
+    });
+    expect(thuds.map((t) => Math.round(t * 10) / 10)).toEqual([1, 1.4]);
+    // the hits on dead strings are no chord, the strum after them is
+    expect(after.chords.map((c) => `${c.best} at ${c.time.toFixed(1)}`)).toEqual(['Em at 2.2']);
+  });
+
+  it('follows a sung note to within a few cents', () => {
+    for (const midi of [48, 57, 69]) {
+      const sig = new Float32Array(Math.floor(2.2 * sr));
+      mixInto(sig, voiceTone({ sr, midi, dur: 1.4, cents: 15, seed: 2 }), 0.5 * sr);
+      addNoise(sig, 0.0015);
+      const got: number[] = [];
+      hear(sig, (l) => {
+        l.noteDetection = false;
+        l.pitchTracking = true;
+        l.pitchClarity = 0.6;
+        l.onPitch = (e) => {
+          if (e.time > 1 && e.time < 1.8) got.push(e.midi + e.cents / 100);
+        };
+      });
+      expect(got.length, `MIDI ${midi}`).toBeGreaterThan(20);
+      // the voice wavers by its vibrato; the middle of what was heard is where it was sung
+      const mid = got.sort((a, b) => a - b)[got.length >> 1];
+      expect(Math.abs((mid - midi) * 100 - 15), `MIDI ${midi}`).toBeLessThan(10);
     }
   });
 });

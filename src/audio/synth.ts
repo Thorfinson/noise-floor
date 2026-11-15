@@ -47,6 +47,11 @@ export function tone(o: ToneOpts): Float32Array {
   const pos = o.piano ? 0.12 : 0.18;
   const attack = Math.max(1, Math.floor(0.003 * sr));
 
+  // Each partial is a * exp(-i / (tau * sr)) * sin(w * i + phase). It is made by turning a point a little
+  // further round, and a little nearer the middle, with every sample, two partials in one pass over the
+  // buffer. An exp and a sin per sample cost so much that a strum, and still more a whole accompaniment,
+  // froze the page while it was made.
+  const turns: [number, number, number, number][] = [];
   for (let h = 1; h <= 14; h++) {
     const f = h * f0 * Math.sqrt(1 + stiff * h * h);
     if (f > Math.min(0.45 * sr, 9000)) break;
@@ -55,7 +60,23 @@ export function tone(o: ToneOpts): Float32Array {
     const tau = tau0 / (1 + 0.25 * (h - 1));
     const phase = rnd() * 2 * Math.PI;
     const w = (2 * Math.PI * f) / sr;
-    for (let i = 0; i < n; i++) out[i] += a * Math.exp(-i / (tau * sr)) * Math.sin(w * i + phase);
+    const d = Math.exp(-1 / (tau * sr));
+    turns.push([d * Math.cos(w), d * Math.sin(w), a * Math.cos(phase), a * Math.sin(phase)]);
+  }
+  for (let p = 0; p < turns.length; p += 2) {
+    const [c1, s1] = turns[p];
+    let [, , re1, im1] = turns[p];
+    const [c2, s2] = turns[p + 1] ?? [0, 0];
+    let [, , re2, im2] = turns[p + 1] ?? [0, 0, 0, 0];
+    for (let i = 0; i < n; i++) {
+      out[i] += im1 + im2;
+      const r1 = re1 * c1 - im1 * s1;
+      im1 = re1 * s1 + im1 * c1;
+      re1 = r1;
+      const r2 = re2 * c2 - im2 * s2;
+      im2 = re2 * s2 + im2 * c2;
+      re2 = r2;
+    }
   }
 
   // pick or hammer noise at the very start
@@ -201,6 +222,11 @@ export function voiceTone(o: VoiceOpts): Float32Array {
     harmonics.push({ h, a: formant(h * f0) / h ** 0.6, phase: rnd() * 2 * Math.PI });
   }
   const norm = harmonics.reduce((s, x) => s + x.a, 0);
+  // sin(h * phase + its own phase) for every harmonic, from one sin and one cos of the phase: the angle of
+  // each harmonic is the one before it turned once more. One sin per harmonic and sample was slow.
+  const amp1 = Float64Array.from(harmonics, (x) => x.a);
+  const cosP = Float64Array.from(harmonics, (x) => Math.cos(x.phase));
+  const sinP = Float64Array.from(harmonics, (x) => Math.sin(x.phase));
   let phase = 0;
   let breath = 0;
   for (let i = 0; i < n; i++) {
@@ -210,8 +236,17 @@ export function voiceTone(o: VoiceOpts): Float32Array {
     const wave = vib * Math.min(1, Math.max(0, (t - 0.25) / 0.3)) * Math.sin(2 * Math.PI * rate * t);
     const f = f0 * Math.pow(2, (into + wave + (drift * t) / dur) / 1200);
     phase += (2 * Math.PI * f) / sr;
+    const c1 = Math.cos(phase);
+    const s1 = Math.sin(phase);
+    let ch = c1;
+    let sh = s1;
     let s = 0;
-    for (const x of harmonics) s += x.a * Math.sin(x.h * phase + x.phase);
+    for (let j = 0; j < amp1.length; j++) {
+      s += amp1[j] * (sh * cosP[j] + ch * sinP[j]);
+      const r = ch * c1 - sh * s1;
+      sh = sh * c1 + ch * s1;
+      ch = r;
+    }
     breath += 0.3 * (rnd() * 2 - 1 - breath);
     const env = Math.min(1, t / 0.06) * Math.min(1, (dur - t) / 0.08);
     out[i] = env * amp * (s / norm + 0.02 * breath);
