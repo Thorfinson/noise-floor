@@ -6,7 +6,7 @@
  * Run with: npm run e2e (E2E_JOBS=1 one section after the other, E2E_ONLY=2p,3 only those, E2E_TIMES=1 the seconds)
  */
 import { AsyncLocalStorage } from 'node:async_hooks';
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { cpus } from 'node:os';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -159,7 +159,8 @@ const startRun = async (page: Page): Promise<void> => {
   await page.waitForFunction(() => (document.querySelector('#mid') as HTMLElement | null)?.dataset.gate === 'go', null, { timeout: 8000 }).catch(() => undefined);
 };
 
-const server = await createServer({ root: resolve(here, '../..'), logLevel: 'error', server: { port: 5199, strictPort: true } });
+// node_modules may be a link to another folder (a second working copy shares the first one's): its fonts are served too
+const server = await createServer({ root: resolve(here, '../..'), logLevel: 'error', server: { port: 5199, strictPort: true, fs: { allow: [resolve(here, '../..'), realpathSync(resolve(here, '../../node_modules'))] } } });
 await server.listen();
 const base = 'http://localhost:5199/';
 
@@ -574,7 +575,9 @@ const sections: [string, () => Promise<void>][] = [
       check('chord check: a chord that already rings is asked for from memory, and S shows its shape', hidden && (await text(page, '#tip')).startsWith('How to hold Am') && (await page.locator('#box circle[fill]:not([fill="none"])').count()) >= 3, (await text(page, '#tip')).slice(0, 60));
 
       // playing along with the click: one line, then two lines in a row at full speed
-      const playAlong = async (count: number): Promise<void> => {
+      const playAlong = async (count: number, sign = true): Promise<void> => {
+        // a lesson with the click starts nothing before the sign: Space gives it, once the lesson opened waits for it
+        if (sign && (await page.waitForSelector('#app[data-armed]', { timeout: 4000 }).then(() => true).catch(() => false))) await page.keyboard.press('Space');
         for (let i = 0; i < count; i++) {
           await page.waitForFunction((n) => Number((document.querySelector('#app') as HTMLElement).dataset.step ?? -1) >= n, i, { timeout: 15000 });
           await page.keyboard.press('n');
@@ -583,16 +586,24 @@ const sections: [string, () => Promise<void>][] = [
       const hits = async (): Promise<number> => Number(/(\d+) of \d+ on the click/.exec(await text(page, '#fbk'))?.[1] ?? -1);
       await page.goto(base + '?autostart#/song/scarborough-fair/2');
       await page.waitForSelector('#rowA');
-      await page.waitForFunction(() => document.querySelector('#h1')?.textContent?.includes('Get ready'), null, { timeout: 4000 }).catch(() => undefined);
-      check('play along: the second rung counts in', (await text(page, '#h1')).includes('Get ready') && (await page.getAttribute('#st1', 'aria-pressed')) === 'true', `${await text(page, '#h1')} | ${await text(page, '#eb')}`);
-      await playAlong(12);
+      await page.waitForTimeout(1500);
+      const waiting = { h1: await text(page, '#h1'), armed: await page.locator('#app[data-armed]').count(), step: await page.evaluate(() => (document.querySelector('#app') as HTMLElement).dataset.step ?? 'none') };
+      check('play along: the second rung starts nothing by itself: it waits for the first note of the line', /^Play \S+ to start\.$/.test(waiting.h1) && waiting.armed === 1 && waiting.step === 'none' && (await page.getAttribute('#st1', 'aria-pressed')) === 'true', JSON.stringify(waiting));
+      // the first note, played, is the sign: the click counts in
+      await pressUntilText(page, 'n', '#h1', 'Get ready');
+      check('play along: the first note played starts the count-in', (await text(page, '#h1')).includes('Get ready') && !(await page.locator('#app[data-armed]').count()), `${await text(page, '#h1')} | ${await text(page, '#eb')}`);
+      await playAlong(12, false);
       await page.waitForFunction(() => document.querySelector('#fbk')?.textContent?.includes('on the click'), null, { timeout: 8000 }).catch(() => undefined);
       check('play along: twelve notes played with the marker are on the click', (await hits()) >= 11, await text(page, '#fbk'));
       await page.screenshot({ path: resolve(out, 'click-line.png') });
 
       // with the click, a take that fell apart is followed by the bar where it did, alone
+      // (opened anew: the line before may sit and wait, and the same address again would leave it so)
+      await page.goto(base + '?autostart#/songs');
+      await page.waitForSelector('#list li');
       await page.goto(base + '?autostart#/song/scarborough-fair/2');
-      await page.waitForSelector('#rowA');
+      await page.waitForSelector('#app[data-armed]', { timeout: 4000 }).catch(() => undefined);
+      await page.keyboard.press('Space');
       const oneBar = await page
         .waitForFunction(() => /^Only bar \d+ this time/.test(document.querySelector('#fbk')?.textContent ?? ''), null, { timeout: 30000 })
         .then(() => true)
@@ -607,7 +618,7 @@ const sections: [string, () => Promise<void>][] = [
       await page.goto(base + '?autostart#/song/scarborough-fair/3');
       await page.waitForSelector('#rowA');
       // from the last line but one, so that the take is two lines long
-      for (let i = 0; i < 8 && !(await text(page, '#where')).includes('line 3 of 4'); i++) {
+      for (let i = 0; i < 8 && !(await text(page, '#where')).includes('Line 3 of 4'); i++) {
         await page.keyboard.press('ArrowRight');
         await page.waitForTimeout(150);
       }
@@ -657,7 +668,7 @@ const sections: [string, () => Promise<void>][] = [
       await page.screenshot({ path: resolve(out, 'import.png') });
       await page.click('#save');
       await page.waitForSelector('#rowA');
-      check('import: the new song opens as a lesson', (await text(page, '#where')).includes('Check song') && (await text(page, '#h1')).includes('together'), `${await text(page, '#where')} | ${await text(page, '#h1')}`);
+      check('import: the new song opens as a lesson, its title the way out to its page', (await text(page, 'header.top a')).includes('Check song') && /^#\/songs\/.+/.test((await page.getAttribute('header.top a', 'href')) ?? '') && (await text(page, '#h1')).includes('together'), `${await text(page, 'header.top a')} | ${await text(page, '#h1')}`);
       await page.keyboard.press('n');
       await page.waitForTimeout(500);
       check('import: its first step is heard', (await text(page, '#fbk')).includes('right'), await text(page, '#fbk'));
@@ -946,7 +957,9 @@ const sections: [string, () => Promise<void>][] = [
       const errors: string[] = [];
       page.on('pageerror', (e) => errors.push(e.message));
 
-      const playAlong = async (count: number): Promise<void> => {
+      const playAlong = async (count: number, sign = true): Promise<void> => {
+        // a lesson with the click starts nothing before the sign: Space gives it, once the lesson opened waits for it
+        if (sign && (await page.waitForSelector('#app[data-armed]', { timeout: 4000 }).then(() => true).catch(() => false))) await page.keyboard.press('Space');
         for (let i = 0; i < count; i++) {
           await page.waitForFunction((n) => Number((document.querySelector('#app') as HTMLElement).dataset.step ?? -1) >= n, i, { timeout: 15000 });
           await page.keyboard.press('n');
@@ -1246,7 +1259,9 @@ const sections: [string, () => Promise<void>][] = [
       const page = await ctx.newPage();
       const errors: string[] = [];
       page.on('pageerror', (e) => errors.push(e.message));
-      const playAlong = async (count: number): Promise<void> => {
+      const playAlong = async (count: number, sign = true): Promise<void> => {
+        // a lesson with the click starts nothing before the sign: Space gives it, once the lesson opened waits for it
+        if (sign && (await page.waitForSelector('#app[data-armed]', { timeout: 4000 }).then(() => true).catch(() => false))) await page.keyboard.press('Space');
         for (let i = 0; i < count; i++) {
           await page.waitForFunction((n) => Number((document.querySelector('#app') as HTMLElement).dataset.step ?? -1) >= n, i, { timeout: 15000 });
           await page.keyboard.press('n');
@@ -1279,7 +1294,7 @@ const sections: [string, () => Promise<void>][] = [
       await page.keyboard.press('l');
       await page.keyboard.press(']');
       await page.waitForFunction(() => /Loop · bars 1–5/.test(document.querySelector('#eb')?.textContent ?? ''), null, { timeout: 4000 }).catch(() => undefined);
-      check('loop: L loops the line on show, ] takes in the bar after it, and the rest is drawn faint', /Loop · bars 1–5 · \d+%/.test(await text(page, '#eb')) && (await page.getAttribute('#loopbtn', 'aria-pressed')) === 'true' && (await text(page, '#rungnote')).includes('goes round until L ends it'), `${await text(page, '#eb')} | ${await text(page, '#rungnote')}`);
+      check('loop: L loops the line on show, ] takes in the bar after it, and the rest is drawn faint', /Loop · bars 1–5 · \d+%/.test(await text(page, '#eb')) && (await page.getAttribute('#loopbtn', 'aria-pressed')) === 'true' && (await text(page, '#slsay')).includes('goes round until L ends it'), `${await text(page, '#eb')} | ${await text(page, '#slsay')}`);
       await page.keyboard.press('+');
       await page.waitForTimeout(200);
       check('loop: the tempo moves in steps of five', /Loop · bars 1–5 · (5[05]|6[05]|7[05])%/.test(await text(page, '#eb')) && /^\d+%$/.test(await text(page, '#tempo')), `${await text(page, '#eb')} | ${await text(page, '#tempo')}`);
@@ -1372,7 +1387,7 @@ const sections: [string, () => Promise<void>][] = [
       await page.fill('#title', 'My first song');
       await page.click('#save');
       await page.waitForSelector('#rowA');
-      check('your own song: kept and opened as a lesson like any song', /My first song/.test(await text(page, '#where')) && /^(Strum|Change to)/.test(await text(page, '#h1')), `${await text(page, '#where')} | ${await text(page, '#h1')}`);
+      check('your own song: kept and opened as a lesson like any song', /My first song/.test(await text(page, 'header.top a')) && /^(Strum|Change to)/.test(await text(page, '#h1')), `${await text(page, 'header.top a')} | ${await text(page, '#h1')}`);
 
       // playing freely: no score, the app shows what it heard
       await page.goto(base + '?autostart#/jam');
@@ -1576,6 +1591,112 @@ const sections: [string, () => Promise<void>][] = [
         return { ...during, after: await p.locator('#imagbtn').getAttribute('aria-pressed') };
       });
       check('resting the hands: I plays the line and follows it on the tab, nothing listened to; I again ends it', rest.h1 === 'Listen, and play it in your head.' && rest.pressed === 'true' && rest.cur >= 1 && rest.after === 'false', JSON.stringify(rest));
+
+      // the song lesson: the way through the song in a band over it, the strums with their arrows, counts and
+      // words, the rungs named, the click started by the player, a line that sits, how it works the first time
+      /** a strum, until the lesson has heard it; then a moment for it to ring, as a strum on the beat would (the same chord at once again is not a new strum) */
+      const strumUntil = async (p: Page, said: string): Promise<boolean> => {
+        for (let t = 0; t < 3; t++) {
+          await p.keyboard.press('n');
+          const ok = await p.waitForFunction((x) => (document.querySelector('#eb')?.textContent ?? '').includes(x) || /sits/.test(document.querySelector('#h1')?.textContent ?? ''), said, { timeout: 1500 }).then(() => true).catch(() => false);
+          if (ok) {
+            await p.waitForTimeout(450);
+            return true;
+          }
+        }
+        return false;
+      };
+      const way = await visit('song/amazing-grace-chords/1', { instrument: 'guitar' }, '#rowA text', async (p) => ({
+        lines: await p.locator('#slpath .slln').count(),
+        cur: await txt(p, '#slpath .slln.cur'),
+        say: await txt(p, '#slsay'),
+        rungs: (await p.locator('.slrungs .rung').allInnerTexts()).map((t) => t.replace(/\s+/g, ' ').trim()),
+        arrows: await p.locator('#rowA path[d*="V"]').count(),
+        counts: await p.locator('#rowA .cnt').count(),
+        words: await p.locator('#rowA .bw').allTextContents(),
+        exit: await p.getAttribute('header.top a', 'href'),
+        title: await txt(p, 'header.top a'),
+      }));
+      check(
+        'song lesson: a band over it shows each line and its two steps, and says the step on show; every strum has its arrow and count, the bars their words; the steps are named; the title leads back to the song',
+        way.lines === 4 && way.cur.startsWith('Line 1') && way.say.startsWith('Step 1 of 3 · Learn') && /Learn/.test(way.rungs[0]) && /Click/i.test(way.rungs[1]) && /Whole/.test(way.rungs[2]) && way.arrows >= 12 && way.counts === 12 && way.words[0] === 'A-ma-zing' && way.exit === '#/songs/amazing-grace-chords' && way.title.includes('Amazing Grace'),
+        JSON.stringify(way),
+      );
+      const heardLine = await visit('song/amazing-grace-chords/1', { instrument: 'guitar' }, '#rowA text', async (p) => {
+        await p.keyboard.press('h');
+        await p.waitForTimeout(400);
+        return txt(p, '#fbk');
+      });
+      check('song lesson: H plays the line with its tune', heardLine.startsWith('Listen: this is how the line with its tune goes'), heardLine);
+      const picked = await visit('song/amazing-grace-chords/2', { instrument: 'guitar' }, '#rowA text', async (p) => {
+        await p.locator('#slpath .slln').nth(2).click();
+        await p.waitForTimeout(1500);
+        const before = { where: await txt(p, '#where'), h1: await txt(p, '#h1'), armed: await p.locator('#app[data-armed]').count(), step: await p.evaluate(() => (document.querySelector('#app') as HTMLElement).dataset.step ?? 'none') };
+        // the first strum of the line, played, is the sign
+        await p.keyboard.press('n');
+        await p.waitForFunction(() => /Get ready/.test(document.querySelector('#h1')?.textContent ?? ''), null, { timeout: 4000 }).catch(() => undefined);
+        return { ...before, after: await txt(p, '#h1') };
+      });
+      const atLine = await visit('song/amazing-grace-chords/2/3', { instrument: 'guitar' }, '#rowA text', async (p) => ({ where: await txt(p, '#where'), rung: await p.getAttribute('#st1', 'aria-pressed') }));
+      check('song lesson: an address can open it at a line (#/song/<id>/<rung>/<line>)', atLine.where.startsWith('Line 3 of 4') && atLine.rung === 'true', JSON.stringify(atLine));
+      check('song lesson: a line picked in the band waits for its first strum, which starts the count-in', picked.where.startsWith('Line 3 of 4') && picked.h1 === 'Strum G to start.' && picked.armed === 1 && picked.step === 'none' && picked.after.startsWith('Get ready'), JSON.stringify(picked));
+      const sat = await visit('song/amazing-grace-chords/1', { instrument: 'guitar' }, '#rowA text', async (p) => {
+        await p.waitForTimeout(400);
+        for (let i = 2; i <= 13; i++) await strumUntil(p, i <= 12 ? `strum ${i} of 12` : 'sits');
+        await p.waitForFunction(() => /sits/.test(document.querySelector('#h1')?.textContent ?? ''), null, { timeout: 3000 }).catch(() => undefined);
+        const view = { h1: await txt(p, '#h1'), main: await txt(p, '#slacts .btn.primary'), acts: await p.locator('#slacts .btn').count(), say: await txt(p, '#slsay'), mark: await txt(p, '#slpath .slln.cur') };
+        // nothing moves on by itself
+        await p.waitForTimeout(3500);
+        const stays = { h1: await txt(p, '#h1'), where: await txt(p, '#where'), later: await p.locator('.later').count() };
+        await p.keyboard.press('2');
+        await p.waitForTimeout(400);
+        return { ...view, ...stays, up: await txt(p, '#h1'), rung: await p.getAttribute('#st1', 'aria-pressed') };
+      });
+      check(
+        'song lesson: a line gone clean without a clock sits: the app says so, offers the click first, and moves on only when asked',
+        sat.h1 === 'Line 1 sits.' && sat.main.startsWith('With the click') && sat.acts === 3 && sat.say.includes('Learn done for line 1') && sat.where.startsWith('Line 1 of 4') && sat.later === 0 && sat.up === 'Strum G to start.' && sat.rung === 'true',
+        JSON.stringify(sat),
+      );
+      const full = await visit('song/amazing-grace-chords/2', { instrument: 'guitar' }, '#rowA text', async (p) => {
+        for (let i = 0; i < 10; i++) await p.keyboard.press('+');
+        await p.waitForTimeout(200);
+        const tempo = await txt(p, '#tempo');
+        await p.keyboard.press('Space');
+        for (let i = 0; i < 12; i++) {
+          await p.waitForFunction((n) => Number((document.querySelector('#app') as HTMLElement).dataset.step ?? -1) >= n, i, { timeout: 15000 });
+          await p.keyboard.press('n');
+        }
+        await p.waitForFunction(() => /sits|of 12/.test(document.querySelector('#h1')?.textContent ?? ''), null, { timeout: 8000 }).catch(() => undefined);
+        await p.waitForTimeout(3200);
+        return { tempo, h1: await txt(p, '#h1'), main: await txt(p, '#slacts .btn.primary'), other: await txt(p, '#sitwhole'), where: await txt(p, '#where'), eb: await txt(p, '#eb') };
+      });
+      check('song lesson: a line clean with the click at full speed sits too, and the next line or the whole song is offered', full.tempo === '100%' && full.h1 === 'Line 1 sits at full speed.' && full.main.startsWith('Line 2 with the click') && full.other.startsWith('The whole song') && full.where.startsWith('Line 1 of 4'), JSON.stringify(full));
+      const how = await visit('songs', { instrument: 'guitar' }, '#list li', async (p) => {
+        await p.goto(base + '?autostart&how#/song/amazing-grace-chords/1');
+        await p.waitForSelector('.slhow', { timeout: 6000 }).catch(() => undefined);
+        const first = { cards: await p.locator('.slhow .slcards > div').count(), go: await txt(p, '#howgo'), off: await p.locator('#howoff').isChecked().catch(() => false) };
+        // nothing listens under the sheet: a strum does not move the marker on
+        await p.keyboard.press('n');
+        await p.waitForTimeout(800);
+        const under = await txt(p, '#eb');
+        await p.keyboard.press('Space');
+        await p.waitForTimeout(400);
+        const open = await p.locator('.slhow').count();
+        const h1 = await txt(p, '#h1');
+        const eb = await txt(p, '#eb');
+        // not again next time (kept in the settings); under More whenever it is asked for
+        const kept = await p.evaluate(() => JSON.parse(localStorage.getItem('noise-floor/v1') ?? '{}').settings?.lessonHowOff?.guitar === true);
+        await p.evaluate(() => (location.hash = '#/songs'));
+        await p.waitForSelector('#list li');
+        await p.evaluate(() => (location.hash = '#/song/amazing-grace-chords/1'));
+        await p.waitForSelector('#rowA text');
+        await p.waitForTimeout(500);
+        const again = await p.locator('.slhow').count();
+        await p.locator('#more summary').click();
+        await p.locator('#howbtn').click();
+        return { ...first, under, open, h1, eb, kept, again, fromMore: await p.locator('.slhow').count() };
+      });
+      check('song lesson: the first time, a sheet says how a song is learned here; nothing listens under it, Space starts the line, and it is not shown again but stays under More', how.cards === 3 && how.go.startsWith('Got it: start line 1') && how.off && !how.under.includes('strum 2') && how.eb.includes('strum 1 of 12') && how.open === 0 && how.h1.startsWith('Strum G') && how.kept && how.again === 0 && how.fromMore === 1, JSON.stringify(how));
       const page = await visit('basics/rest', { instrument: 'guitar' }, '.leaf', (p) => txt(p, '.leaf h1, .leaf h2'));
       check('handbook: a page on sore fingertips and practice in the head', /Sore fingertips/.test(page), page);
 
