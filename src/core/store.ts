@@ -67,6 +67,11 @@ export interface Settings {
   voiceHelp: number;
   /** takes at full speed are recorded and kept in this browser, to listen back to */
   recordTakes: boolean;
+  /**
+   * The instruments whose song lessons no longer open with the sheet on how a song is learned ("Don't show this
+   * again" was left ticked). Replaced as a whole when it changes, never changed in place: the defaults share it.
+   */
+  lessonHowOff: Partial<Record<Instrument, boolean>>;
 }
 
 /** An old song coming back: when it is due again, and how far apart its visits have got. */
@@ -159,7 +164,7 @@ interface Saved {
 const KEY = 'noise-floor/v1';
 /** Where saved data that could not be read is kept aside, so that the next save does not wipe it out. */
 export const ASIDE_KEY = 'noise-floor/v1-unreadable';
-const DEFAULTS: Settings = { a4: 440, pianoA4: 440, buzz: 0.5, mic: true, deviceId: '', practiceInstrument: false, strumSelect: true, instrument: 'guitar', click: 0.5, clickSound: 'tick', chimes: 0.5, ring: 0.05, ringTypical: 0, smallShapes: true, mutePause: true, latency: -1, lang: '', voiceLow: 0, voiceHigh: 0, voiceTol: 50, weekGoal: 4, backing: false, uiScale: 1, leftHanded: false, capo: 0, tuning: 'standard', autoTempo: true, notation: 'strip', noteNames: 'auto', voiceHelp: 0, recordTakes: true };
+const DEFAULTS: Settings = { a4: 440, pianoA4: 440, buzz: 0.5, mic: true, deviceId: '', practiceInstrument: false, strumSelect: true, instrument: 'guitar', click: 0.5, clickSound: 'tick', chimes: 0.5, ring: 0.05, ringTypical: 0, smallShapes: true, mutePause: true, latency: -1, lang: '', voiceLow: 0, voiceHigh: 0, voiceTol: 50, weekGoal: 4, backing: false, uiScale: 1, leftHanded: false, capo: 0, tuning: 'standard', autoTempo: true, notation: 'strip', noteNames: 'auto', voiceHelp: 0, recordTakes: true, lessonHowOff: {} };
 
 /*
  * What is read back (from this browser, a backup or a progress file) is checked field by field before the app
@@ -281,6 +286,7 @@ const SETTINGS: { [K in keyof Settings]-?: Check<Settings[K]> } = {
   noteNames: oneOf('auto', 'on', 'off'),
   voiceHelp: within(0, 2),
   recordTakes: bool,
+  lessonHowOff: shape<Partial<Record<Instrument, boolean>>>({ guitar: bool, piano: bool, voice: bool }),
 };
 /** a number, or 0: the index of a recording is kept even when a field of it is broken, for the sound is still there */
 const num0 = (v: unknown): number => num(v) ?? 0;

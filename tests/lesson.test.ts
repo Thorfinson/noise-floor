@@ -6,12 +6,21 @@ vi.hoisted(() => {
   g.addEventListener ??= () => undefined;
 });
 
+import { Skills } from '../src/core/skills';
+import { Store } from '../src/core/store';
 import { said, tuneOf } from '../src/music/accompany';
 import { findSong } from '../src/music/content';
 import { songMaterial } from '../src/music/material';
 import { STRUMS } from '../src/music/songwriting';
 import { STRUM_PATTERNS, strumPatternOf } from '../src/music/strums';
+import { pathState } from '../src/screens/learn';
 import { countAt, FAR, LEARN, strokes, tabLine } from '../src/ui/draw';
+
+/** A browser's local storage, in memory. */
+const memory = (): Pick<Storage, 'getItem' | 'setItem'> => {
+  const mem = new Map<string, string>();
+  return { getItem: (k) => mem.get(k) ?? null, setItem: (k, v) => void mem.set(k, v) };
+};
 
 describe('the strums of a lesson, drawn to be played', () => {
   it('counts the clicks of a bar, the halves and quarters between them, and six-eight in eighths', () => {
@@ -73,5 +82,47 @@ describe('the strums of a lesson, drawn to be played', () => {
     const m = songMaterial(findSong('scarborough-fair'));
     const t = { bars: m.lines[0].tab, look: () => 'up' as const };
     expect(tabLine({ ...t, beat: m.beat }, LEARN, true)).toMatchObject({ svg: tabLine(t, LEARN, true).svg, height: tabLine(t, LEARN, true).height });
+  });
+});
+
+describe('the way through a song', () => {
+  it('says of every line whether it is learned without a clock, done with the click, and the tempo the click starts at', () => {
+    const m = songMaterial(findSong('loch-lomond'));
+    const keys = (li: number): string[] => [...new Set(m.lines[li].bars.map(m.skill))];
+    const skills = new Skills({});
+    let p = pathState(m, skills);
+    expect(p.lines.length).toBe(m.lines.length);
+    expect(p.lines.every((l) => !l.learned && !l.clicked && l.tempo === 50)).toBe(true);
+    expect(p).toMatchObject({ whole: false, due: null });
+
+    // the first line clean without a clock at 62%: learned; the click starts at the next tempo up
+    const now = Date.now();
+    for (const k of keys(0)) skills.record(k, 62, now);
+    p = pathState(m, skills);
+    expect(p.lines[0]).toEqual({ learned: true, clicked: false, tempo: 70 });
+    // a line is learned only when every bar of it is
+    for (let i = 1; i < m.lines.length; i++) expect(p.lines[i].learned).toBe(keys(i).every((k) => keys(0).includes(k)));
+
+    // clean at full speed: done with the click
+    for (const k of keys(0)) skills.record(k, 100, now);
+    expect(pathState(m, skills).lines[0]).toEqual({ learned: true, clicked: true, tempo: 100 });
+
+    // in the repertoire: the whole song is done, and it is kept until it is due again
+    expect(pathState(m, skills, { due: now + 86400000 })).toMatchObject({ whole: true, due: now + 86400000 });
+  });
+});
+
+describe('the sheet on how a song is learned', () => {
+  it('is left out for an instrument once asked; the setting is checked when read back', () => {
+    const s = new Store(memory());
+    expect(s.settings.lessonHowOff).toEqual({});
+    s.settings.lessonHowOff = { ...s.settings.lessonHowOff, guitar: true };
+    s.save();
+    // the defaults are not changed by it: another store starts with the sheet again
+    expect(new Store(memory()).settings.lessonHowOff).toEqual({});
+    s.restore(JSON.stringify({ app: 'noise-floor/v1', skills: {}, settings: { lessonHowOff: { piano: true, guitar: 'yes', drums: true } } }));
+    expect(s.settings.lessonHowOff).toEqual({ piano: true });
+    s.restore(JSON.stringify({ app: 'noise-floor/v1', skills: {}, settings: { lessonHowOff: 5 } }));
+    expect(s.settings.lessonHowOff).toEqual({});
   });
 });

@@ -1280,3 +1280,87 @@ body[data-fit]:has(.practice) .later { bottom: 128px; }
 /* the games and the toolbox keep the practice instrument as a band of its own: a pill there would lie over the briefing or the tool */
 body[data-fit][data-mode='nf'] .practice, body[data-fit] .toolbox .practice { position: static; padding: 4px var(--gutter); border: 0; border-top: 1px dashed var(--line); border-radius: 0; box-shadow: none; background: rgba(252, 248, 242, 0.96); }
 body[data-fit] .toolbox .practice { padding-inline: 24px; }
+
+/* the song lesson */
+/* the way out is the song's own page, by its title */
+.top .sltitle { min-width: 0; max-width: 30vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* the band under the top bar: every line with its two rungs, the whole song, keeping it, and one sentence on the
+   rung on show. A long song's lines scroll sideways and keep the line on show in sight. */
+.slband { display: flex; align-items: center; gap: 6px 10px; width: min(1600px, 100% - 2 * var(--gutter)); margin: 0 auto; padding-top: clamp(5px, 1.2vh, 16px); }
+body[data-fit] .slband + .stage { padding-top: clamp(2px, 1vh, 24px); }
+/* what the app heard says itself under the instruction, beside the chord to hold, where the eyes are */
+.say .fbk { min-height: 1.5em; margin-top: 8px; line-height: 1.35; }
+.slband ~ .stage .foot { min-height: 0; }
+.slband ~ .stage .foot:not(:has(.fbk)) .legend { margin-top: -2px; }
+/* two lines on show, the one being played over the next: close together, as lines of music are */
+body[data-fit] .slband ~ .stage #rowB { margin-top: -6px; }
+.slpath { position: relative; flex: 0 1 auto; min-width: 0; display: flex; align-items: center; gap: 6px; padding: 2px; overflow-x: auto; scrollbar-width: none; }
+.slpath::-webkit-scrollbar { display: none; }
+/* more lines than there is room for: the row fades out at its end */
+.slpath.over { -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 36px), transparent); mask-image: linear-gradient(to right, #000 calc(100% - 36px), transparent); }
+.slname { flex: none; margin-right: 2px; font-size: var(--t-small); font-weight: 600; color: var(--muted); }
+.slln, .slstep { flex: none; display: inline-flex; align-items: center; gap: 4px; height: 30px; padding: 0 7px 0 11px; border: 0; border-radius: 999px; background: var(--panel); font: 600 var(--t-small) var(--font); color: var(--muted); white-space: nowrap; }
+span.slstep { padding: 0 12px; }
+.slln:hover, button.slstep:hover { background: var(--raised); color: var(--text); }
+.slln.cur, .slstep.cur { background: #fffdf8; color: var(--text); box-shadow: inset 0 0 0 2px var(--text); }
+.slln b { margin-right: 1px; font-weight: 700; }
+.slln i, .slstep i { display: inline-grid; place-items: center; min-width: 20px; height: 20px; padding: 0 5px; border-radius: 999px; background: var(--raised); font: 700 0.6875rem var(--mono); font-style: normal; color: var(--muted); }
+.slln i.on, .slstep i.on { background: var(--text); color: var(--bg); }
+.slln i.ok, .slstep i.ok { background: var(--good); color: #fff; }
+.slln i.pct { background: none; box-shadow: inset 0 0 0 1.5px var(--line); }
+.slln i.pct.on { background: var(--text); box-shadow: none; }
+.slstep.kept { color: var(--good); }
+.slar { flex: none; color: var(--faint); }
+.slsay { flex: 1 0 auto; max-width: 46%; margin: 0; text-align: right; font-size: var(--t-small); line-height: 1.35; color: var(--muted); }
+.slsay b { color: var(--text); }
+@media (max-width: 1100px) { .slband { flex-wrap: wrap; } .slsay { flex-basis: 100%; max-width: none; text-align: left; } }
+/* a line that sits: said in green, with what can come next */
+.slok { color: var(--good); }
+.slacts { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: clamp(10px, 2vh, 18px); }
+body[data-fit] .slacts .btn.big { min-height: 54px; padding-inline: 24px; font-size: var(--t-body); }
+/* the strums of the tab: the count under each, the words under each bar */
+.cnt { font-family: var(--mono); text-anchor: middle; }
+.bw { font: 400 24px var(--font); }
+/* the rungs and the button that plays the line are named in the dock, shorter on a narrower window */
+.bar .btn .sls, .bar .slrungs .rung span.sls { display: none; }
+.bar .slrungs .rung span.sll { display: inline; }
+.bar .slrungs .rung { padding: 0 12px; }
+@media (max-width: 1500px) {
+  .bar .btn .sll, .bar .slrungs .rung[aria-pressed] span.sll { display: none; }
+  .bar .btn .sls, .bar .slrungs .rung[aria-pressed] span.sls { display: inline; }
+  .bar .slrungs .rung[aria-pressed] { gap: 6px; padding: 0 10px; }
+}
+/* a laptop's window: the dock stays one row with the rungs named, in German too (Space is said over the music) */
+@media (max-width: 1400px) {
+  body[data-fit] .bar:has(.slrungs) { gap: 8px; }
+  body[data-fit] .bar:has(.slrungs) .grp { gap: 6px; }
+  body[data-fit] .bar:has(.slrungs) .btn { padding-inline: 12px; }
+  .bar:has(.slrungs) #pause kbd { display: none; }
+}
+/* how a song is learned: a sheet over the lesson, the first time and from More */
+.slhowwrap { position: fixed; inset: 0; z-index: 70; display: grid; place-items: center; padding: 16px; }
+.slscrim { position: absolute; inset: 0; background: rgba(38, 38, 46, 0.34); backdrop-filter: blur(2px); }
+.slhow { position: relative; display: grid; gap: clamp(12px, 2.4vh, 24px); width: min(980px, 100%); max-height: 100%; overflow: auto; padding: clamp(18px, 3.4vh, 34px); border: 1px solid rgba(255, 255, 255, 0.75); border-radius: 20px; background: #fcf8f2; box-shadow: var(--shadow); }
+.slhow .k { margin: 0; }
+.slhow h2 { margin: 8px 0 0; font: 700 var(--t-h2) / 1.1 var(--font); letter-spacing: -0.015em; }
+.slcards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+.slcards > div { display: grid; align-content: start; gap: 8px; padding: 18px; border-radius: 16px; background: #fffdf8; }
+.slcards .n { display: grid; place-items: center; width: 34px; height: 34px; border-radius: 50%; background: var(--text); color: var(--bg); font-weight: 700; }
+.slcards h3 { margin: 0; font: 700 var(--t-h3) var(--font); }
+.slcards p { margin: 0; font-size: var(--t-small); line-height: 1.45; color: var(--muted); }
+.slcards small { margin-top: 4px; padding-top: 10px; border-top: 1px solid var(--line); font-size: var(--t-meta); font-weight: 600; color: var(--text); }
+.slpic { display: block; width: 100%; height: 64px; }
+.slmore { margin: 0; color: var(--muted); }
+.slmore b { color: var(--text); }
+.slgo { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 22px; }
+.sloff { display: inline-flex; align-items: center; gap: 8px; font-weight: 600; color: var(--muted); cursor: pointer; }
+.sloff input { width: 20px; height: 20px; margin: 0; accent-color: var(--text); }
+@media (max-height: 700px) { .slcards > div { gap: 6px; padding: 14px 16px; } .slpic { height: 46px; } }
+@media (max-width: 900px) { .slcards { grid-template-columns: minmax(0, 1fr); } .slpic { display: none; } }
+/* phones: the band one row, its lines scrolling sideways, its sentence away (the dock says the rung) */
+@media (max-width: 600px), (max-height: 500px) {
+  .slband { flex-wrap: nowrap; gap: 6px; padding: 3px 12px 0; width: 100%; }
+  .slsay, .slar { display: none; }
+  .slln, .slstep { height: 28px; }
+  .top .sltitle { max-width: 34vw; }
+}

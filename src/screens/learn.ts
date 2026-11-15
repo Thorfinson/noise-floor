@@ -7,6 +7,7 @@
 import type { ChordEvent, NoteEvent, ThudEvent } from '../audio/listener';
 import { engine } from '../audio/engine';
 import { backing } from '../audio/backing';
+import { songSound } from '../audio/songsound';
 import { mixInto, strum, tone } from '../audio/synth';
 import { L } from '../core/i18n';
 import { Take, TEMPOS, type TakeStep } from '../core/playalong';
@@ -26,7 +27,53 @@ import { setSimTarget, type SimTarget } from '../ui/practice';
 import { frame, levelNews, nextStep } from './frame';
 import { takeBox, takePanel } from './takepanel';
 
-const RUNGS = (): string[] => [L('Learn', 'Lernen'), L('With the click', 'Mit Klick'), L('Full speed', 'Volles Tempo')];
+/** The three rungs as the dock names them: in full, and short for a narrow window. */
+const RUNGS = (piano: boolean): { long: string; short: string }[] => [
+  { long: L('Learn', 'Lernen'), short: L('Learn', 'Lernen') },
+  { long: L('With the click', 'Mit Klick'), short: L('Click', 'Klick') },
+  piano ? { long: L('Whole piece', 'Ganzes Stück'), short: L('Whole', 'Ganz') } : { long: L('Whole song', 'Ganzer Song'), short: L('Whole', 'Ganz') },
+];
+
+/** A triangle to play, for the buttons that sound something. */
+const PLAY = '<svg class="ic" viewBox="0 0 20 20" aria-hidden="true"><path d="M6 3.8l10 6.2-10 6.2z" fill="currentColor"/></svg>';
+
+/** Where a line stands: learned without a clock; clean with the click at full speed, else the tempo the click starts at. */
+export interface LineState {
+  learned: boolean;
+  clicked: boolean;
+  tempo: number;
+}
+
+/** What the path strip of a lesson shows: every line's two rungs, the whole song, and whether it is kept. */
+export interface PathState {
+  lines: LineState[];
+  /** played clean from start to end at full speed: it is in the repertoire */
+  whole: boolean;
+  /** when the repertoire wants it again; null when it is not in it */
+  due: number | null;
+}
+
+/**
+ * Where a song or piece stands on its way, from what has been measured: a line is learned when every bar of
+ * it is at level 1 (clean without a clock, at half its speed or more, as music/material.ts suggests the
+ * click from there), and done with the click at level 4 (clean at full speed). The tempo of the click is the
+ * one the lesson would start the line at. The whole of it is done once it is in the repertoire.
+ */
+export function pathState(m: Material, skills: { level: (key: string) => number; get: (key: string) => { best: number } | undefined }, kept?: { due: number }): PathState {
+  const lines = m.lines.map((l): LineState => {
+    const keys = [...new Set(l.bars.map(m.skill))];
+    const level = Math.min(...keys.map((k) => skills.level(k)));
+    const best = Math.min(...keys.map((k) => skills.get(k)?.best ?? 0));
+    return { learned: level >= 1, clicked: level >= 4, tempo: TEMPOS.find((t) => t >= 50 && t > best) ?? 100 };
+  });
+  return { lines, whole: !!kept, due: kept ? kept.due : null };
+}
+
+/** The sheet over the first song lesson is left out under the browser checks, as the handbook's pages are, unless they ask for it. */
+const howSkipped = (): boolean => {
+  const q = new URLSearchParams(location.search);
+  return q.has('autostart') && !q.has('intros') && !q.has('how');
+};
 
 /** Words under the notes of a melody (K): asked for once, they stay while the app is open. */
 const wordsOn = { on: false };
@@ -43,12 +90,14 @@ interface Mode {
   toggle: () => void;
 }
 
-function lesson(root: HTMLElement, m: Material, wanted: string | undefined, ctx?: SessionCtx, song?: Song): () => void {
+function lesson(root: HTMLElement, m: Material, wanted: string | undefined, ctx?: SessionCtx, song?: Song, at?: string): () => void {
   const n = m.lines.length;
   const inst: Instrument = m.piano ? 'piano' : 'guitar';
-  /** a song of chords as it is sung over them: the words of each bar (under the tab) */
+  /** a song of chords as it is sung over them: its tune (heard with H) and the words of each bar (under the tab) */
   const tune = song ? tuneOf(song) : null;
-  let line = Math.min(n - 1, store.progress[m.id] ?? 0);
+  // the line asked for in the address (counted from 1), otherwise where the song was left
+  const asked = Number(at);
+  let line = Number.isInteger(asked) && asked >= 1 && asked <= n ? asked - 1 : Math.min(n - 1, store.progress[m.id] ?? 0);
   const first = suggest(m, line);
   /**
    * A visit to an old song: two lines, cold, at full speed and with no run-up. After a visit that fell apart
@@ -97,27 +146,35 @@ function lesson(root: HTMLElement, m: Material, wanted: string | undefined, ctx?
     '',
     `<div class="head">
        ${m.piano ? '' : `<svg id="cbox" class="chordfig" viewBox="0 0 230 210" role="img" aria-label="${L('Chord diagram: where your fingers go for the chord to hold', 'Akkorddiagramm: wo deine Finger für den Akkord hinkommen, den du hältst')}"></svg>`}
-       <div class="say"><p class="eyebrow" id="eb"></p><h1 id="h1" aria-live="polite"></h1><p class="sub" id="sub"></p><p class="rungnote" id="rungnote" aria-live="polite"></p></div>
+       <div class="say"><p class="eyebrow" id="eb"></p><h1 id="h1" aria-live="polite"></h1><p class="sub" id="sub"></p><p class="fbk info" id="fbk"></p><div class="slacts" id="slacts" hidden></div></div>
      </div>
      <svg class="fit" id="rowA" viewBox="0 0 1180 ${m.piano ? 180 : 186}" role="img" aria-label="${L(`${m.piano ? 'The notes of this phrase, read left to right' : 'Tablature of this line, read left to right'}, with a marker on the one to play`, `${m.piano ? 'Die Noten dieser Phrase, von links nach rechts gelesen' : 'Tabulatur dieser Zeile, von links nach rechts gelesen'}, mit einer Markierung auf dem, was jetzt dran ist`)}"></svg>
      <svg class="fit" id="rowB" viewBox="0 0 1180 ${m.piano ? 180 : 186}" role="img" aria-label="${L('What comes next', 'Was danach kommt')}" hidden></svg>
      <svg class="fit" id="hands" viewBox="0 0 1180 ${m.piano ? 226 : 224}" role="img" aria-label="${m.piano ? L('Keyboard: the highlighted key is the one to play, with its finger number', 'Tastatur: die hervorgehobene Taste ist die, die du spielst, mit ihrer Fingernummer') : L('Fretboard: numbered dots show where your fingers go, the vibrating string is the one to pluck', 'Griffbrett: nummerierte Punkte zeigen, wo deine Finger hinkommen, die schwingende Saite ist die, die du zupfst')}"></svg>
-     <div class="foot"><p class="fbk info" id="fbk"></p><p class="legend">${fingers}</p></div>
+     <div class="foot"><p class="legend">${fingers}</p></div>
      ${takeBox()}`,
-    `<div class="grp do"><button class="btn" id="again">${L('Again', 'Nochmal')} <kbd>R</kbd></button><button class="btn" id="hearit">${L('Hear it', 'Anhören')} <kbd>H</kbd></button></div>
-     <div class="grp move"><button class="btn quiet" id="prev" title="${L('The line before (←)', 'Die Zeile davor (←)')}">${icon('left')}<span class="t">${L('Previous', 'Zurück')}</span> <kbd>←</kbd></button><button class="btn quiet" id="next" title="${L('The next line (→)', 'Die nächste Zeile (→)')}"><span class="t">${L('Next', 'Weiter')}</span> <kbd>→</kbd>${icon('right')}</button>${nextStep(ctx)}</div>
+    `<div class="grp do"><button class="btn" id="hearit" title="${m.piano ? L('Hear this phrase as it should sound', 'Diese Phrase anhören, wie sie klingen soll') : L(`Hear this line as it should sound${tune ? ', with its tune' : ''}`, `Diese Zeile anhören, wie sie klingen soll${tune ? ', mit der Melodie' : ''}`)}">${PLAY}<span class="sll">${m.piano ? L('Hear this phrase', 'Phrase anhören') : L('Hear this line', 'Zeile anhören')}</span><span class="sls">${L('Hear', 'Anhören')}</span> <kbd>H</kbd></button><button class="btn" id="again">${L('Again', 'Nochmal')} <kbd>R</kbd></button></div>
+     <div class="grp move"><button class="btn quiet" id="prev" title="${m.piano ? L('The phrase before (←)', 'Die Phrase davor (←)') : L('The line before (←)', 'Die Zeile davor (←)')}">${icon('left')}<span class="t">${cap(m.piano ? L('phrase', 'Phrase') : L('line', 'Zeile'))}</span> <kbd>←</kbd></button><button class="btn quiet" id="next" title="${m.piano ? L('The next phrase (→)', 'Die nächste Phrase (→)') : L('The next line (→)', 'Die nächste Zeile (→)')}"><span class="t">${cap(m.piano ? L('phrase', 'Phrase') : L('line', 'Zeile'))}</span> <kbd>→</kbd>${icon('right')}</button>${nextStep(ctx)}</div>
      <div class="grp how" id="tempobox" hidden><span class="stepper"><button class="btn quiet" id="slower" title="${L('Slower by 5% (−)', 'Um 5 % langsamer (−)')}" aria-label="${L('Slower by 5%', 'Um 5 % langsamer')}">−</button><b id="tempo"></b><button class="btn quiet" id="faster" title="${L('Faster by 5%, up to 125% (+)', 'Um 5 % schneller, bis 125 % (+)')}" aria-label="${L('Faster by 5%', 'Um 5 % schneller')}">+</button></span><button class="btn" id="pause"><span>${L('Pause', 'Pause')}</span> <kbd>${L('Space', 'Leertaste')}</kbd></button><button class="btn quiet tog" id="loopbtn" aria-pressed="false" title="${L('The bars on show go round and round with the click, one bar counted in, until L again.', 'Die gezeigten Takte laufen mit dem Klick im Kreis, ein Takt eingezählt, bis wieder L.')}">${L('Loop', 'Schleife')} <kbd>L</kbd></button></div>
-     <div class="ladder" role="group" aria-label="${L('How to practise', 'Wie du übst')}">${RUNGS().map((r, i) => `<button class="rung" id="st${i}" aria-pressed="false" title="${r}"><b>${i + 1}</b><span>${r}<small id="st${i}s"></small></span></button>`).join('')}</div>
+     <div class="ladder slrungs" role="group" aria-label="${L('Step', 'Stufe')}">${RUNGS(m.piano)
+       .map((r, i) => `<button class="rung" id="st${i}" aria-pressed="false" title="${[L('Learn: no clock, the app waits for you', 'Lernen: ohne Uhr, die App wartet auf dich'), L(`With the click: ${m.unit} by ${m.unit}, in time`, `Mit Klick: ${unitDe(m)} für ${unitDe(m)}, im Takt`), m.piano ? L('The whole piece at full speed', 'Das ganze Stück im vollen Tempo') : L('The whole song at full speed', 'Der ganze Song im vollen Tempo')][i]} (${i + 1})"><b>${i + 1}</b><span class="sll">${r.long}</span><span class="sls">${r.short}</span></button>`)
+       .join('')}</div>
      <details class="more" id="more"><summary class="btn quiet">${L('More', 'Mehr')}</summary><div class="morepanel">
+       <div class="row"><button class="btn quiet" id="howbtn">${L('How this works', 'So funktioniert es')}</button></div>
        <p class="k">${L('Loop', 'Schleife')}</p><div class="row"><button class="btn quiet" id="widenl">${L('Take in the bar before', 'Takt davor dazu')} <kbd>[</kbd></button><button class="btn quiet" id="widenr">${L('Take in the bar after', 'Takt danach dazu')} <kbd>]</kbd></button></div>
        <p class="k">${L('Playing along', 'Mitspielen')}</p><div class="row"><button class="btn quiet tog" id="backbtn" aria-pressed="false">${L('Backing: bass and chords', 'Begleitung: Bass und Akkorde')} <kbd>A</kbd></button>${melody ? `<button class="btn quiet tog" id="wordsbtn" aria-pressed="${wordsOn.on}">${L('Words under the notes', 'Text unter den Noten')} <kbd>K</kbd></button>` : ''}${SING_ALONG[m.id] ? `<a class="btn quiet" href="#/singalong/${encodeURIComponent(m.id)}">${L('Sing and play: the words under the chords', 'Singen und spielen: der Text unter den Akkorden')}</a>` : ''}</div><p class="note">${L('Headphones only: through speakers the microphone would hear the backing as your playing.', 'Nur mit Kopfhörern: Über Lautsprecher würde das Mikrofon die Begleitung als dein Spiel hören.')}</p>
        ${m.piano ? `<p class="k">${L('The music', 'Die Noten')}</p><div class="row"><button class="btn quiet tog" id="staffbtn" aria-pressed="false">${L('On the staff', 'Als Notenzeile')} <kbd>S</kbd></button><button class="btn quiet" id="namesbtn"></button></div><p class="note">${L('The staff as in printed music, with the left hand on its own staff below. The names under the notes are a help to leave away: by default they go once a phrase sits.', 'Die Notenzeile wie in gedruckten Noten, die linke Hand auf einem eigenen System darunter. Die Namen unter den Noten sind eine Hilfe zum Weglassen: Von selbst verschwinden sie, sobald eine Phrase sitzt.')}</p>` : ''}
        <p class="k">${L('Learning a line', 'Eine Zeile lernen')}</p><div class="row"><button class="btn quiet tog" id="earbtn" aria-pressed="false">${L('By ear: notes hidden', 'Nach Gehör: Töne verdeckt')} <kbd>E</kbd></button><button class="btn quiet tog" id="imagbtn" aria-pressed="false">${L('Rest the hands: listen and imagine', 'Hände ausruhen: zuhören und vorstellen')} <kbd>I</kbd></button></div><p class="note">${L('On rung 1 the line is played first and the notes stay hidden; T shows them.', 'Auf Stufe 1 wird die Zeile zuerst vorgespielt, und die Töne bleiben verdeckt; T zeigt sie.')}</p>
        <p class="k">${L('Full speed', 'Volles Tempo')}</p><div class="row"><button class="btn quiet tog" id="perfbtn" aria-pressed="false">${L('Performance: no marks, recorded', 'Vortrag: ohne Markierungen, aufgenommen')} <kbd>V</kbd></button></div><p class="note">${L('The whole thing from the top. You say how it went before the app does, then listen back bar by bar.', 'Das Ganze von vorn. Du sagst, wie es lief, bevor die App es tut; dann hörst du es Takt für Takt an.')}</p>
-     </div></details>
-     <p class="auto" id="auto"></p>`,
+     </div></details>`,
     ctx,
-    ['#/songs', m.piano ? L('Pieces', 'Stücke') : L('Songs', 'Songs')],
+    // the way out leads to the page of this song, where it can be heard and its way through it is laid out
+    [`#/songs/${encodeURIComponent(m.id)}`, `<span class="sltitle">${esc(m.title)}</span>`],
+    `<nav class="slband" aria-label="${m.piano ? L('Your way through the piece', 'Dein Weg durch das Stück') : L('Your way through the song', 'Dein Weg durch den Song')}">
+       <div class="slpath" id="slpath"></div>
+       <span class="slar" aria-hidden="true">→</span><button class="slstep" id="slwhole" type="button"></button><span class="slar" aria-hidden="true">→</span><span class="slstep" id="slkeep"></span>
+       <p class="slsay" id="slsay" aria-live="polite"></p>
+     </nav>`,
   );
   const rowA = $<SVGSVGElement>('#rowA', root);
   const rowB = $<SVGSVGElement>('#rowB', root);
@@ -126,6 +183,7 @@ function lesson(root: HTMLElement, m: Material, wanted: string | undefined, ctx?
     const el = $('#fbk', root);
     el.className = 'fbk ' + cls;
     el.innerHTML = html;
+    el.hidden = false;
   };
   /** piano: the mistake nearest at hand is another chord of the piece, one that does not sound much like the right one */
   const mistaken = (id: string): string | undefined => (m.piano ? strummed.find((c) => c !== id && keysAlike(c, id) < 0.5) : undefined);
@@ -176,6 +234,9 @@ function lesson(root: HTMLElement, m: Material, wanted: string | undefined, ctx?
 
   /** The chord a step is played over: the one it strums or strikes, otherwise the one its bar holds or its keys belong to. */
   const chordAt = (s: Step | null | undefined): string | undefined => (s ? (s.chord ?? s.over ?? m.chordOf(s.bar)) : undefined);
+  // what the app heard stands beside the chord picture, where the eyes are, in the room the picture leaves
+  // under the instruction; a lesson without one says it under the music
+  if (m.piano || !m.lines.some((l) => l.steps.some((s) => !!chordAt(s)))) $('.foot', root).prepend($('#fbk', root));
 
   /** The chord to hold, large, next to the instruction. */
   function drawChord(step: Step | null | undefined): void {
@@ -291,9 +352,10 @@ function lesson(root: HTMLElement, m: Material, wanted: string | undefined, ctx?
     return { h1: L(`Pluck the <em>${STRING_FULL[t.s]} string</em>, ${t.f ? 'fret ' + t.f : 'open'}.`, `Zupf die <em>${STRING_FULL[t.s]}-Saite</em>, ${t.f ? t.f + '. Bund' : 'leer'}.`), sub: L(`It sounds like ${noteName(cur.midis[0])}.${t.fg ? ` Finger ${t.fg}.` : ''}`, `Der Ton ist ${noteName(cur.midis[0])}.${t.fg ? ` Finger ${t.fg}.` : ''}`) };
   }
 
+  /** The top bar: the line on show (the title is the way out, on the left), its part, who the song is by, the capo. */
   const where = (li: number): void => {
     const part = m.partOf(m.lines[li].bars[0]);
-    $('#where', root).innerHTML = `<b>${esc(m.title)}</b>${m.by ? ` · ${esc(m.by)}` : ''} · ${part && part !== 'All' ? `${esc(part.toLowerCase())} · ` : ''}${L(`${m.unit} ${li + 1} of ${n}`, `${unitDe(m)} ${li + 1} von ${n}`)}${!m.piano && guitarSetup() ? ` · ${guitarSetup()}` : ''}`;
+    $('#where', root).innerHTML = `<b>${L(`${cap(m.unit)} ${li + 1} of ${n}`, `${unitDe(m)} ${li + 1} von ${n}`)}</b>${part && part !== 'All' ? ` · ${esc(part.toLowerCase())}` : ''}${m.by ? ` · ${esc(m.by)}` : ''}${!m.piano && guitarSetup() ? ` · ${guitarSetup()}` : ''}`;
   };
   /**
    * A model to listen to before playing: the line as it should sound, a little slower than full speed.
@@ -307,7 +369,7 @@ function lesson(root: HTMLElement, m: Material, wanted: string | undefined, ctx?
     if (!melody) return;
     wordsOn.on = !wordsOn.on;
     $('#wordsbtn', root)?.setAttribute('aria-pressed', String(wordsOn.on));
-    setStage(stage);
+    setStage(stage, playing());
   }
 
   /** The model of these steps (u: their place in note units), at this many seconds a unit. */
@@ -399,12 +461,16 @@ function lesson(root: HTMLElement, m: Material, wanted: string | undefined, ctx?
     }
     if (!parts.length) return;
     // on the first rung a little slower than full speed; with the click at the tempo it is practised at
-    const unit = stage === 0 && !loop ? m.noteDur / 0.75 : (m.noteDur * 100) / tempo;
-    const seconds = engine.demo(modelSound(parts, unit, sr));
+    const slow = stage === 0 && !loop;
+    const unit = slow ? m.noteDur / 0.75 : (m.noteDur * 100) / tempo;
+    // a song of chords whose tune the app has: the line as the song goes, its tune sung over the strums
+    const sung = !loop && !m.piano && !!tune?.melody.length;
+    const seconds = engine.demo(sung ? songSound(m, { sr, speed: m.noteDur / unit, instrument: true, tune: tune!.melody, lines: [line, line], a4: guitarA4() }).samples : modelSound(parts, unit, sr));
     modelUntil = performance.now() + seconds * 1000 + 400;
-    say('info', stage === 0 && !loop ? L(`Listen: this is how the ${m.unit} goes, a little slower than full speed.`, `Hör zu: So klingt die ${unitDe(m)}, ein wenig langsamer als im vollen Tempo.`) : L(`Listen: ${loop ? barsSaid(loop) : `the ${m.unit}`} at ${tempo}%. Then Space to play.`, `Hör zu: ${loop ? barsSaid(loop) : `die ${unitDe(m)}`} bei ${tempo}%. Dann Leertaste zum Spielen.`));
+    const what = sung ? L(`the ${m.unit} with its tune`, `die ${unitDe(m)} mit ihrer Melodie`) : loop ? barsSaid(loop) : L(`the ${m.unit}`, `die ${unitDe(m)}`);
+    say('info', slow ? L(`Listen: this is how ${what} goes, a little slower than full speed.`, `Hör zu: So klingt ${what}, ein wenig langsamer als im vollen Tempo.`) : L(`Listen: ${what} at ${tempo}%. Then Space to play.`, `Hör zu: ${what} bei ${tempo}%. Dann Leertaste zum Spielen.`));
     clearTimeout(modelTimer);
-    modelTimer = window.setTimeout(() => say('info', L('Now you. Take your time.', 'Jetzt du. Lass dir Zeit.')), seconds * 1000 + 400);
+    modelTimer = window.setTimeout(() => say('info', stage === 0 ? L('Now you. Take your time.', 'Jetzt du. Lass dir Zeit.') : L('Now you.', 'Jetzt du.')), seconds * 1000 + 400);
   }
 
   const strumHit = (e: ChordEvent, want: string): boolean => strumIs(e, want, m.piano);
@@ -420,11 +486,10 @@ function lesson(root: HTMLElement, m: Material, wanted: string | undefined, ctx?
     let strumT = -1;
     rowB.toggleAttribute('hidden', true);
     hands.removeAttribute('hidden');
+    $('.legend', root).hidden = false;
     rowA.style.opacity = '1';
     $('#tempobox', root).hidden = true;
     $('#hearit', root).hidden = false;
-    $('#auto', root).hidden = false;
-    $('#auto', root).textContent = L(`Waits until it hears the right ${chordsOnly ? 'chord' : strummed.length ? 'note or chord' : m.piano ? 'key' : 'note'}. No rush.`, `Die App wartet, bis sie ${chordsOnly ? 'den richtigen Akkord' : strummed.length ? 'den richtigen Ton oder Akkord' : m.piano ? 'die richtige Taste' : 'den richtigen Ton'} hört. Keine Eile.`);
 
     function draw(): void {
       const done = at >= all.length;
@@ -438,9 +503,10 @@ function lesson(root: HTMLElement, m: Material, wanted: string | undefined, ctx?
       where(line);
       const bars = m.lines[line].bars;
       const count = done ? '' : ` · ${cur.chord && !cur.both ? (m.piano ? L(`chord ${at + 1} of ${all.length}`, `Akkord ${at + 1} von ${all.length}`) : L(`strum ${at + 1} of ${all.length}`, `Anschlag ${at + 1} von ${all.length}`)) : m.piano ? L(`key ${at + 1} of ${all.length}`, `Taste ${at + 1} von ${all.length}`) : L(`note ${at + 1} of ${all.length}`, `Ton ${at + 1} von ${all.length}`)}`;
+      // that the app waits is said once, in the band above
       $('#eb', root).textContent = L(
-        `${ctx ? `${ctx.label} · ${m.title} · ` : ''}${cap(m.unit)} ${line + 1} of ${n}${m.piano ? '' : ` · bar${bars.length > 1 ? `s ${bars[0] + 1}–${bars[bars.length - 1] + 1}` : ` ${bars[0] + 1}`}`}${count} · the app waits for you`,
-        `${ctx ? `${ctx.label} · ${m.title} · ` : ''}${unitDe(m)} ${line + 1} von ${n}${m.piano ? '' : ` · ${bars.length > 1 ? `Takte ${bars[0] + 1}–${bars[bars.length - 1] + 1}` : `Takt ${bars[0] + 1}`}`}${count} · die App wartet auf dich`,
+        `${ctx ? `${ctx.label} · ${m.title} · ` : ''}${cap(m.unit)} ${line + 1} of ${n}${m.piano ? '' : ` · bar${bars.length > 1 ? `s ${bars[0] + 1}–${bars[bars.length - 1] + 1}` : ` ${bars[0] + 1}`}`}${count}`,
+        `${ctx ? `${ctx.label} · ${m.title} · ` : ''}${unitDe(m)} ${line + 1} von ${n}${m.piano ? '' : ` · ${bars.length > 1 ? `Takte ${bars[0] + 1}–${bars[bars.length - 1] + 1}` : `Takt ${bars[0] + 1}`}`}${count}`,
       );
       $('#h1', root).innerHTML = done ? L(`${cap(m.unit)} done.`, `${unitDe(m)} geschafft.`) : text.h1;
       $('#sub', root).textContent = done ? '' : text.sub;
@@ -472,12 +538,17 @@ function lesson(root: HTMLElement, m: Material, wanted: string | undefined, ctx?
       store.save();
       const leave = !!ctx && linesDone >= 2;
       const last = line === n - 1;
-      const then = leave
-        ? L(`That is the ${m.piano ? 'piece' : 'song'} for today.`, `Das war ${m.piano ? 'das Stück' : 'der Song'} für heute.`)
-        : last && !ctx
-          ? L(`That was the last ${m.unit}. Press 2 to play with the click.`, `Das war die letzte ${unitDe(m)}. Drück 2, um mit Klick zu spielen.`)
-          : L(`Next ${m.unit} in a moment.`, `Gleich kommt die nächste ${unitDe(m)}.`);
-      moveOn = () => (leave ? ctx!.next() : go(line + 1));
+      // clean, and not too halting: the line sits. Outside a session nothing moves on by itself then: the
+      // player is offered the click, or the next line, and picks
+      const sits = !ctx && !slips && pathNow().lines[line].learned;
+      const then = sits
+        ? ''
+        : leave
+          ? L(`That is the ${m.piano ? 'piece' : 'song'} for today.`, `Das war ${m.piano ? 'das Stück' : 'der Song'} für heute.`)
+          : last && !ctx
+            ? L(`That was the last ${m.unit}. Press 2 to play with the click.`, `Das war die letzte ${unitDe(m)}. Drück 2, um mit Klick zu spielen.`)
+            : L(`Next ${m.unit} in a moment.`, `Gleich kommt die nächste ${unitDe(m)}.`);
+      moveOn = () => (leave ? ctx!.next() : go(line + 1, true));
       // Where it slipped is where the practice is: that bar once more, alone and slowly, before going on.
       const spot = [...slipped].sort((a, b) => a - b)[0];
       const idx = spot === undefined ? [] : all.map((s, i) => (s.bar === spot ? i : -1)).filter((i) => i >= 0);
@@ -490,6 +561,8 @@ function lesson(root: HTMLElement, m: Material, wanted: string | undefined, ctx?
         ),
       );
       draw();
+      showPath();
+      if (sits) return sitsView(0, L(`${avg}% of full speed`, `${avg}% des vollen Tempos`));
       if (!again) {
         timer = later(2800, moveOn, leave ? ctx!.after : L(`the next ${m.unit}`, `die nächste ${unitDe(m)}`));
         return;
@@ -533,22 +606,17 @@ function lesson(root: HTMLElement, m: Material, wanted: string | undefined, ctx?
       say('bad', html);
     }
 
-    // until the first note: what to do (on the first line), and how to read what is on the screen
-    const strums = m.lines[line].steps.every((s) => s.chord);
-    const one = m.piano ? (strums ? L('chord', 'Akkord') : L('key', 'Taste')) : strums ? L('strum', 'Anschlag') : L('note', 'Ton');
-    const each = m.piano ? (strums ? 'Akkord für Akkord' : 'Taste für Taste') : strums ? 'Anschlag für Anschlag' : 'Ton für Ton';
-    const what = line === 0 ? `${L(`Play the ${m.unit} from left to right, one ${one} at a time: the app waits for each and moves the marker on. A clean ${m.unit} brings the next.`, `Spiel die ${unitDe(m)} von links nach rechts, ${each}: Die App wartet jeweils und rückt die Markierung weiter. Ist die ${unitDe(m)} sauber, kommt die nächste.`)} ` : '';
-    // on the first line what to do, on the others how to read it: one sentence or two, never a paragraph
+    // until the first note: how to read what is on the screen, in one sentence (that the app waits is said in
+    // the band above, what comes after a clean line when it comes)
     say(
       'info',
-      what ||
-      (m.piano
+      m.piano
         ? chordsOnly
           ? L('Read left to right: each block is one chord, all its keys at once.', 'Lies von links nach rechts: Jeder Block ist ein Akkord, alle Tasten zugleich.')
           : L('Read left to right. Take your time.', 'Lies von links nach rechts. Lass dir Zeit.')
         : m.lines[line].steps.every((s) => s.chord)
           ? L('Read left to right: one strum on each slash, the way its arrow points.', 'Lies von links nach rechts: ein Anschlag auf jeden Schrägstrich, in die Richtung seines Pfeils.')
-          : L('Tab: a line is a string, lowest at the bottom. A number is a fret, 0 is open.', 'Tabulatur: Eine Linie ist eine Saite, die tiefste unten. Eine Zahl ist ein Bund, 0 heißt leer.')),
+          : L('Tab: a line is a string, lowest at the bottom. A number is a fret, 0 is open.', 'Tabulatur: Eine Linie ist eine Saite, die tiefste unten. Eine Zahl ist ein Bund, 0 heißt leer.'),
     );
     draw();
     // by ear the line is heard before anything else
@@ -593,8 +661,12 @@ function lesson(root: HTMLElement, m: Material, wanted: string | undefined, ctx?
     };
   }
 
-  /** Rungs 2 and 3: play with the click. One line at a time, or the whole piece from this line on. */
-  function clickMode(): Mode {
+  /**
+   * Rungs 2 and 3: play with the click. One line at a time, or the whole piece from this line on. Nothing runs
+   * until the player gives the sign: the first strum (or note, or key) of the take, or Space; then the click
+   * counts in. A lesson that is being played already counts in straight away (straight).
+   */
+  function clickMode(straight = false): Mode {
     const whole = stage === 2 && !review && !loop;
     if (stage === 2) tempo = 100;
     // the lines a loop runs through: every line one of its bars is in
@@ -622,12 +694,12 @@ function lesson(root: HTMLElement, m: Material, wanted: string | undefined, ctx?
     let shown = '';
     let recFrom = -1;
     rowB.toggleAttribute('hidden', idxs.length < 2);
-    // two lines on show leave no room for the fretboard; the chord picture stays
+    // two lines on show leave no room for the fretboard, nor for the legend of the fingers; the chord picture stays
+    $('.legend', root).hidden = idxs.length > 1;
     hands.toggleAttribute('hidden', whole || idxs.length > 1 || (!!review && !review.relearn));
     $('#tempobox', root).hidden = false;
     $<HTMLButtonElement>('#slower', root).disabled = whole || !!review;
     $<HTMLButtonElement>('#faster', root).disabled = whole || !!review;
-    $('#auto', root).hidden = true;
     // the model can be heard between takes on every rung; during a take, asking for it pauses the take
     $('#hearit', root).hidden = false;
 
@@ -638,6 +710,10 @@ function lesson(root: HTMLElement, m: Material, wanted: string | undefined, ctx?
     let range: { from: number; to: number } | null = null;
     let uShift = 0;
     const inRange = (s: Step): boolean => !range || (s.bar >= range.from && s.bar <= range.to);
+    /** waiting for the player's sign to start */
+    let armed = false;
+    /** the step that is played as the sign: the first of the take */
+    const first = idxs.flatMap((li) => m.lines[li].steps).find((s) => !loop || (s.bar >= loop.from && s.bar <= loop.to));
 
     function cancel(): void {
       cancelAnimationFrame(raf);
@@ -648,8 +724,51 @@ function lesson(root: HTMLElement, m: Material, wanted: string | undefined, ctx?
       delete root.dataset.step;
     }
 
+    /** What the take is, over the cue: the lines, the loop, a performance, a visit; and the tempo. */
+    function eyebrow(k: number): string {
+      return `${ctx ? `${ctx.label} · ${m.title} · ` : ''}${loop ? L(`Loop · ${barsSaid(loop)} · ${tempo}%${loopClean ? ` · ${loopClean} clean in a row` : ''}`, `Schleife · ${barsSaid(loop)} · ${tempo}%${loopClean ? ` · ${loopClean} sauber in Folge` : ''}`) : perform ? L('Performance · no marks while you play · full speed', 'Vortrag · keine Markierungen beim Spielen · volles Tempo') : review ? L(`Played again from cold · ${cap(m.unit)}s ${idxs.map((x) => x + 1).join(' and ')} · ${tempo}%`, `Wiederholen aus dem Stand · ${unitDe(m, true)} ${idxs.map((x) => x + 1).join(' und ')} · ${tempo}%`) : whole ? L('Full speed, to the end', 'Volles Tempo, bis zum Ende') : L(`${cap(m.unit)} ${idxs[k] + 1} of ${n} · with the click at ${tempo}%`, `${unitDe(m)} ${idxs[k] + 1} von ${n} · mit Klick bei ${tempo}%`)}`;
+    }
+
+    /**
+     * Nothing runs: the lines are on show with their first step marked, and the app listens for it. Played (or
+     * Space), it starts the count-in.
+     */
+    function arm(): void {
+      cancel();
+      armed = true;
+      root.dataset.armed = '';
+      const s = first;
+      rows.forEach((row, r) => {
+        if (r === 1 && rowB.hasAttribute('hidden')) return;
+        const li = idxs[r];
+        if (li === undefined) return void (row.innerHTML = '');
+        drawLine(row, li, (i) => {
+          const st = m.lines[li].steps[i];
+          return loop && (st.bar < loop.from || st.bar > loop.to) ? 'off' : st === s ? 'cur' : 'up';
+        });
+        row.style.opacity = r === 0 ? '1' : '0.5';
+      });
+      where(idxs[0]);
+      $('#eb', root).textContent = eyebrow(0);
+      if (s) {
+        const name = s.chord ? nameOf(s.chord) : m.piano ? keyName(s.midis[0], s.over) : noteName(s.midis[0]);
+        $('#h1', root).innerHTML = s.chord && !m.piano ? L(`Strum <em>${name}</em> to start.`, `Schlag <em>${name}</em> an, um zu starten.`) : L(`Play <em>${name}</em> to start.`, `Spiel <em>${name}</em>, um zu starten.`);
+      }
+      $('#sub', root).textContent = L(`Then ${m.count} clicks count you in, and you play along. Space starts it too.`, `Dann zählen ${m.count} Klicks dich ein, und du spielst mit. Die Leertaste startet auch.`);
+      drawChord(s);
+      if (s && !hands.hasAttribute('hidden')) drawHands(s, null, idxs[0]);
+      expect(s ? s.midis : []);
+      setSimTarget(s ? target(s) : null);
+      $('#tempo', root).textContent = `${tempo}%`;
+      $('#pause span', root).textContent = L('Start', 'Start');
+      say('info', perform || review ? '' : L(`Not sure how it goes? H plays it first, at ${tempo}%.`, `Nicht sicher, wie es geht? H spielt es zuerst vor, bei ${tempo}%.`));
+    }
+
+    /** A take: the count-in, then the lines with the click. Given the sign, or straight on from the take before. */
     function begin(): void {
       cancel();
+      armed = false;
+      delete root.dataset.armed;
       takes++;
       played = tempo;
       unit = (m.noteDur * 100) / tempo;
@@ -750,7 +869,7 @@ function lesson(root: HTMLElement, m: Material, wanted: string | undefined, ctx?
       const step = flat[due >= 0 ? due : flat.length - 1];
       const prev = due > 0 ? flat[due - 1] : null;
       where(idxs[k]);
-      $('#eb', root).textContent = `${ctx ? `${ctx.label} · ${m.title} · ` : ''}${loop ? L(`Loop · ${barsSaid(loop)} · ${tempo}%${loopClean ? ` · ${loopClean} clean in a row` : ''}`, `Schleife · ${barsSaid(loop)} · ${tempo}%${loopClean ? ` · ${loopClean} sauber in Folge` : ''}`) : perform ? L('Performance · no marks while you play · full speed', 'Vortrag · keine Markierungen beim Spielen · volles Tempo') : review ? L(`Played again from cold · ${cap(m.unit)}s ${idxs.map((x) => x + 1).join(' and ')} · ${tempo}%`, `Wiederholen aus dem Stand · ${unitDe(m, true)} ${idxs.map((x) => x + 1).join(' und ')} · ${tempo}%`) : whole ? L('Full speed, to the end', 'Volles Tempo, bis zum Ende') : L(`${cap(m.unit)} ${idxs[k] + 1} of ${n} · with the click at ${tempo}%`, `${unitDe(m)} ${idxs[k] + 1} von ${n} · mit Klick bei ${tempo}%`)}`;
+      $('#eb', root).textContent = eyebrow(k);
       const id = chordAt(step);
       // the chord that comes after this one: the next step that is played over another
       const after = chordAt(flat.slice(Math.max(0, due) + 1).find((s) => chordAt(s) !== id)) ?? m.chordOf(step.bar + 1);
@@ -847,6 +966,8 @@ function lesson(root: HTMLElement, m: Material, wanted: string | undefined, ctx?
       const timing = r.hits < 3 ? '' : ms < 30 ? L(' Right on the click.', ' Genau auf dem Klick.') : L(` Mostly ${ms} ms ${r.offset > 0 ? 'late' : 'early'}.`, ` Meist ${ms} ms ${r.offset > 0 ? 'zu spät' : 'zu früh'}.`);
       let then: string;
       let leave = false;
+      /** the line went clean at full speed: outside a session the player picks what comes next */
+      let sits = false;
       const visit = !!review;
       if (review) {
         // a visit is a measurement of what has stayed, not practice: say how it went and leave it there
@@ -864,9 +985,10 @@ function lesson(root: HTMLElement, m: Material, wanted: string | undefined, ctx?
         fails = 0;
         const wrapped = line === n - 1;
         store.progress[m.id] = (line + 1) % n;
-        if (wrapped && tempo < 100) tempo = TEMPOS.find((x) => x > tempo) ?? 100;
+        sits = !ctx && played >= 100;
+        if (!sits && wrapped && tempo < 100) tempo = TEMPOS.find((x) => x > tempo) ?? 100;
         leave = !!ctx && linesDone >= 2;
-        then = leave ? L('That is it for today.', 'Das war’s für heute.') : wrapped ? L(`Through to the end. From the top at ${tempo}%.`, `Durch bis zum Ende. Von vorn bei ${tempo}%.`) : L(`Next ${m.unit}.`, `Nächste ${unitDe(m)}.`);
+        then = sits ? '' : leave ? L('That is it for today.', 'Das war’s für heute.') : wrapped ? L(`Through to the end. From the top at ${tempo}%.`, `Durch bis zum Ende. Von vorn bei ${tempo}%.`) : L(`Next ${m.unit}.`, `Nächste ${unitDe(m)}.`);
       } else {
         if (r.hits < 0.6 * r.total) fails++;
         const slower = fails >= 2 && tempo > TEMPOS[0];
@@ -900,10 +1022,15 @@ function lesson(root: HTMLElement, m: Material, wanted: string | undefined, ctx?
       setSimTarget(null);
       /** what comes after the verdict: nothing moves on before the player has said how it went */
       const onward = (): void => {
+        showPath();
         if (leave) timer = later(3200, ctx!.next, ctx!.after);
         else if (visit) $('#pause span', root).textContent = L('Play', 'Spielen');
+        else if (sits) {
+          $('#pause span', root).textContent = L('Play', 'Spielen');
+          sitsView(1, L(`${r.hits} of ${r.total} on the click`, `${r.hits} von ${r.total} auf dem Klick`));
+        }
         // the take of one bar belongs to this visit of the line: it starts here, not from scratch
-        else if (!whole) timer = later(2600, () => (clean ? go(line + 1) : spot !== null ? begin() : go(line)), clean ? L(`the next ${m.unit}`, `die nächste ${unitDe(m)}`) : spot !== null ? L(`bar ${spot + 1} alone`, `Takt ${spot + 1} allein`) : L(`the same ${m.unit} again`, `noch einmal dieselbe ${unitDe(m)}`));
+        else if (!whole) timer = later(2600, () => (clean ? go(line + 1, true) : spot !== null ? begin() : go(line, true)), clean ? L(`the next ${m.unit}`, `die nächste ${unitDe(m)}`) : spot !== null ? L(`bar ${spot + 1} alone`, `Takt ${spot + 1} allein`) : L(`the same ${m.unit} again`, `noch einmal dieselbe ${unitDe(m)}`));
         else $('#pause span', root).textContent = L('Play', 'Spielen');
       };
       if (wasPerform) {
@@ -919,10 +1046,13 @@ function lesson(root: HTMLElement, m: Material, wanted: string | undefined, ctx?
       }
     }
 
-    begin();
+    if (straight) begin();
+    else arm();
     return {
       stop: () => {
         cancel();
+        armed = false;
+        delete root.dataset.armed;
         if (recFrom >= 0) engine.recorded();
         recFrom = -1;
       },
@@ -936,11 +1066,21 @@ function lesson(root: HTMLElement, m: Material, wanted: string | undefined, ctx?
         } else begin();
       },
       note: (e) => {
+        // waiting for the sign: the first note of the take starts it
+        if (armed) {
+          if (first && !first.chord && first.midis.includes(e.midi)) begin();
+          return;
+        }
         if (!take || take.nearest(e.time)?.chord) return;
         if (take.note(e.midi, e.time) === null && e.time > t0 - beat / 2 && e.time < endT && !perform) say('bad', L(`Heard ${noteName(e.midi)} where it does not belong.`, `Gehört: ${noteName(e.midi)}, an einer Stelle, an der nichts zu spielen ist.`));
       },
       thud: () => undefined,
       chord: (e) => {
+        // waiting for the sign: the first chord of the take starts it
+        if (armed) {
+          if (first?.chord && strumHit(e, first.chord)) begin();
+          return;
+        }
         if (!take) return;
         const want = take.wanted(e.time)?.chord;
         if (want && strumHit(e, want)) take.chord(want, e.time);
@@ -949,32 +1089,134 @@ function lesson(root: HTMLElement, m: Material, wanted: string | undefined, ctx?
     };
   }
 
-  function setStage(s: number): void {
+  /**
+   * Puts the lesson on a rung and starts it there: the first rung waits for the first note at once; with the
+   * click nothing runs before the player's sign, unless straight (the lesson is being played already, or the
+   * player asked for it: R, Space).
+   */
+  function setStage(s: number, straight = false): void {
     mode?.stop();
     // a question about the slips of a take that is no longer on show is not answered any more: its answer
     // would be kept for the wrong take and move the session on in the middle of the next one
     panel.drop();
     stage = s;
-    RUNGS().forEach((_, i) => $('#st' + i, root).setAttribute('aria-pressed', String(i === s)));
-    $('#st0s', root).textContent = L('waits for you', 'wartet auf dich');
-    $('#st1s', root).textContent = L(`${m.unit} by ${m.unit}, ${s === 1 ? tempo : suggest(m, line).tempo}%`, `${unitDe(m)} für ${unitDe(m)}, ${s === 1 ? tempo : suggest(m, line).tempo}%`);
-    $('#st2s', root).textContent = L('start to end', 'von Anfang bis Ende');
-    // what the rung on show does, and what comes after it: the captions of the rungs are hidden on small screens
-    $('#rungnote', root).textContent = review
-      ? L(`A visit from cold: two ${m.unit}s at full speed, measured as they come. Then 1, 2 or 3 to practise on.`, `Ein Besuch aus dem Stand: zwei ${unitDe(m, true)} im vollen Tempo, gemessen, wie sie kommen. Danach 1, 2 oder 3 zum Üben.`)
-      : loop
-        ? L(`The loop goes round until L ends it. [ and ] take in the bar before or after.${store.settings.autoTempo ? ' Three clean runs in a row: 5% faster.' : ''}`, `Die Schleife läuft, bis L sie beendet. [ und ] nehmen den Takt davor oder danach dazu.${store.settings.autoTempo ? ' Dreimal sauber in Folge: 5 % schneller.' : ''}`)
-        : perform
-          ? L('A performance: no marks while you play, and a recording to listen to. You say first how it went.', 'Ein Vortrag: keine Markierungen beim Spielen, und eine Aufnahme zum Anhören. Du sagst zuerst, wie es lief.')
-          : [
-      L(`Waits for every ${m.piano ? 'key' : 'note and strum'}, no clock. When the ${m.unit}s sit: 2, with the click.`, `Wartet auf jeden ${m.piano ? 'Ton' : 'Ton und Anschlag'}, ohne Uhr. Sitzen die ${m.piano ? 'Phrasen' : 'Zeilen'}: weiter mit 2, mit Klick.`),
-      L(`In time with the click, ${m.unit} by ${m.unit}; the tempo rises when it goes well. Then: 3.`, `Im Takt mit dem Klick, ${unitDe(m)} für ${unitDe(m)}; das Tempo steigt, wenn es gut geht. Danach: 3.`),
-      L(`The whole ${m.piano ? 'piece' : 'song'} at full speed, from here to the end.`, `${m.piano ? 'Das ganze Stück' : 'Der ganze Song'} im vollen Tempo, von hier bis zum Ende.`),
-    ][s];
-    mode = s === 0 ? waitMode() : clickMode();
+    $('#slacts', root).hidden = true;
+    $('#fbk', root).hidden = false;
+    RUNGS(m.piano).forEach((_, i) => $('#st' + i, root).setAttribute('aria-pressed', String(i === s)));
+    mode = s === 0 ? waitMode() : clickMode(straight);
+    showPath();
   }
 
-  /** Go to a line and start it on the current rung. */
+  /** Is a take being played right now? A change of a switch then goes on playing; otherwise it starts nothing. */
+  const playing = (): boolean => !!mode?.running();
+
+  /** Where the song stands, from what has been measured until now. */
+  const pathNow = (): PathState => pathState(m, store.skills, store.reviews[reviewKey(inst, m.id)]);
+
+  /**
+   * The band under the top bar: every line with its two rungs, the whole song, keeping it; the line and the
+   * rung on show marked, and one sentence on what that rung is.
+   */
+  function showPath(sat?: number): void {
+    const p = pathNow();
+    const unit = m.piano ? L('Phrase', 'Phrase') : L('Line', 'Zeile');
+    // many lines are numbers only, so that the row stays short
+    const terse = n > 6;
+    const on = !review && !perform;
+    $('#slpath', root).innerHTML =
+      (terse ? `<span class="slname">${m.piano ? L('Phrases', 'Phrasen') : L('Lines', 'Zeilen')}</span>` : '') +
+      p.lines
+        .map((l, i) => {
+          const cur = i === line && on && stage < 2;
+          const r1 = l.learned ? '<i class="ok">✓</i>' : `<i${cur && stage === 0 ? ' class="on"' : ''}>1</i>`;
+          const r2 = l.clicked ? '<i class="ok">✓</i>' : `<i class="${cur && stage === 1 ? 'on' : ''}${l.learned ? ' pct' : ''}">${l.learned ? `${l.tempo}%` : '2'}</i>`;
+          const said = `${unit} ${i + 1}: ${l.learned ? L('learned without a clock', 'ohne Uhr gelernt') : L('not learned yet', 'noch nicht gelernt')}; ${l.clicked ? L('clean with the click at full speed', 'mit Klick sauber im vollen Tempo') : l.learned ? L(`with the click from ${l.tempo}%`, `mit Klick ab ${l.tempo}%`) : L('then with the click', 'danach mit Klick')}`;
+          return `<button type="button" class="slln${i === line && on ? ' cur' : ''}" data-line="${i}" title="${said}" aria-label="${said}"${i === line ? ' aria-current="step"' : ''}>${terse ? `<b>${i + 1}</b>` : `${unit} ${i + 1}`} ${r1}${r2}</button>`;
+        })
+        .join('');
+    const whole = $('#slwhole', root);
+    whole.className = `slstep${stage === 2 && on ? ' cur' : ''}${p.whole ? ' ok' : ''}`;
+    whole.innerHTML = `${m.piano ? L('Whole piece', 'Ganzes Stück') : L('Whole song', 'Ganzer Song')} <i class="${p.whole ? 'ok' : stage === 2 && on ? 'on' : ''}">${p.whole ? '✓' : '3'}</i>`;
+    const days = p.due === null ? 0 : Math.max(0, Math.ceil((p.due - Date.now()) / 86400000));
+    const keep = $('#slkeep', root);
+    keep.className = `slstep${review ? ' cur' : ''}${p.due !== null ? ' kept' : ''}`;
+    keep.textContent = p.due === null ? L('Keep it', 'Behalten') : days ? L(`Keep it · back in ${days} ${days === 1 ? 'day' : 'days'}`, `Behalten · wieder in ${days} ${days === 1 ? 'Tag' : 'Tagen'}`) : L('Keep it · due today', 'Behalten · heute fällig');
+    // the one sentence on the rung on show
+    const step = (k: number, name: string, what: string): string => `${L(`Step ${k} of 3`, `Stufe ${k} von 3`)} · <b>${name}</b>${what}`;
+    const names = RUNGS(m.piano).map((r) => r.long);
+    $('#slsay', root).innerHTML = review
+      ? `<b>${L('Keep it', 'Behalten')}:</b> ${L(`from cold, two ${m.unit}s at full speed`, `aus dem Stand, zwei ${unitDe(m, true)} im vollen Tempo`)}`
+      : loop
+        ? `<b>${L('Loop', 'Schleife')}:</b> ${L('goes round until L ends it; [ and ] take in a bar more', 'läuft, bis L sie beendet; [ und ] nehmen einen Takt dazu')}`
+        : perform
+          ? `<b>${L('Performance', 'Vortrag')}:</b> ${L('no marks while you play, recorded; you say first how it went', 'keine Markierungen beim Spielen, aufgenommen; du sagst zuerst, wie es lief')}`
+          : sat !== undefined
+            ? step(sat + 1, names[sat], L(` done for ${m.unit} ${line + 1}`, ` geschafft für ${unitDe(m)} ${line + 1}`))
+            : step(
+                stage + 1,
+                names[stage],
+                [
+                  L(': no clock, the app waits for you', ': ohne Uhr, die App wartet auf dich'),
+                  L(`: in time, from ${tempo}%`, `: im Takt, ab ${tempo}%`),
+                  L(': start to end at full speed, recorded', ': von Anfang bis Ende im vollen Tempo, aufgenommen'),
+                ][stage],
+              );
+    // the line on show stays in sight in a row that scrolls; a row with more beyond its end fades out there
+    const row = $('#slpath', root);
+    const cur = row.querySelector<HTMLElement>('.slln.cur');
+    if (cur && (cur.offsetLeft < row.scrollLeft || cur.offsetLeft + cur.offsetWidth > row.scrollLeft + row.clientWidth - 36)) row.scrollLeft = Math.max(0, cur.offsetLeft - 60);
+    fade();
+  }
+  /** The row of lines fades out at its end while there are more beyond it. */
+  const fade = (): void => {
+    const row = $('#slpath', root);
+    row.classList.toggle('over', row.scrollLeft + row.clientWidth < row.scrollWidth - 1);
+  };
+  $('#slpath', root).onscroll = fade;
+
+  /**
+   * A line sits (on the first rung: clean without a clock; with the click: clean at full speed). Nothing moves
+   * on by itself: what comes next is offered, the step up first.
+   */
+  function sitsView(rung: number, how: string): void {
+    const p = pathNow();
+    const next = (line + 1) % n;
+    const t = suggest(m, line).tempo;
+    const btn = (id: string, cls: string, label: string, key: string): string => `<button class="btn${cls}" id="${id}" type="button">${label} <kbd>${key}</kbd></button>`;
+    const unitN = (i: number): string => (m.piano ? L(`phrase ${i + 1}`, `Phrase ${i + 1}`) : L(`line ${i + 1}`, `Zeile ${i + 1}`));
+    const whole = m.piano ? L('the whole piece', 'das ganze Stück') : L('the whole song', 'den ganzen Song');
+    $('#h1', root).innerHTML = `<span class="slok">${cap(unitN(line))} ${rung === 0 ? L('sits.', 'sitzt.') : L('sits at full speed.', 'sitzt im vollen Tempo.')}</span>`;
+    let acts: string;
+    if (rung === 0) {
+      $('#eb', root).textContent = `${cap(unitN(line))} · ${L('clean, without a clock', 'sauber, ohne Uhr')} · ${how}`;
+      $('#sub', root).textContent = L(`Next: the same ${m.unit} with the click, ${t < 100 ? `slowly (${t}%)` : 'at full speed'}.${n > 1 ? ` Or learn ${unitN(next)} first and add the click later.` : ''}`, `Als Nächstes: dieselbe ${unitDe(m)} mit Klick, ${t < 100 ? `langsam (${t}%)` : 'im vollen Tempo'}.${n > 1 ? ` Oder lern erst ${unitN(next)} und nimm den Klick später dazu.` : ''}`);
+      acts = btn('situp', ' primary big', L('With the click', 'Mit Klick'), '2') + (n > 1 ? btn('sitnext', ' big', L(`Learn ${unitN(next)} first`, `Erst ${unitN(next)} lernen`), '→') : '');
+    } else {
+      // every line clean at full speed: the whole song is the step up; otherwise the next line with the click
+      const all = p.lines.every((l) => l.clicked);
+      $('#eb', root).textContent = `${cap(unitN(line))} · ${L('clean with the click at full speed', 'sauber mit Klick im vollen Tempo')} · ${how}`;
+      $('#sub', root).textContent = all ? L(`Every ${m.unit} goes at full speed now. Next: ${whole}, from start to end.`, `Jede ${unitDe(m)} geht jetzt im vollen Tempo. Als Nächstes: ${whole}, von Anfang bis Ende.`) : L(`Next: ${unitN(next)} with the click. Or ${whole} already, from start to end.`, `Als Nächstes: ${unitN(next)} mit Klick. Oder schon ${whole}, von Anfang bis Ende.`);
+      const toWhole = (cls: string): string => btn('sitwhole', cls, cap(whole), '3');
+      const toNext = (cls: string): string => (n > 1 ? btn('sitnext', cls, L(`${cap(unitN(next))} with the click`, `${cap(unitN(next))} mit Klick`), '→') : '');
+      acts = all ? toWhole(' primary big') + toNext(' big') : toNext(' primary big') + toWhole(' big');
+    }
+    acts += btn('sitagain', ' quiet', L('Once more', 'Noch einmal'), 'R');
+    const box = $('#slacts', root);
+    box.innerHTML = acts;
+    box.hidden = false;
+    // what was measured is in the line over the cue now: the buttons take its place
+    $('#fbk', root).hidden = true;
+    const on = (id: string, fn: () => void): void => {
+      const b = root.querySelector<HTMLButtonElement>('#' + id);
+      if (b) b.onclick = fn;
+    };
+    on('situp', () => pick(1));
+    on('sitnext', () => go(line + 1));
+    on('sitwhole', () => pick(2));
+    on('sitagain', () => go(line, true));
+    showPath(rung);
+  }
+
   /** Ends a model that is playing: the player has moved on. */
   function stopModel(): void {
     engine.stopDemo();
@@ -982,7 +1224,12 @@ function lesson(root: HTMLElement, m: Material, wanted: string | undefined, ctx?
     modelUntil = 0;
   }
 
-  function go(li: number): void {
+  /**
+   * Go to a line and start it on the current rung. The lesson goes on by itself (straight) after a take, and
+   * when the player asks for the line again; a line the player picks waits for the sign. With the click a
+   * line picked starts at the tempo it is at (as the band shows it).
+   */
+  function go(li: number, straight = false): void {
     stopImagine();
     stopModel();
     // moving to another line leaves a visit to an old song, a loop and a performance: from here on it is practice
@@ -993,12 +1240,18 @@ function lesson(root: HTMLElement, m: Material, wanted: string | undefined, ctx?
     revealed = false;
     extras();
     line = (li + n) % n;
-    setStage(stage);
+    if (!straight && stage === 1) {
+      tempo = suggest(m, line).tempo;
+      fails = 0;
+    }
+    setStage(stage, straight);
   }
 
-  /** The player picks a rung: that is practice, whatever the lesson was opened for. */
+  /** The player picks a rung: that is practice, whatever the lesson was opened for. With the click it starts at the line's tempo. */
   function pick(s: number): void {
     stopImagine();
+    stopModel();
+    if (s === 1 && (stage !== 1 || review || loop)) tempo = suggest(m, line).tempo;
     review = null;
     loop = null;
     perform = false;
@@ -1012,7 +1265,7 @@ function lesson(root: HTMLElement, m: Material, wanted: string | undefined, ctx?
     tempo = Math.max(25, Math.min(125, Math.round(tempo / 5) * 5 + 5 * step));
     fails = 0;
     loopClean = 0;
-    setStage(stage === 2 ? 1 : stage);
+    setStage(stage === 2 ? 1 : stage, playing());
   }
 
   /** The buttons say what is switched on. */
@@ -1035,7 +1288,7 @@ function lesson(root: HTMLElement, m: Material, wanted: string | undefined, ctx?
     store.settings.notation = store.settings.notation === 'staff' ? 'strip' : 'staff';
     store.save();
     extras();
-    setStage(stage);
+    setStage(stage, playing());
   }
 
   /** E: by ear on the first rung, or back to reading. */
@@ -1051,13 +1304,14 @@ function lesson(root: HTMLElement, m: Material, wanted: string | undefined, ctx?
     review = null;
     perform = false;
     loopClean = 0;
+    const was = playing();
     if (loop) {
       loop = null;
-      setStage(1);
+      setStage(1, was);
     } else {
       const bars = m.lines[line].bars;
       loop = { from: bars[0], to: bars[bars.length - 1] };
-      setStage(1);
+      setStage(1, was);
     }
     extras();
   }
@@ -1068,7 +1322,7 @@ function lesson(root: HTMLElement, m: Material, wanted: string | undefined, ctx?
     if (side < 0) loop.from = Math.max(0, loop.from - 1);
     else loop.to = Math.min(lastBar, loop.to + 1);
     loopClean = 0;
-    setStage(1);
+    setStage(1, playing());
     extras();
   }
 
@@ -1129,7 +1383,7 @@ function lesson(root: HTMLElement, m: Material, wanted: string | undefined, ctx?
   const stopKeys = keys({
     ArrowLeft: () => go(line - 1),
     ArrowRight: () => go(line + 1),
-    r: () => go(line),
+    r: () => go(line, true),
     h: hearIt,
     '1': () => panel.rate(1) || pick(0),
     '2': () => panel.rate(2) || pick(1),
@@ -1157,7 +1411,7 @@ function lesson(root: HTMLElement, m: Material, wanted: string | undefined, ctx?
   });
   $('#prev', root).onclick = () => go(line - 1);
   $('#next', root).onclick = () => go(line + 1);
-  $('#again', root).onclick = () => go(line);
+  $('#again', root).onclick = () => go(line, true);
   $('#slower', root).onclick = () => setTempo(-1);
   $('#faster', root).onclick = () => setTempo(1);
   $('#pause', root).onclick = () => mode?.toggle();
@@ -1177,14 +1431,101 @@ function lesson(root: HTMLElement, m: Material, wanted: string | undefined, ctx?
       store.settings.noteNames = order[(order.indexOf(store.settings.noteNames) + 1) % 3];
       store.save();
       extras();
-      setStage(stage);
+      setStage(stage, playing());
     };
   }
-  RUNGS().forEach((_, i) => ($('#st' + i, root).onclick = () => pick(i)));
+  RUNGS(m.piano).forEach((_, i) => ($('#st' + i, root).onclick = () => pick(i)));
   if (ctx) $('#nextstep', root).onclick = ctx.next;
+  // a line in the band goes to that line; the whole song to the third rung
+  $('#slpath', root).onclick = (e) => {
+    const b = (e.target as Element).closest<HTMLElement>('[data-line]');
+    if (b) go(Number(b.dataset.line));
+  };
+  $('#slwhole', root).onclick = () => pick(2);
+
+  /**
+   * How a song is learned here, over the lesson: the three rungs, what each does and until when, and how one
+   * moves up. Shown over the first song lesson of an instrument, and from More whenever asked for. Nothing
+   * runs or listens underneath; closed, the lesson starts the line on show.
+   */
+  let closeHow: (() => void) | null = null;
+  function showHow(first: boolean): void {
+    mode?.stop();
+    mode = null;
+    stopModel();
+    setSimTarget(null);
+    expect([]);
+    ($('#more', root) as HTMLDetailsElement).open = false;
+    const P = LEARN;
+    const slash = (x: number, ink: string): string => `<line x1="${x - 6}" y1="54" x2="${x + 6}" y2="26" stroke="${ink}" stroke-width="6" stroke-linecap="round"/>`;
+    const rule = `<line x1="10" y1="40" x2="210" y2="40" stroke="${P.line}" stroke-width="2"/>`;
+    const pics = [
+      `${rule}${[40, 90, 140, 190].map((x, i) => slash(x, i === 0 ? P.now : P.text)).join('')}<text x="90" y="16" class="lbl" style="text-anchor:middle" fill="${P.faint}">${L('waits…', 'wartet …')}</text>`,
+      `${rule}${[40, 90, 140, 190].map((x) => slash(x, P.text) + `<circle cx="${x}" cy="12" r="4" fill="${P.faint}"/>`).join('')}<line x1="110" y1="22" x2="110" y2="60" stroke="${P.now}" stroke-width="3"/>`,
+      `${[0, 1, 2, 3].map((i) => `<rect x="${10 + i * 52}" y="22" width="44" height="26" rx="6" fill="${i < 2 ? '#d6eadf' : P.panel}"/><text x="${32 + i * 52}" y="40" class="lbl" style="text-anchor:middle;font-weight:700;font-size:12px" fill="${i < 2 ? P.good : P.faint}">${m.piano ? L(`Phr. ${i + 1}`, `Phr. ${i + 1}`) : L(`Line ${i + 1}`, `Zeile ${i + 1}`)}</text>`).join('')}<circle cx="200" cy="12" r="5" fill="#b9792a"/><text x="186" y="16" class="lbl" style="text-anchor:end;font-size:12px" fill="#b9792a">rec</text>`,
+    ];
+    const one = m.piano ? L('key', 'Taste') : L('strum or note', 'Anschlag und jeden Ton');
+    const cards = [
+      [L('Learn', 'Lernen'), L(`No clock. The app waits until it hears each ${one}, so you can look at your fingers and find ${m.piano ? 'the key' : 'the chord'}.`, `Ohne Uhr. Die App wartet, bis sie jede${m.piano ? ' Taste' : 'n Anschlag und jeden Ton'} hört; so kannst du auf deine Finger schauen und ${m.piano ? 'die Taste' : 'den Griff'} finden.`), L(`Until the ${m.unit} goes clean, without long stops`, `Bis die ${unitDe(m)} sauber geht, ohne lange Pausen`)],
+      [L('With the click', 'Mit Klick'), L(`The same ${m.unit} in time with a click. It starts slow and gets faster when it goes well.`, `Dieselbe ${unitDe(m)} im Takt mit einem Klick. Sie beginnt langsam und wird schneller, wenn es gut geht.`), L('Until it is clean at full speed', 'Bis sie im vollen Tempo sauber ist')],
+      [m.piano ? L('The whole piece', 'Das ganze Stück') : L('The whole song', 'Der ganze Song'), L('Start to end at full speed, recorded so you can listen back.', 'Von Anfang bis Ende im vollen Tempo, aufgenommen, damit du es dir anhören kannst.'), L('Then it joins your repertoire', 'Dann kommt es in dein Repertoire')],
+    ];
+    const box = document.createElement('div');
+    box.className = 'slhowwrap';
+    box.innerHTML = `<div class="slscrim"></div>
+      <section class="slhow" role="dialog" aria-modal="true" aria-labelledby="slhowh">
+        <div><p class="k">${first ? (m.piano ? L('Your first piece', 'Dein erstes Stück') : L('Your first song lesson', 'Deine erste Song-Lektion')) : L('How this works', 'So funktioniert es')}</p><h2 id="slhowh">${m.piano ? L('How you learn a piece here', 'Wie du hier ein Stück lernst') : L('How you learn a song here', 'Wie du hier einen Song lernst')}</h2></div>
+        <div class="slcards">${cards.map(([h, p, until], i) => `<div><span class="n">${i + 1}</span><h3>${h}</h3><svg class="slpic" viewBox="0 0 220 64" aria-hidden="true">${pics[i]}</svg><p>${p}</p><small>${until}</small></div>`).join('')}</div>
+        <p class="slmore">${L(`You decide when to move up a step; when a ${m.unit} sits, the app says so and offers the next one. <b>H</b> plays the ${m.unit} you are on${tune ? ', with the tune' : ''}. The band at the top always shows where you are.`, `Du entscheidest, wann du eine Stufe höher gehst; sitzt eine ${unitDe(m)}, sagt die App es dir und bietet die nächste an. <b>H</b> spielt die ${unitDe(m)}, an der du bist${tune ? ', mit der Melodie' : ''}. Das Band oben zeigt immer, wo du stehst.`)}</p>
+        <div class="slgo"><button class="btn primary big" id="howgo" type="button">${first ? L(`Got it: start ${m.unit} ${line + 1}`, `Verstanden: ${unitDe(m)} ${line + 1} beginnen`) : L(`Back to ${m.unit} ${line + 1}`, `Zurück zu ${unitDe(m)} ${line + 1}`)} <kbd>${L('Space', 'Leertaste')}</kbd></button>${first ? `<label class="sloff"><input type="checkbox" id="howoff" checked> ${L("Don't show this again", 'Nicht mehr zeigen')}</label>` : ''}</div>
+      </section>`;
+    root.append(box);
+    const close = (): void => {
+      if (!closeHow) return;
+      closeHow = null;
+      removeEventListener('keydown', onKey, true);
+      // left ticked, the sheet is not shown again over a lesson of this instrument (it stays under More)
+      if (first && box.querySelector<HTMLInputElement>('#howoff')?.checked) {
+        store.settings.lessonHowOff = { ...store.settings.lessonHowOff, [inst]: true };
+        store.save();
+      }
+      box.remove();
+      setStage(stage);
+    };
+    // while the sheet is open its keys are the only ones: Space or Enter closes it, Escape too; the lesson's wait
+    const onKey = (e: KeyboardEvent): void => {
+      if ((e.target as HTMLElement).closest?.('input')) return;
+      if (e.key === ' ' || e.key === 'Enter' || e.key === 'Escape') {
+        e.preventDefault();
+        e.stopPropagation();
+        close();
+      } else if (e.key !== 'Tab') e.stopPropagation();
+    };
+    addEventListener('keydown', onKey, true);
+    box.querySelector<HTMLButtonElement>('#howgo')!.onclick = close;
+    closeHow = () => {
+      removeEventListener('keydown', onKey, true);
+      box.remove();
+    };
+    box.querySelector<HTMLButtonElement>('#howgo')!.focus();
+  }
+  $('#howbtn', root).onclick = () => showHow(false);
+
   extras();
-  setStage(stage);
+  // the first song lesson of an instrument opens with how it works; nothing starts before it is read
+  if (!store.settings.lessonHowOff[inst] && !review && !howSkipped()) {
+    const s0 = m.lines[line].steps[0];
+    RUNGS(m.piano).forEach((_, i) => $('#st' + i, root).setAttribute('aria-pressed', String(i === stage)));
+    where(line);
+    if (s0) $('#h1', root).innerHTML = instruction(s0, null).h1;
+    drawLine(rowA, line, () => 'up');
+    drawChord(s0);
+    drawHands(s0 ?? null, null, line);
+    showPath();
+    showHow(true);
+  } else setStage(stage);
   return () => {
+    closeHow?.();
     stopImagine();
     mode?.stop();
     stopModel();
@@ -1194,8 +1535,11 @@ function lesson(root: HTMLElement, m: Material, wanted: string | undefined, ctx?
   };
 }
 
-/** A song on the guitar. The second part of the address picks the rung: 1, 2 or 3. */
-export const songLesson: Screen = (root, [id, rung], ctx) => {
+/**
+ * A song on the guitar. The second part of the address picks the rung: 1, 2 or 3 (review for a visit from cold,
+ * anything else the rung the app suggests); a third the line to open at, counted from 1 (#/song/<id>/1/3).
+ */
+export const songLesson: Screen = (root, [id, rung, at], ctx) => {
   const song = findSong(id);
   // an address to a song that is not there (an own song deleted since) shows the first one, but does not
   // make it the song the session works on
@@ -1206,11 +1550,11 @@ export const songLesson: Screen = (root, [id, rung], ctx) => {
     }
     store.opened('guitar', song.id);
   }
-  return lesson(root, songMaterial(song), rung, ctx, song);
+  return lesson(root, songMaterial(song), rung, ctx, song, at);
 };
 
-/** A piece on the piano. */
-export const pianoLesson: Screen = (root, [id, rung], ctx) => {
+/** A piece on the piano: the address as for a song (#/piano/<id>/<rung>/<phrase>). */
+export const pianoLesson: Screen = (root, [id, rung, at], ctx) => {
   const piece = findPiece(id);
   if (piece.id === id) {
     if (!ctx && store.current.piano !== piece.id) {
@@ -1219,5 +1563,5 @@ export const pianoLesson: Screen = (root, [id, rung], ctx) => {
     }
     store.opened('piano', piece.id);
   }
-  return lesson(root, pieceMaterial(piece), rung, ctx);
+  return lesson(root, pieceMaterial(piece), rung, ctx, undefined, at);
 };
