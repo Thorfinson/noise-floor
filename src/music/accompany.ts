@@ -24,47 +24,46 @@ export interface SungNote {
   midi: number;
 }
 
-/** The words under each bar of the chords, and the melody laid over the chords' bars; null without words. */
-export function sheet(song: Song): { words: string[][]; melody: SungNote[] } | null {
-  const map = SING_ALONG[song.id];
-  const v = map && voiceBook().find((x) => x.id === map.voice);
-  if (!map || !v || !LYRICS[v.id]) return null;
+/**
+ * A melody laid over the bars of a song of chords: a bar of the melody (`bar` of its own note units) over each
+ * bar of the chords from bar `at` on, its upbeat (`lead` of its units) before that bar; with `repeat`, the bars
+ * it covers once more right after them. Then moved into the key of the chords: its last note onto the root of
+ * the chord it ends on, near middle C. `barOf` gives, note for note in the order of the phrases, the bar of the
+ * chords it was laid in (an upbeat counts to the first); `bars`, how many bars of the chords the melody covers.
+ */
+export function layOver(
+  song: Song,
+  phrases: { midi: number; len?: number }[][],
+  o: { bar: number; lead: number; at: number; repeat?: boolean },
+): { melody: SungNote[]; barOf: number[]; bars: number } {
   const units = barUnits(song);
-  const chordBeats = units[0] / song.beat;
-  // a bar of the melody, in its own note units; it lies over one bar of the chords
-  const mBar = v.bar ?? chordBeats * v.beat;
-  const lead = map.lead ?? v.leads?.[0] ?? 0;
-  const at = map.at ?? 0;
+  const { bar: mBar, lead, at } = o;
   const starts: number[] = [];
   units.reduce((u, n) => (starts.push(u), u + n), 0);
-  const words: string[][] = song.bars.map(() => []);
   const melody: SungNote[] = [];
+  const barOf: number[] = [];
   let u = -lead;
   let bars = 0;
-  v.phrases.forEach((ph, k) => {
-    const syl = syllables(v.id, k);
-    ph.forEach((n, i) => {
+  for (const ph of phrases)
+    for (const n of ph) {
       const len = n.len ?? 1;
       const b = Math.floor((u + 1e-6) / mBar);
-      // the upbeat before the first bar is written under the first bar
-      const target = at + Math.max(0, b);
-      if (target < words.length) words[target].push(syl[i] ?? '');
+      // the upbeat before the first bar belongs to the first bar
+      barOf.push(at + Math.max(0, b));
       // where the note lies in the bar of the chords it falls in
       const into = ((u - b * mBar) / mBar) * (units[Math.min(units.length - 1, at + Math.max(0, b))] ?? units[0]);
       melody.push({ u: (starts[at + b] ?? (b < 0 ? starts[at] - units[at] : 0)) + into, len: (len / mBar) * units[0], midi: n.midi });
       bars = Math.max(bars, b + 1);
       u += len;
-    });
-  });
-  if (map.repeat)
+    }
+  if (o.repeat)
     for (let k = 0; k < bars; k++) {
       const twin = at + bars + k;
-      if (twin >= words.length) break;
-      words[twin] = [...words[at + k]];
+      if (twin >= song.bars.length) break;
       for (const n of melody.filter((x) => x.u >= starts[at + k] - 1e-6 && x.u < starts[at + k] + units[at + k] - 1e-6)) melody.push({ ...n, u: n.u - starts[at + k] + starts[twin] });
     }
   // the melody moved to the key of the chords: its last note onto the root of the last chord, near middle C
-  const last = melody.filter((n) => n.u < (map.repeat ? starts[at + bars] ?? Infinity : Infinity)).pop();
+  const last = melody.filter((n) => n.u < (o.repeat ? starts[at + bars] ?? Infinity : Infinity)).pop();
   const lastChord = chordsOf(song, Math.min(song.bars.length - 1, at + bars - 1)).pop();
   if (last && lastChord) {
     const root = pianoChord(shapeOf(lastChord).id).midis[0] % 12;
@@ -74,7 +73,34 @@ export function sheet(song: Song): { words: string[][]; melody: SungNote[] } | n
     shift += 12 * Math.round((64 - mean) / 12);
     for (const n of melody) n.midi += shift;
   }
-  return { words, melody: melody.sort((a, b) => a.u - b.u) };
+  return { melody: melody.sort((a, b) => a.u - b.u), barOf, bars };
+}
+
+/** The words under each bar of the chords, and the melody laid over the chords' bars; null without words. */
+export function sheet(song: Song): { words: string[][]; melody: SungNote[] } | null {
+  const map = SING_ALONG[song.id];
+  const v = map && voiceBook().find((x) => x.id === map.voice);
+  if (!map || !v || !LYRICS[v.id]) return null;
+  const chordBeats = barUnits(song)[0] / song.beat;
+  const at = map.at ?? 0;
+  // a bar of the melody, in its own note units; it lies over one bar of the chords
+  const { melody, barOf, bars } = layOver(song, v.phrases, { bar: v.bar ?? chordBeats * v.beat, lead: map.lead ?? v.leads?.[0] ?? 0, at, repeat: map.repeat });
+  const words: string[][] = song.bars.map(() => []);
+  let j = 0;
+  v.phrases.forEach((ph, k) => {
+    const syl = syllables(v.id, k);
+    ph.forEach((_, i) => {
+      const target = barOf[j++];
+      if (target < words.length) words[target].push(syl[i] ?? '');
+    });
+  });
+  if (map.repeat)
+    for (let k = 0; k < bars; k++) {
+      const twin = at + bars + k;
+      if (twin >= words.length) break;
+      words[twin] = [...words[at + k]];
+    }
+  return { words, melody };
 }
 
 /**
