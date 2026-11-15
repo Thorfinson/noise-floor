@@ -1,6 +1,7 @@
 /** The songs and pieces there are, and adding your own from a text tab or from note names. */
 import { L } from '../core/i18n';
 import { store } from '../core/store';
+import { deleteTakes } from '../core/takes';
 import { songLines, type PianoPiece, type Song } from '../music/content';
 import { parseNotes, parseTab } from '../music/import';
 import { $, $$, cap, esc, go, icon, type Screen } from '../ui/dom';
@@ -186,6 +187,9 @@ export const library: Screen = (root, params, ctx) => {
           if (store.current[inst] === id) delete store.current[inst];
           for (const k of Object.keys(store.skills.data)) if (k.startsWith(`bar:${id}:`)) delete store.skills.data[k];
           delete store.progress[id];
+          // its recordings go with it (and, for a piece, the recordings of singing its tune)
+          void deleteTakes(inst, id);
+          if (piano) void deleteTakes('voice', `${id.replace(/~keys$/, '')}~voice`);
           store.save();
           refresh();
         }),
