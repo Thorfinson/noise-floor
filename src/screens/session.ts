@@ -19,7 +19,7 @@ import { LYRICS } from '../music/lyrics';
 import { OPEN_CHORDS } from '../music/path';
 import { chordName, CHORDS } from '../music/theory';
 import { $, esc, keys, stopAllLater, type Screen, type SessionCtx } from '../ui/dom';
-import { cleanStrings, skillLabel } from './home';
+import { cleanStrings, skillLabel } from '../music/labels';
 import { describe, pieceMaterial, songMaterial } from '../music/material';
 import { pianoLesson, songLesson } from './learn';
 import { chordCheck } from './chordcheck';

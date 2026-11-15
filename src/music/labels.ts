@@ -4,8 +4,23 @@ import { L } from '../core/i18n';
 import { PATTERNS } from '../game/stride';
 import { allPieces, allSongs, FINGER_PATTERNS, PIANO_PATTERNS, PIANO_SCALES } from './content';
 import { STRUM_PATTERNS } from './strums';
-import { chordName, CHORDS } from './theory';
+import { chordName, CHORDS, pianoChord } from './theory';
 import { voiceBook } from './voicebook';
+
+/**
+ * "4 of 5 strings" for a chord that is not clean yet. What is kept is the share of clean strings in sixths
+ * (so that every chord counts alike); this turns it back into the strings the chord really has.
+ */
+export function cleanStrings(key: string, sixths: number): string {
+  const id = key.split(':')[1];
+  if (id.startsWith('p.')) {
+    // on the piano: every key of the chord, and the chord as a whole
+    const n = pianoChord(id.slice(2)).midis.length + 1;
+    return L(`${Math.min(n - 1, Math.round((sixths * n) / 6))} of ${n} steps`, `${Math.min(n - 1, Math.round((sixths * n) / 6))} von ${n} Schritten`);
+  }
+  const n = CHORDS[id]?.frets.filter((f) => f >= 0).length ?? 6;
+  return L(`${Math.min(n - 1, Math.round((sixths * n) / 6))} of ${n} strings`, `${Math.min(n - 1, Math.round((sixths * n) / 6))} von ${n} Saiten`);
+}
 
 /** "pair:Em>F#m" as a person would write it. */
 export function skillLabel(key: string): string {

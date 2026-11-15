@@ -11,7 +11,7 @@ import { KEY_CHORDS, KEY_CHORDS_ON } from '../music/content';
 import { chordName, CHORDS, NOTE_NAMES } from '../music/theory';
 import { $, $$, esc, keys, type Screen } from '../ui/dom';
 import { chordBox, keyChord, LEARN } from '../ui/draw';
-import { frame } from './learn';
+import { frame } from './frame';
 import { pips } from './home';
 
 interface Tool {

@@ -202,7 +202,7 @@ export const jam: Screen = (root) => {
     : hear(root, { onNote: (e) => e.conf > 0.6 && note(e.midi) }, piano ? pianoEars : undefined);
   const toggleDrone = (): void => {
     drone = !drone;
-    engine.drone(drone ? [voice ? 57 : 45, voice ? 64 : 52] : [], 0.35);
+    engine.drone(drone ? [voice ? 57 : 45, voice ? 64 : 52] : [], 0.35, store.settings.instrument === 'piano' ? store.settings.pianoA4 : store.settings.a4);
     $('#drone', root).setAttribute('aria-pressed', String(drone));
   };
   $('#drone', root).onclick = toggleDrone;

@@ -11,7 +11,8 @@ import { store } from './core/store';
 import { $, applyScale, icon, keys, stopAllLater, type Screen } from './ui/dom';
 import { home, progress, settings } from './screens/home';
 import { tuner } from './screens/tuner';
-import { chordCheck, pianoLesson, songLesson } from './screens/learn';
+import { pianoLesson, songLesson } from './screens/learn';
+import { chordCheck } from './screens/chordcheck';
 import { nfRun, nfStart } from './screens/nf';
 import { importer, library } from './screens/library';
 import { basics, withIntro } from './screens/basics';
@@ -275,7 +276,7 @@ function route(): void {
 
 // a progress file chosen before: whether the browser still lets the app use it, and whether it is newer
 void fileAtStart().then(() => {
-  if (fileState().newer || fileState().status === 'ask') route();
+  if (fileState().newer || fileState().status === 'ask' || fileState().unreadable) route();
 });
 
 // the language: the one chosen, or at first the browser's

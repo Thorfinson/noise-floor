@@ -5,7 +5,7 @@ import { dayMonth, L, lang, num, setLang } from '../core/i18n';
 import { KINDS, kindOf, type SkillKind } from '../core/skills';
 import { store, type Instrument } from '../core/store';
 import { allPieces, KEY_CHORDS } from '../music/content';
-import { CHORDS, noteName, pianoChord } from '../music/theory';
+import { CHORDS, noteName } from '../music/theory';
 import { $, $$, applyScale, esc, go, hear, icon, keys, micMeter, type Screen } from '../ui/dom';
 import { describe, pieceMaterial } from '../music/material';
 import { currentPiece, currentSong, currentSongToSing } from '../music/difficulty';
@@ -14,7 +14,7 @@ import { learningPath, OPEN_CHORDS, type Stage } from '../music/path';
 import { LANDS, Trail, type StoneState } from '../ui/trail';
 import { begun, bindChoose, chooseRow, currentId, dayOf, describeSung, doneToday, focusChord, fullPlan, instrumentOf, plan, resumeAt, setPlanned, songChoices, todaysChords, todaysKeyChords } from './session';
 
-import { skillLabel } from '../music/labels';
+import { cleanStrings, skillLabel } from '../music/labels';
 import { progressTabs } from './repertoire';
 import { bindPlan, planCard, weekLine } from './habit';
 import { weekStats } from './trends';
@@ -25,21 +25,6 @@ import { TUNINGS } from '../music/tuning';
 import { dayStart } from '../core/days';
 
 export { skillLabel };
-
-/**
- * "4 of 5 strings" for a chord that is not clean yet. What is kept is the share of clean strings in sixths
- * (so that every chord counts alike); this turns it back into the strings the chord really has.
- */
-export function cleanStrings(key: string, sixths: number): string {
-  const id = key.split(':')[1];
-  if (id.startsWith('p.')) {
-    // on the piano: every key of the chord, and the chord as a whole
-    const n = pianoChord(id.slice(2)).midis.length + 1;
-    return L(`${Math.min(n - 1, Math.round((sixths * n) / 6))} of ${n} steps`, `${Math.min(n - 1, Math.round((sixths * n) / 6))} von ${n} Schritten`);
-  }
-  const n = CHORDS[id]?.frets.filter((f) => f >= 0).length ?? 6;
-  return L(`${Math.min(n - 1, Math.round((sixths * n) / 6))} of ${n} strings`, `${Math.min(n - 1, Math.round((sixths * n) / 6))} von ${n} Saiten`);
-}
 
 export const pips = (level: number, cls = 'on'): string => `<span class="pips" role="img" aria-label="${L(`level ${level} of 5`, `Stufe ${level} von 5`)}">${[1, 2, 3, 4, 5].map((i) => `<i class="${i <= level ? cls : ''}"></i>`).join('')}</span>`;
 
