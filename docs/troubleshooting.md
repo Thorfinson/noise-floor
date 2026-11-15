@@ -26,7 +26,7 @@ The click is a high tick on purpose, above the range the listener analyses, so i
 
 ## Browsers
 
-It is built and tested with Microsoft Edge on Windows; Chrome uses the same engine and should behave the same. Firefox and Safari have the Web Audio API and the microphone too, but are not tested. The browser checks lay the app out at three tablet sizes (1024 by 768, 1180 by 820 and 768 by 1024) and on a phone standing and lying (390 by 844, with touch), and play a lesson there by tapping alone. What no browser check can tell is how the microphone of your phone or tablet hears your instrument: run **Tools → Hearing check** on it. On a phone, turn it on its side to play: a line of music needs the width.
+It is built and tested with Microsoft Edge on Windows; Chrome uses the same engine and should behave the same. Firefox and Safari have the Web Audio API and the microphone too, but are not tested. (Firefox cannot always hear a microphone at another rate than the sound card's; the app then opens it again at the browser's own rate.) The browser checks lay the app out at three tablet sizes (1024 by 768, 1180 by 820 and 768 by 1024) and on a phone standing and lying (390 by 844, with touch), and play a lesson there by tapping alone. What no browser check can tell is how the microphone of your phone or tablet hears your instrument: run **Tools → Hearing check** on it. On a phone, turn it on its side to play: a line of music needs the width.
 
 ## Start over
 

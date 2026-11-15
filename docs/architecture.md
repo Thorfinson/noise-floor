@@ -40,7 +40,8 @@ src/music        what is played
   rhythms.ts       the rhythms to read, in note values, level by level
   tuning.ts        the capo and the tunings of the guitar; the A it is heard with
   path.ts          the learning path
-  labels.ts        skills named as a person would say them
+  material.ts      what a lesson teaches: a song or piece as lines of steps with their clicks; the rung to practise a line on
+  labels.ts        skills named as a person would say them; how much of a chord is clean yet
   import.ts        reading a text tab and note names
 src/game         the rules of the games, without drawing or audio (testable on their own)
   run.ts           Noise Floor: waves, foes, hits, upgrades, the Mute
@@ -48,7 +49,10 @@ src/game         the rules of the games, without drawing or audio (testable on t
   gesture.ts       the muted-strings gesture that pauses a run
 src/screens      one file per screen or family of screens; each is a function (root, params, ctx) => cleanup
   learn.ts         lessons on three rungs (wait, click, full speed), the loop, backing, performance, recordings, by ear,
-                   both hands; the chord check
+                   both hands
+  chordcheck.ts    the chord check, string by string, and the check at the end of a stage
+  takepanel.ts     a take at full speed bar by bar, listening back, the player's own count of slips
+  frame.ts         the page around a lesson-like screen, the step button, news of levels
   sing.ts          the voice's range, tones, held tones and songs (words, less help, a second voice)
   session.ts       the plan of the day, the short session, the summary
   ear.ts           by ear: motifs, chords, sung then played; intervals for the voice
@@ -58,12 +62,13 @@ src/screens      one file per screen or family of screens; each is a function (r
   tools.ts         the tools page, the metronome, the drone, the chord library; compose.ts your own song, playing freely
 src/ui           shared drawings (tab, note strip, staff, fretboard, chord box, keyboard, pitch lane), the painted worlds
                  of the games (scene, watch, trail), the practice instrument, DOM helpers
-public           the icon, the web manifest and the service worker that keeps the app's own files for offline use (the page tells it which files the first visit loaded before it was there)
+public           the icon, the web manifest and the service worker that keeps the app's own files for offline use (the build writes the list of
+                 its version's files into it, so a new version is a new worker and the files of older ones are dropped)
 ```
 
 ## Screens and the session
 
-A screen is a function that fills a root element and returns what cleans it up. The router calls it with the parts of the address; the session calls the same screens one after the other with a `SessionCtx` (the step rail, a label, `next()`), so every exercise works both on its own and as a step of the day. `withIntro(name, screen)` shows the handbook pages a screen needs the first time it is opened.
+A screen is a function that fills a root element and returns what cleans it up. The router calls it with the parts of the address; the session calls the same screens one after the other with a `SessionCtx` (the step rail, a label, `next()`), so every exercise works both on its own and as a step of the day. Each step's `next()` goes on only once, and opening a step stops every pending `later()` move of the one before. `withIntro(name, screen)` shows the handbook pages a screen needs the first time it is opened. Work a screen waits for (the microphone, IndexedDB, a file) checks after each wait that the screen is still open.
 
 ## The listener
 
@@ -82,6 +87,8 @@ Every text is written as `L(english, german)` and chosen at the moment it is sho
 ## State
 
 `store.ts` keeps everything in one object in `localStorage` under `noise-floor/v1`: settings, skills (`chord:Am`, `pair:Em>Am`, `bar:<song>:<bar>`, `pitch:match`, `ear:motif`, `beat:strum-folk` ...) with their best value, first value of the last day and best value of each day, best scores, recent runs, sessions, progress through songs, the songs that come back (`reviews`), favourites, recently opened songs, minutes played per day, the plan, the player's own count of slips, the index of recordings, your own songs and pieces. A backup is that object as a file. The recordings themselves are in IndexedDB (`noise-floor-takes`), outside the backup.
+
+What is read back (from `localStorage`, a backup or the progress file) is checked field by field: what cannot be used is left out, and the saved text it came from is kept aside under `noise-floor/v1-unreadable`. A restore keeps this computer's own `latency`, `deviceId`, `uiScale` and index of recordings. Tabs keep each other up to date through the `storage` event, and the progress file is never written while a newer one waits to be loaded.
 
 ## Drawing
 
