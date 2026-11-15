@@ -200,9 +200,19 @@ describe('does coming back keep the songs', () => {
         store.skills.data[key] = { level: 5, best: 100, last: now - DAY_MS, tops: 3, days: 3, cold: [Math.floor(now / DAY_MS) - 1, i % 2 === 0 ? 95 : 70], h: [] } as never;
       }
     });
-    const r = whatStays('guitar', now, Math.floor(real.length / 2) - 1);
-    expect(r.often.n + r.seldom.n).toBeGreaterThan(0);
-    if (r.often.n && r.seldom.n) expect(r.often.kept).toBeGreaterThan(r.seldom.kept);
+    expect(real.length).toBeGreaterThanOrEqual(6);
+    const min = Math.floor(real.length / 2) - 1;
+    const r = whatStays('guitar', now, min);
+    // every song is a side: those come back to often (step 3) and those seldom (step 0)
+    expect(r.often.n).toBe(Math.ceil(real.length / 2));
+    expect(r.seldom.n).toBe(Math.floor(real.length / 2));
+    expect(r.enough).toBe(true);
+    // what was kept from cold: 95 of 100 against 70 of 100
+    expect(r.often.kept).toBeCloseTo(0.95, 5);
+    expect(r.seldom.kept).toBeCloseTo(0.7, 5);
+    expect(r.often.kept).toBeGreaterThan(r.seldom.kept);
+    // one song fewer than asked for on a side is still too early
+    expect(whatStays('guitar', now, r.seldom.n + 1).enough).toBe(false);
   });
 });
 
