@@ -20,7 +20,7 @@ import { chordName, chordNotes, CHORDS, midiToTab, noteName, pianoChord, strumIs
 import { $, cap, esc, hear, icon, keys, later, pianoEars, stopTimer, type Screen } from '../ui/dom';
 import { keyboard, keyRange, LEARN, tabLine } from '../ui/draw';
 import { setSimTarget } from '../ui/practice';
-import { frame, levelNews, nextStep } from './learn';
+import { frame, levelNews, nextStep } from './frame';
 import { direction, model, voiceListener, voiceRange } from './sing';
 
 export type EarKind = 'motif' | 'chords' | 'sing';

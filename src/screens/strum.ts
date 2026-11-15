@@ -16,7 +16,7 @@ import { changeTip, CHORDS } from '../music/theory';
 import { $, esc, hear, icon, keys, later, stopTimer, type Screen, type SessionCtx } from '../ui/dom';
 import { chordBox, FAR, LEARN, typeScale } from '../ui/draw';
 import { setSimTarget } from '../ui/practice';
-import { frame, levelNews, nextStep } from './learn';
+import { frame, levelNews, nextStep } from './frame';
 
 /** The three steps: muted strings, one chord, a change. */
 export type StrumStage = 0 | 1 | 2;

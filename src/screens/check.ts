@@ -16,7 +16,7 @@ import { chordName, noteName, OPEN_STRINGS } from '../music/theory';
 import { guitarA4 } from '../music/tuning';
 import { $, esc, hear, icon, keys, pianoEars, voiceEars, type Screen } from '../ui/dom';
 import { setSimTarget } from '../ui/practice';
-import { frame } from './learn';
+import { frame } from './frame';
 import { voiceRange } from './sing';
 
 export const hearingCheck: Screen = (root) => {

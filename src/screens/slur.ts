@@ -14,7 +14,7 @@ import { noteName, OPEN_STRINGS } from '../music/theory';
 import { $, $$, esc, hear, icon, keys, later, stopTimer, type Screen } from '../ui/dom';
 import { LEARN, playhead, tabLine } from '../ui/draw';
 import { setSimTarget } from '../ui/practice';
-import { frame, levelNews } from './learn';
+import { frame, levelNews } from './frame';
 
 export interface SlurPattern {
   n: number;

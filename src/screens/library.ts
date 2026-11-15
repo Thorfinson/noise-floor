@@ -6,7 +6,7 @@ import { parseNotes, parseTab } from '../music/import';
 import { $, $$, cap, esc, go, icon, type Screen } from '../ui/dom';
 import { LEARN, noteStrip, tabLine } from '../ui/draw';
 import { pips } from './home';
-import { describe, pieceMaterial, songMaterial, type Material } from './learn';
+import { describe, pieceMaterial, songMaterial, type Material } from '../music/material';
 import { SING_ALONG } from '../music/lyrics';
 import { finished, LEVELS, pieceProfile, piecesByDifficulty, readiness, songProfile, songsByDifficulty, type Profile } from '../music/difficulty';
 import { currentId } from './session';

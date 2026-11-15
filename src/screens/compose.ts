@@ -18,7 +18,7 @@ import { chart, PICKS, picked, strummed, STRUMS } from '../music/songwriting';
 import { chordName, chordNotes, CHORDS, midiToTab, noteName, pianoChord } from '../music/theory';
 import { $, $$, esc, go, hear, icon, keys, pianoEars, voiceEars, type Screen } from '../ui/dom';
 import { fretboard, keyboard, LEARN } from '../ui/draw';
-import { frame } from './learn';
+import { frame } from './frame';
 
 /** The patterns a progression can be played in, by name. */
 const PATTERNS = (): { id: string; name: string; picked: boolean }[] => [

@@ -17,7 +17,7 @@ import { guitarA4 } from '../music/tuning';
 import { findSong, noteTimes, shapeOf } from '../music/content';
 import { $, esc, hear, keys, type Screen } from '../ui/dom';
 import { setSimTarget } from '../ui/practice';
-import { frame } from './learn';
+import { frame } from './frame';
 
 
 export const singAlong: Screen = (root, [id]) => {

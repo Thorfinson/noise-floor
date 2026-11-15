@@ -11,7 +11,7 @@ import { parseRhythm, RHYTHM_LEVELS, rhythmKey, type RhythmNote } from '../music
 import { $, $$, esc, hear, icon, keys, later, pianoEars, stopTimer, type Screen } from '../ui/dom';
 import { LEARN } from '../ui/draw';
 import { setSimTarget } from '../ui/practice';
-import { frame, levelNews } from './learn';
+import { frame, levelNews } from './frame';
 
 type State = 'wait' | 'hit' | 'miss';
 

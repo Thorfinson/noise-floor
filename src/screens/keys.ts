@@ -14,7 +14,7 @@ import { isBlackKey, keyLines, keyName, keysAlike, noteName, pianoChord, strumIs
 import { $, esc, hear, icon, keys, later, pianoEars, stopTimer, type Screen } from '../ui/dom';
 import { keyboard, keyRange, LEARN, type KeyMark } from '../ui/draw';
 import { setSimTarget } from '../ui/practice';
-import { frame, levelNews, nextStep } from './learn';
+import { frame, levelNews, nextStep } from './frame';
 
 /** How often a key is tried in the guided session before it is left for next time. */
 const TRIES = 3;
