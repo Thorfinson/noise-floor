@@ -16,7 +16,7 @@ import { hourOf, STORM, Watch } from '../ui/watch';
 import { practiceBar, setSimTarget } from '../ui/practice';
 import { PATTERNS } from '../game/stride';
 import { pips, skillLabel } from './home';
-import { stringTip } from './learn';
+import { stringTip } from './chordcheck';
 
 // getters: the names are read when they are shown, in the language of that moment
 const NAMES: Record<RunType, string> = {

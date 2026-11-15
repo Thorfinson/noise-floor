@@ -342,6 +342,7 @@ export const progress: Screen = (root) => {
   const walker = here ? main.indexOf(here) : main.length - 1 + 0.8;
   if (!here) trail.end(true);
   let raf = requestAnimationFrame(function frame(ts: number): void {
+    trail.measure();
     trail.draw({ beat: 0, stones, states, bars: main.length, name: (c) => c, count: () => '', map: { walker, mark: main.findIndex((s) => s.id === picked), label: (i) => [main[i].short, L(`${main[i].done} of ${total(main[i])}`, `${main[i].done} von ${total(main[i])}`)] } }, ts / 1000);
     raf = requestAnimationFrame(frame);
   });

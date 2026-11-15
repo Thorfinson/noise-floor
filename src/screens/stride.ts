@@ -193,6 +193,8 @@ export const stride: Screen = (root, [pid, again]) => {
   }
 
   function frame(): void {
+    // the picture's size is read before this frame writes into the page, so the browser lays it out once
+    trail.measure();
     if (!walk || phase === 'brief' || (phase === 'done' && !closing)) {
       // nothing is being walked: the land lies still, with the wanderer waiting on the bank
       trail.draw({ beat: phase === 'done' ? BARS * 4 + 1.5 : -1.2, stones, states: lastStates, bars: BARS, name: nameOf, count: (i) => (stones[i].at % 1 ? '+' : String((stones[i].at % 4) + 1)) }, performance.now() / 1000);

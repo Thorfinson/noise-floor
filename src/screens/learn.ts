@@ -26,11 +26,6 @@ import { setSimTarget, type SimTarget } from '../ui/practice';
 import { frame, levelNews, nextStep } from './frame';
 import { takeBox, takePanel } from './takepanel';
 
-// what other screens take from here, now kept in modules of their own
-export { frame, levelNews, nextStep } from './frame';
-export { chordCheck, stringTip } from './chordcheck';
-export { describe, pieceMaterial, songMaterial, type Material } from '../music/material';
-
 const RUNGS = (): string[] => [L('Learn', 'Lernen'), L('With the click', 'Mit Klick'), L('Full speed', 'Volles Tempo')];
 
 /** Words under the notes of a melody (K): asked for once, they stay while the app is open. */
