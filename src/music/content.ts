@@ -337,6 +337,9 @@ export const PIANO_PIECES: PianoPiece[] = [
       keys([[F4], [F4], [E4], [E4], [D4], [D4], [C4, 2]], [4, 4, 3, 3, 2, 2, 1]),
     ],
   },
+  // the whole hymn tune (New Britain, 1831), compared note for note with Excell's public-domain hymnal setting
+  // of 1900 as HymnWiki prints it; "me" and "see" are held over a second bar, as the sixteen bars of the chords
+  // (amazing-grace-chords) and Wikiversity's "Sing free" score have them (a rest is added to the note before)
   {
     id: 'amazing-grace-piano',
     title: 'Amazing Grace',
@@ -347,7 +350,9 @@ export const PIANO_PIECES: PianoPiece[] = [
     count: 3,
     phrases: [
       keys([[D4], [G4, 2], [B4, 0.5], [G4, 0.5], [B4, 2], [A4], [G4, 2], [E4], [D4, 2]], [1, 2, 4, 2, 4, 3, 2, 1, 1]),
-      keys([[D4], [G4, 2], [B4, 0.5], [G4, 0.5], [B4, 2], [A4], [D5, 3]], [1, 2, 4, 2, 4, 3, 5]),
+      keys([[D4], [G4, 2], [B4, 0.5], [G4, 0.5], [B4, 2], [A4], [D5, 5]], [1, 2, 4, 2, 4, 3, 5]),
+      keys([[B4], [D5, 1.5], [B4, 0.5], [D5, 0.5], [B4, 0.5], [G4, 2], [D4], [E4, 1.5], [G4, 0.5], [G4, 0.5], [E4, 0.5], [D4, 2]], [4, 5, 4, 5, 4, 2, 1, 2, 3, 3, 2, 1]),
+      keys([[D4], [G4, 2], [B4, 0.5], [G4, 0.5], [B4, 2], [A4], [G4, 6]], [1, 2, 4, 2, 4, 3, 2]),
     ],
   },
   {

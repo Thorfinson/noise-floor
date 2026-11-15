@@ -22,8 +22,8 @@
  * on real pianos. Their sources are named where they are fetched. `npm run samples -- chords` fetches only
  * the chords.
  */
-import { createWriteStream, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
-import { dirname, resolve } from 'node:path';
+import { createWriteStream, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { dirname, isAbsolute, relative, resolve } from 'node:path';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { fileURLToPath } from 'node:url';
@@ -67,11 +67,36 @@ const pianoName = (midi) => NAMES[midi % 12] + (Math.floor(midi / 12) - 1);
 const range = (a, b) => Array.from({ length: b - a + 1 }, (_, i) => a + i);
 const PIANO = [...range(43, 79).map((m) => ['mf', m]), ...[60, 62, 64, 65, 67, 69].flatMap((m) => [['pp', m], ['ff', m]])];
 
+/**
+ * A download goes into a ".part" file first and gets its name only when it is complete, so that a dropped
+ * connection leaves nothing behind that a later run would take for the file.
+ */
 async function download(url, file, bytes) {
-  if (existsSync(file) && statSync(file).size > 1000) return;
+  if (existsSync(file)) return;
   const res = await fetch(url, bytes ? { headers: { Range: `bytes=0-${bytes - 1}` } } : {});
   if (!res.ok) throw new Error(`${res.status} for ${url}`);
-  await pipeline(Readable.fromWeb(res.body), createWriteStream(file));
+  const part = file + '.part';
+  await pipeline(Readable.fromWeb(res.body), createWriteStream(part));
+  renameSync(part, file);
+}
+
+/** Writes a whole file under its name only once it is written. */
+function writeWhole(file, data) {
+  writeFileSync(file + '.part', data);
+  renameSync(file + '.part', file);
+}
+
+/**
+ * Where a file named inside a downloaded archive goes: below the folder it belongs in, and nowhere else. A name
+ * with "..", a backslash or a drive in it is refused rather than followed out of the folder.
+ */
+function inside(dir, name) {
+  const parts = name.split('/');
+  if (name.includes('\\') || /^[a-z]:/i.test(name) || parts.some((p) => p === '..' || p === '.' || p === '')) throw new Error(`refused a name from an archive: ${name}`);
+  const target = resolve(dir, ...parts);
+  const rel = relative(dir, target);
+  if (!rel || rel.startsWith('..') || isAbsolute(rel)) throw new Error(`refused a name from an archive: ${name}`);
+  return target;
 }
 
 /** Reads an AIFF file (possibly cut short) into mono samples between -1 and 1. */
@@ -249,7 +274,7 @@ function writeWav(file, samples) {
   buf.write('data', 36);
   buf.writeUInt32LE(samples.length * 2, 40);
   for (let i = 0; i < samples.length; i++) buf.writeInt16LE(Math.round(Math.max(-1, Math.min(1, samples[i])) * 32767), 44 + i * 2);
-  writeFileSync(file, buf);
+  writeWhole(file, buf);
 }
 
 const only = process.argv[2];
@@ -432,12 +457,12 @@ if (!only || only === 'chords') {
   /** A file from the web, kept in the cache; asked for politely and not twice. */
   const fetched = async (url, name) => {
     const file = resolve(kept, name);
-    if (existsSync(file) && statSync(file).size > 8000) return readFileSync(file);
+    if (existsSync(file)) return readFileSync(file);
     for (let attempt = 0; ; attempt++) {
       const r = await fetch(url, { headers: { 'User-Agent': 'sample-fetcher/1.0' } });
       if (r.ok) {
         const data = Buffer.from(await r.arrayBuffer());
-        writeFileSync(file, data);
+        writeWhole(file, data);
         await sleep(1500);
         return data;
       }
@@ -448,7 +473,8 @@ if (!only || only === 'chords') {
   /** A whole recording as a clip at 48 kHz. */
   const whole = (samples, sr) => cut(samples, sr, LEAD, samples.length / sr);
 
-  const LIEGE = 'https://raw.githubusercontent.com/bycym/chordRecognition/master/audio/jim2012Chords/Other_Instruments/Piano';
+  // the copy on GitHub at a fixed commit (the one these files were first fetched from), not whatever its branch holds now
+  const LIEGE = 'https://raw.githubusercontent.com/bycym/chordRecognition/807810889c41c026002930c7c321ec1b4c0110d0/audio/jim2012Chords/Other_Instruments/Piano';
   let count = 0;
   for (const [dir, label] of [['a', 'A'], ['am', 'Am'], ['bm', 'Bm'], ['c', 'C'], ['d', 'D'], ['dm', 'Dm'], ['e', 'E'], ['em', 'Em'], ['f', 'F'], ['g', 'G']]) {
     for (let n = 1; n <= 10; n++) {
@@ -471,18 +497,18 @@ if (!only || only === 'chords') {
     /** the list of the archive's files, and each file, from the cache where it is there */
     const listing = resolve(kept, 'maps-names.txt');
     const member = async (name) => {
-      const file = resolve(kept, name.split('/').pop());
-      if (existsSync(file) && statSync(file).size > 0) return readFileSync(file);
+      const file = inside(kept, name.split('/').pop());
+      if (existsSync(file)) return readFileSync(file);
       zip ??= await openZip('https://zenodo.org/api/records/18160555/files/ENSTDkAm.zip/content');
       const data = await zip.read(name);
-      writeFileSync(file, data);
+      writeWhole(file, data);
       // slowly: this server answers more than a request a second or so with "too many"
       await sleep(2500);
       return data;
     };
     if (!existsSync(listing)) {
       zip = await openZip('https://zenodo.org/api/records/18160555/files/ENSTDkAm.zip/content');
-      writeFileSync(listing, zip.names.join('\n'));
+      writeWhole(listing, zip.names.join('\n'));
     }
     const names = readFileSync(listing, 'utf8')
       .split(/\r?\n/)
@@ -575,19 +601,22 @@ if (!only || only === 'chords') {
 // annotators. Only the audio, the pitch and the notes are kept; `npm run samples -- voice` fetches only these.
 if (!only || only === 'voice') {
   const dir = resolve(root, 'tests/real/vocadito');
-  if (!existsSync(resolve(dir, 'Audio', 'vocadito_40.wav'))) {
+  const done = resolve(dir, 'vocadito.done');
+  if (!existsSync(done)) {
     const zip = await openZip('https://zenodo.org/api/records/5578807/files/vocadito.zip/content');
     const keep = zip.names.filter((n) => !n.startsWith('__MACOSX') && /^(Audio\/.*\.wav|Annotations\/(F0|Notes)\/.*\.csv|Annotations\/README\.txt|vocadito_metadata\.csv)$/.test(n));
     for (const n of keep) {
-      const target = resolve(dir, ...n.split('/'));
+      const target = inside(dir, n);
       if (existsSync(target)) continue;
       mkdirSync(dirname(target), { recursive: true });
-      writeFileSync(target, await zip.read(n));
+      writeWhole(target, await zip.read(n));
       if (n.endsWith('.wav')) {
         made++;
         process.stdout.write('.');
       }
     }
+    // only now, with every file there: a run broken off half-way goes on where it stopped
+    writeFileSync(done, '');
     console.log(' voices');
   }
 }

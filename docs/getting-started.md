@@ -4,7 +4,7 @@
 
 The easiest way is the [online version](https://thorfinson.github.io/noise-floor/) in Chrome or Edge on a laptop, a desktop or a tablet. It is the same app; it runs entirely in your browser, and once opened it opens without a network too.
 
-To run it yourself you need [Node.js](https://nodejs.org/) 20 or later:
+To run it yourself you need [Node.js](https://nodejs.org/) 20.19 or later, or 22.12 or later (what Vite, the build tool, needs):
 
 ```
 git clone https://github.com/Thorfinson/noise-floor.git
@@ -13,7 +13,7 @@ npm install
 npm start
 ```
 
-`npm start` opens http://localhost:5173. On Windows a double-click on `Noise Floor.cmd` does the same (it installs what is missing the first time). `npm run build` writes a version you can put on any web server into `dist/`.
+`npm start` opens http://localhost:5173. On Windows a double-click on `Noise Floor.cmd` does the same (it installs what is missing the first time). `npm run build` writes a version you can put on any web server into `dist/`. Songs you keep in `src/music/private` (see [Contributing](../CONTRIBUTING.md#songs-you-keep-for-yourself)) are built into it too, and the build then says so in a warning: such a `dist/` is for your own computer only and must not be put where others can reach it.
 
 ## Finding your way
 

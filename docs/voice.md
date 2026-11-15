@@ -29,7 +29,7 @@ Thirty-four songs come with their words, each in the language it is sung in: tra
 
 **Less help** (key L, or **More → How much help**), once a phrase sits: *the model and the line* (everything); *the line only* (H gives the first note, the rest is yours); *neither* (H gives the first note; the line and your voice are shown once it is sung). Seeing the pitch helps a voice that is learning to find notes, and the gain can fade when the display is gone, so it is taken away step by step.
 
-**A second voice** (key T, or **More → Sing a third below**): the app sings the tune with the click, you sing the voice a third below it, in the key of the song. For headphones only: through speakers the microphone would hear the app instead of you. Measured as a share of its notes found, apart from the tune.
+**A second voice** (key T, or **More → Sing a third below**): the app sings the tune with the click, you sing the voice a third below it, inside the scale of the song, also when that is a mode such as Dorian or Mixolydian. For headphones only: through speakers the microphone would hear the app instead of you. Measured as a share of its notes found, apart from the tune.
 
 ## How it measures
 

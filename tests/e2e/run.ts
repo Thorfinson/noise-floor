@@ -76,6 +76,13 @@ const check = (name: string, ok: boolean, detail = ''): void => {
   const tag = section.getStore()?.name;
   console.log(`${ok ? 'PASS' : 'FAIL'}  ${tag ? `[${tag}] ` : ''}${process.env.E2E_TIMES ? `[${Math.round((Date.now() - began) / 1000)}s] ` : ''}${name}${detail ? '  (' + detail + ')' : ''}`);
 };
+/** checks that cannot run here (the recordings are not fetched): said, so that a run without them does not read as one with them */
+const skipped: string[] = [];
+const skip = (name: string, why: string): void => {
+  skipped.push(name);
+  const tag = section.getStore()?.name;
+  console.log(`SKIP  ${tag ? `[${tag}] ` : ''}${name}  (${why})`);
+};
 const text = (page: Page, sel: string): Promise<string> =>
   page
     .locator(sel)
@@ -225,6 +232,7 @@ const sections: [string, () => Promise<void>][] = [
   }],
   ['1c', async () => {
     // 1c. microphone path with recordings of a real guitar, when they have been fetched (npm run samples)
+    if (!haveGuitar) skip('real guitar: a line of a song and the tuner, played into the microphone from recordings', 'no recordings of a guitar here: npm run samples');
     if (haveGuitar) {
       // the first line of the song: every string left ringing, a new note on a string ending the old one
       const line = firstNotes;
@@ -270,6 +278,7 @@ const sections: [string, () => Promise<void>][] = [
   ['1d', async () => {
     // 1d. microphone path with recordings of a real piano, when they have been fetched: chords are its single
     // keys mixed together, a few milliseconds apart as a hand strikes them, each let go before the next
+    if (!havePiano) skip('real piano: chords, keys and a change, played into the microphone from recordings', 'no recordings of a piano here: npm run samples');
     if (havePiano) {
       const launch = (file: string) =>
         chromium.launch({ channel: 'msedge', headless: true, args: ['--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream', `--use-file-for-fake-audio-capture=${file}`, '--autoplay-policy=no-user-gesture-required', '--lang=en-US'] });
@@ -1847,6 +1856,8 @@ const sections: [string, () => Promise<void>][] = [
 // section it belongs to; a section that throws counts as failed. E2E_ONLY=2b,2c runs only those sections.
 const only = process.env.E2E_ONLY?.split(',').map((x) => x.trim());
 const chosen = sections.filter(([name]) => !only || only.includes(name));
+// a name in E2E_ONLY that no section has (a typo) is a failure, not a run that quietly checks less
+for (const name of only?.filter((n) => !sections.some(([s]) => s === n)) ?? []) check(`E2E_ONLY names a section there is: "${name}"`, false, `the sections are ${sections.map(([s]) => s).join(', ')}`);
 const width = Math.max(1, Math.min(chosen.length, Number(process.env.E2E_JOBS) || Math.floor(cpus().length / 4)));
 const LONG = ['2', '2p'];
 try {
@@ -1870,5 +1881,7 @@ try {
 }
 
 const failed = results.filter((r) => !r[1]).length;
-console.log(`\n${results.length - failed} of ${results.length} browser checks passed in ${Math.round((Date.now() - began) / 1000)} s, ${width} sections at a time`);
-process.exit(failed ? 1 : 0);
+console.log(`\n${results.length - failed} of ${results.length} browser checks passed in ${Math.round((Date.now() - began) / 1000)} s, ${width} sections at a time${skipped.length ? `; ${skipped.length} skipped (SKIP above)` : ''}`);
+// a run in which nothing was checked has shown nothing: it fails
+if (!results.length) console.log('No browser check ran.');
+process.exit(failed || !results.length ? 1 : 0);

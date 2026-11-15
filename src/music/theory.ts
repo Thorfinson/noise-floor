@@ -1,15 +1,23 @@
 /** Notes, tuning and the chord library. Strings are indexed 0 (low E) to 5 (high e). */
 import { L, lang } from '../core/i18n';
 
-export const NOTE_NAMES = ['C', 'C♯', 'D', 'D♯', 'E', 'F', 'F♯', 'G', 'G♯', 'A', 'A♯', 'B'];
+/**
+ * German calls B natural H (and B is B flat there): every name of a note, a key or a string that is shown
+ * follows the language it is read in. Names in data and storage stay the English ones.
+ */
+const inLang = (en: string[], de: string[]): string[] => new Proxy(en, { get: (list, k) => Reflect.get(lang() === 'de' ? de : list, k) });
+/** a note's name as German writes it: H for B natural; B♭ keeps its sign */
+const germanB = (name: string): string => (lang() === 'de' ? name.replace(/^B(?!♭)/, 'H') : name);
+
+export const NOTE_NAMES: string[] = inLang(['C', 'C♯', 'D', 'D♯', 'E', 'F', 'F♯', 'G', 'G♯', 'A', 'A♯', 'B'], ['C', 'C♯', 'D', 'D♯', 'E', 'F', 'F♯', 'G', 'G♯', 'A', 'A♯', 'H']);
 export const OPEN_STRINGS = [40, 45, 50, 55, 59, 64];
-export const STRING_NAMES = ['E', 'A', 'D', 'G', 'B', 'e'];
-const STRING_FULL_DE = ['tiefe E', 'A', 'D', 'G', 'B', 'hohe e'];
+export const STRING_NAMES: string[] = inLang(['E', 'A', 'D', 'G', 'B', 'e'], ['E', 'A', 'D', 'G', 'H', 'e']);
+const STRING_FULL_DE = ['tiefe E', 'A', 'D', 'G', 'H', 'hohe e'];
 /**
  * The name of a string before the word for string, in the language shown when it is read: "the low E string",
  * "die tiefe E-Saite" (German puts "-Saite" right after it). For the whole phrase see `stringName`.
  */
-export const STRING_FULL: string[] = new Proxy(['low E', 'A', 'D', 'G', 'B', 'high e'], { get: (en, k) => Reflect.get(lang() === 'de' ? STRING_FULL_DE : en, k) });
+export const STRING_FULL: string[] = inLang(['low E', 'A', 'D', 'G', 'B', 'high e'], STRING_FULL_DE);
 /**
  * A string by its name, without article: "low E string", "A string"; in German "tiefe E-Saite", "A-Saite".
  * German changes the ending after "der" ("auf der tiefen E-Saite"): pass dative for that.
@@ -282,7 +290,7 @@ export function pianoChord(id: string): KeyChord {
   const keys = steps.map((s, i) => {
     const letter = LETTERS[(LETTERS.indexOf(m[1]) + letters[i]) % 7];
     const off = ((((root + s) % 12) - ROOTS[letter] + 18) % 12) - 6;
-    return letter + (off > 0 ? '♯'.repeat(off) : '♭'.repeat(-off));
+    return germanB(letter + (off > 0 ? '♯'.repeat(off) : '♭'.repeat(-off)));
   });
   return { id: plain, name, midis: steps.map((s) => root + s), fingers, keys };
 }

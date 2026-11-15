@@ -31,7 +31,7 @@ npx vite-node tests/real/legatobench.ts    # slides, and notes joined without a 
 
 ## Browser checks
 
-`npm run e2e` starts the app, opens it in headless Microsoft Edge and plays to it. Its sections (named in brackets below) run side by side, each in a browser of its own: one at a time for every four processor cores, so that the browsers stay on the click. On sixteen cores the whole run takes a little over four minutes; one after the other, about twelve. `E2E_JOBS=2` sets how many run at once (`1`: one after the other), `E2E_ONLY=2b,3` runs only those sections, and `E2E_TIMES=1` puts the seconds since the start before every check. Each check says its section, as in `PASS  [2p] piano: …`.
+`npm run e2e` starts the app, opens it in headless Microsoft Edge and plays to it. Its sections (named in brackets below) run side by side, each in a browser of its own: one at a time for every four processor cores, so that the browsers stay on the click. On sixteen cores the whole run takes a little over four minutes; one after the other, about twelve. `E2E_JOBS=2` sets how many run at once (`1`: one after the other), `E2E_ONLY=2b,3` runs only those sections, and `E2E_TIMES=1` puts the seconds since the start before every check. Each check says its section, as in `PASS  [2p] piano: …`; the checks with recordings (1c, 1d) print a `SKIP` line instead when the recordings are not there (always in continuous integration), and a run in which no check ran (a mistyped `E2E_ONLY`) fails.
 
 1. **Through the microphone path** (1, the tuner 1b, the recordings 1c and 1d), with a synthesized guitar and, when the recordings are there, the recorded guitar and piano fed in as the browser's capture device.
 2. **Through the practice instrument** (2 for the guitar, 2p for the piano): the guided session from start to end (with playing by ear before the song), the tuner, the chord check, lessons on all three rungs, the games with their upgrades and the Mute, the handbook, the path, the piano.
@@ -50,4 +50,4 @@ Checks pass or fail; whether a person finds their way through a screen they cann
 
 ## Continuous integration
 
-GitHub Actions runs the type check, the unit tests and the build on every push and pull request, and the browser checks on Windows with Edge. The tests against real recordings are not part of it: they need the downloads, and several of the recordings' licences do not allow keeping them anywhere but on the computer that fetched them for its own use.
+GitHub Actions runs the type check, the unit tests and the build on every push and pull request, and the browser checks on Windows with Edge. The app is published to GitHub Pages only after all of these have passed for a commit on main, and it is that commit that is published. The tests against real recordings are not part of it: they need the downloads, and several of the recordings' licences do not allow keeping them anywhere but on the computer that fetched them for its own use.
