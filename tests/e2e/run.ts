@@ -495,6 +495,10 @@ const sections: [string, () => Promise<void>][] = [
       await page.waitForFunction(() => /Step 4 of 6/.test(document.querySelector('#eb')?.textContent ?? ''), null, { timeout: 8000 }).catch(() => undefined);
       check('session: before the song comes playing by ear, with nothing shown before it is asked for', /Step 4 of 6 · (Play it back|Which chord\?)/.test(await text(page, '#eb')) && (await page.locator('#tiles .tile').count()) === 3 && (await page.locator('#reveal').isHidden()), await text(page, '#eb'));
       await page.click('#nextstep');
+      // a song not begun yet is heard first: its words and chords on show, the lesson one press away
+      const heardFirst = await page.waitForSelector('.sp-pre', { timeout: 6000 }).then(() => true).catch(() => false);
+      check('session: a song not begun yet is heard first, then started on the player\'s word', heardFirst && (await page.locator('#sp-play').count()) === 1 && (await page.locator('.sp-sheet .sp-line').count()) >= 2 && (await page.locator('#sp-go').count()) === 1, await text(page, '.sp-pre h1'));
+      if (heardFirst) await page.click('#sp-go');
       await page.waitForSelector('#cbox');
       check('session: the song step shows a chord diagram for the fingers', (await page.locator('#cbox circle').count()) >= 3, `${await page.locator('#cbox circle').count()} dots, ${await text(page, '#eb')}`);
       await page.waitForTimeout(600);
@@ -675,6 +679,29 @@ const sections: [string, () => Promise<void>][] = [
       await page.screenshot({ path: resolve(out, 'songs.png') });
       await page.fill('#q', 'scarborough');
       check('songs: a search finds a song by its name, whatever its level', (await rows()) >= 1 && (await text(page, '.lib')).includes('Scarborough Fair'), (await page.locator('.lib li:not(.sep) b:first-child').allInnerTexts()).join(' | '));
+      // a song in the list opens its page first: hear it, what it asks, the way through it
+      await page.fill('#q', 'amazing grace');
+      await page.locator('.lib li:not(.sep)', { hasText: 'Amazing Grace (chords)' }).first().click();
+      await page.waitForSelector('.songp', { timeout: 5000 }).catch(() => undefined);
+      const songPageAt = await page.evaluate(() => location.hash);
+      check('song page: a song in the list opens its page, with hearing it, what it asks and the way through it', songPageAt === '#/songs/amazing-grace-chords' && (await page.locator('.songp .paper').count()) === 4 && (await page.locator('.sp-chord').count()) === 4 && (await page.locator('.sp-l').count()) === 4, `${songPageAt}, ${await page.locator('.songp .paper').count()} sheets`);
+      // hearing it: the tune over the chords, the words lighting up as they are sung
+      await page.click('#sp-play');
+      await page.waitForTimeout(2600);
+      const lit = await page.evaluate(() => ({ now: document.querySelectorAll('.sp-w s.now').length, sung: document.querySelectorAll('.sp-w s.sung').length, chord: document.querySelector('.sp-c.on')?.textContent ?? '' }));
+      check('song page: playing the song lights up its words and chords as they come', lit.now === 1 && lit.sung >= 1 && lit.chord === 'G', JSON.stringify(lit));
+      await page.click('#sp-play');
+      await page.screenshot({ path: resolve(out, 'song-page.png'), fullPage: true });
+      // a song the app has no tune for says so, and offers a recording to search for
+      await page.goto(base + '?autostart#/songs/tom-dooley');
+      await page.waitForSelector('.songp');
+      check('song page: without a tune it says so, plays the chords, and offers a recording to search for', (await text(page, '.sp-note')).includes('no tune for this song yet') && (await page.locator('.sp-note a[target="_blank"][rel~="noopener"]').count()) === 1 && (await page.locator('#sp-tune').count()) === 0, await text(page, '.sp-note'));
+      await page.click('#sp-start');
+      await page.waitForFunction(() => location.hash.startsWith('#/song/tom-dooley'), null, { timeout: 4000 }).catch(() => undefined);
+      check('song page: its button opens the lesson', (await page.evaluate(() => location.hash)).startsWith('#/song/tom-dooley'), await page.evaluate(() => location.hash));
+      await page.goto(base + '?autostart#/songs');
+      await page.waitForSelector('.lib');
+      await page.fill('#q', 'scarborough');
       await page.fill('#q', 'spiritual');
       const spirituals = await rows();
       await page.fill('#q', 'd7');

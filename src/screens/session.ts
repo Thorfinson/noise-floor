@@ -23,6 +23,7 @@ import { cleanStrings, skillLabel } from '../music/labels';
 import { describe, pieceMaterial, songMaterial } from '../music/material';
 import { pianoLesson, songLesson } from './learn';
 import { chordCheck } from './chordcheck';
+import { hearFirst } from './songpage';
 import { withIntro } from './basics';
 import { changeDrill } from './changes';
 import { keyCheck } from './keys';
@@ -345,7 +346,7 @@ function basePlan(): Step[] {
     const piece = currentPiece();
     const pitch: Step = { kind: 'pitch', short: L('Pitch', 'Tonhöhe'), as: L('the pitch of the piano', 'die Tonhöhe des Klaviers'), title: L('Match the app to your piano', 'Die App auf dein Klavier einstellen'), detail: L('Play one A and hold it', 'Spiel ein A und halte es'), minutes: 1, mode: 'learn', screen: withIntro('tuner', tuner), params: ['piano'] };
     const gym: Step = { kind: 'fingers', short: L('Fingers', 'Finger'), as: L('a short game for the fingers', 'ein kurzes Spiel für die Finger'), title: L('Finger gym', 'Fingertraining'), detail: L('A short game for even fingers, counted in', 'Ein kurzes Spiel für gleichmäßige Finger, mit Einzählen'), minutes: 3, mode: 'nf', screen: withIntro('run', nfRun), params: ['keys'] };
-    const lesson: Step = { kind: 'song', short: L('Piece', 'Stück'), as: piece.title, title: piece.title, detail: describe(pieceMaterial(piece)), minutes: 5, mode: 'learn', screen: withIntro('piano', pianoLesson), params: [piece.id] };
+    const lesson: Step = { kind: 'song', short: L('Piece', 'Stück'), as: piece.title, title: piece.title, detail: describe(pieceMaterial(piece)), minutes: 5, mode: 'learn', screen: hearFirst(withIntro('piano', pianoLesson)), params: [piece.id] };
     // a tune needs the fingers warm; chords need to be found first, and then the way from one to the next
     if ((piece.kind ?? 'melody') === 'melody') return [pitch, gym, earStep(true), lesson];
     const chords = todaysKeyChords();
@@ -362,7 +363,7 @@ function basePlan(): Step[] {
     { kind: 'changes', short: L('Changes', 'Wechsel'), as: L('the chord changes', 'die Akkordwechsel'), title: L('Chord changes', 'Akkordwechsel'), detail: L('One change without a clock, one calm minute, then a short game', 'Ein Wechsel ohne Uhr, eine ruhige Minute, dann ein kurzes Spiel'), minutes: 4, mode: 'nf', screen: withIntro('change', changesStep), params: ['changes'] },
     // a new strumming pattern takes the place of the ear on that day: one new thing at a time
     strumStep(song) ?? earStep(false),
-    { kind: 'song', short: L('Song', 'Song'), as: song.title, title: song.title, detail: describe(songMaterial(song)), minutes: 5, mode: 'learn', screen: withIntro('song', songLesson), params: [song.id] },
+    { kind: 'song', short: L('Song', 'Song'), as: song.title, title: song.title, detail: describe(songMaterial(song)), minutes: 5, mode: 'learn', screen: hearFirst(withIntro('song', songLesson)), params: [song.id] },
     // the hard chord comes last and is optional: it is the long-term goal, never a gate
     ...(hard ? [{ kind: 'barre', short: L('Barre', 'Barré'), as: L('the barre chord, if you like', 'der Barré-Akkord, wenn du magst'), title: L(`Barre practice: ${CHORDS[hard].name}`, `Barré-Übung: ${CHORDS[hard].name}`), detail: L('Two minutes on the hard one, if you like', 'Zwei Minuten für den schweren, wenn du magst'), minutes: 2, mode: 'learn' as const, screen: withIntro('chord', chordCheck), params: [hard, 'stay'] }] : []),
   ];

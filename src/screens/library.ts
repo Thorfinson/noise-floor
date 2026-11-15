@@ -14,6 +14,7 @@ import { dueReviews, repertoire } from '../music/review';
 import { currentId } from './session';
 import { chordName } from '../music/theory';
 import { voiceLibrary } from './voicelist';
+import { songPage } from './songpage';
 
 const refresh = (): void => void dispatchEvent(new HashChangeEvent('hashchange'));
 
@@ -48,6 +49,8 @@ interface Item {
 
 export const library: Screen = (root, params, ctx) => {
   if (store.settings.instrument === 'voice') return voiceLibrary(root, params, ctx);
+  // #/songs/<id>: the page of one song or piece, before it is played
+  if (params[0]) return songPage(root, params, ctx);
   const inst = store.settings.instrument;
   const piano = inst === 'piano';
   const all = piano ? [] : songsByDifficulty();
@@ -150,13 +153,13 @@ export const library: Screen = (root, params, ctx) => {
     const fin = finished(inst, it.id);
     const names = it.p.chords.map(name);
     const why = it.p.reasons.filter((r) => !/^\d+ (chords?|Akkorde?)$/.test(r));
-    return `<li class="${here ? 'cur' : ''}" data-open="#/${open}/${encodeURIComponent(it.id)}">
+    return `<li class="${here ? 'cur' : ''}" data-open="#/songs/${encodeURIComponent(it.id)}">
           <div><b>${esc(it.title)}</b>${it.exercise ? `<span class="tag">${L('exercise', 'Übung')}</span>` : it.by ? `<span class="by">${esc(byLine(it.by))}</span>` : ''}${here ? `<span class="pill">${L('today', 'heute')}</span>` : ''}${fin ? `<span class="pill done">${L('done', 'erledigt')}</span>` : ''}
             <small>${esc(cap(why.join(' · ')))}</small>
             <small class="you sr">${it.p.chords.length || !piano ? esc(readiness(it.p).text) + ' ' : ''}${fin ? L('You play it at full speed.', 'Im vollen Tempo gespielt.') : L('Next: ' + describe(it.m).toLowerCase() + '.', 'Als Nächstes: ' + describe(it.m) + '.')}</small>
-            <small class="links2">${it.basic ? ` <a href="#/${open}/${encodeURIComponent(it.basic.id)}">${L(`Basic version: the same chords, ${piano ? 'struck as a whole' : 'strummed'}`, `Einfache Fassung: dieselben Akkorde, ${piano ? 'als Ganzes angeschlagen' : 'angeschlagen'}`)}</a>` : ''}${it.hands ? ` <a href="#/${open}/${encodeURIComponent(it.hands.id)}">${it.hands.id.endsWith('~together') ? L('Both hands together: a bass under the melody', 'Beide Hände zusammen: ein Bass unter der Melodie') : L('Both hands: the root in the left, then the chord', 'Beide Hände: der Grundton links, dann der Akkord')}</a>` : ''}${!piano && SING_ALONG[it.id] ? ` <a href="#/singalong/${encodeURIComponent(it.id)}">${L('Sing and play: the words under the chords', 'Singen und spielen: der Text unter den Akkorden')}</a>` : ''}${it.guitar ? ` <span class="otherkey">${L(`On the guitar the song has ${it.guitar.map((c) => esc(chordName(c))).join(', ')}: here it is in the key that lies best under the hand.`, `Auf der Gitarre hat der Song ${it.guitar.map((c) => esc(chordName(c))).join(', ')}: Hier steht er in der Tonart, die am besten unter der Hand liegt.`)}</span>` : ''}</small></div>
+            <small class="links2">${it.basic ? ` <a href="#/songs/${encodeURIComponent(it.basic.id)}">${L(`Basic version: the same chords, ${piano ? 'struck as a whole' : 'strummed'}`, `Einfache Fassung: dieselben Akkorde, ${piano ? 'als Ganzes angeschlagen' : 'angeschlagen'}`)}</a>` : ''}${it.hands ? ` <a href="#/songs/${encodeURIComponent(it.hands.id)}">${it.hands.id.endsWith('~together') ? L('Both hands together: a bass under the melody', 'Beide Hände zusammen: ein Bass unter der Melodie') : L('Both hands: the root in the left, then the chord', 'Beide Hände: der Grundton links, dann der Akkord')}</a>` : ''}${!piano && SING_ALONG[it.id] ? ` <a href="#/singalong/${encodeURIComponent(it.id)}">${L('Sing and play: the words under the chords', 'Singen und spielen: der Text unter den Akkorden')}</a>` : ''}${it.guitar ? ` <span class="otherkey">${L(`On the guitar the song has ${it.guitar.map((c) => esc(chordName(c))).join(', ')}: here it is in the key that lies best under the hand.`, `Auf der Gitarre hat der Song ${it.guitar.map((c) => esc(chordName(c))).join(', ')}: Hier steht er in der Tonart, die am besten unter der Hand liegt.`)}</span>` : ''}</small></div>
           <span class="chs2">${names.length ? it.p.chords.map((c) => `<b class="chipn${fresh.get(it.id)?.includes(c) ? ' new' : ''}">${esc(name(c))}</b>`).join('') : `<small>${piano ? L('one hand', 'eine Hand') : L('single notes', 'Einzeltöne')}</small>`}</span>${grade(it.p)}<span class="lvl">${pips(level(it.m))}<small>${fin ? L('done', 'erledigt') : L(`yours: ${level(it.m)} of 5`, `deine: ${level(it.m)} von 5`)}</small></span>
-          <span class="row"><button class="btn quiet star" data-fav="${esc(it.id)}" aria-pressed="${store.isFav(inst, it.id)}" aria-label="${L(`Favourite: ${esc(it.title)}`, `Favorit: ${esc(it.title)}`)}">${store.isFav(inst, it.id) ? '★' : '☆'}</button>${it.custom ? `<button class="btn quiet" data-del="${esc(it.id)}">${L('Remove', 'Entfernen')}</button>` : ''}<a class="btn quiet openit" href="#/${open}/${encodeURIComponent(it.id)}" aria-label="${L(`Open ${esc(it.title)}`, `${esc(it.title)} öffnen`)}">${icon('right')}</a></span>
+          <span class="row"><button class="btn quiet star" data-fav="${esc(it.id)}" aria-pressed="${store.isFav(inst, it.id)}" aria-label="${L(`Favourite: ${esc(it.title)}`, `Favorit: ${esc(it.title)}`)}">${store.isFav(inst, it.id) ? '★' : '☆'}</button>${it.custom ? `<button class="btn quiet" data-del="${esc(it.id)}">${L('Remove', 'Entfernen')}</button>` : ''}<a class="btn quiet openit" href="#/songs/${encodeURIComponent(it.id)}" aria-label="${L(`Open ${esc(it.title)}`, `${esc(it.title)} öffnen`)}">${icon('right')}</a></span>
         </li>`;
   };
 
