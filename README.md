@@ -26,7 +26,7 @@
 
 ## Start
 
-Use it [online](https://thorfinson.github.io/noise-floor/) in Chrome or Edge, or run it yourself (Node.js 20 or later):
+Use it [online](https://thorfinson.github.io/noise-floor/) in Chrome or Edge, or run it yourself (Node.js 20.19 or later, or 22.12 or later):
 
 ```
 npm install

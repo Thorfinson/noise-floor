@@ -9,7 +9,7 @@ npm install
 npm start          # opens http://localhost:5173
 npm test           # unit tests (use this, not vitest directly: it fixes a drive-letter quirk on Windows)
 npm run build      # type check and production build
-npm run e2e        # browser checks in Microsoft Edge, about ten minutes
+npm run e2e        # browser checks in Microsoft Edge: about four minutes on 16 cores, up to twelve on few (see docs/testing.md)
 ```
 
 To try things without an instrument, switch on **Settings → Show the practice instrument**: N plays the right note, W a wrong one, M a muted one, B a buzzing one.
