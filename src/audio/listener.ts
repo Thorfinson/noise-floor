@@ -62,11 +62,18 @@ export interface StringEvent {
   env: number[];
 }
 
+/*
+ * Lengths in samples. The windows are powers of two, as the FFT needs, so at 44.1 kHz (a browser that
+ * cannot record at 48 kHz, a file) they are a little longer in time than at 48 kHz; every frequency is
+ * worked out from the sample rate. What stands for a time or a frequency band is scaled to the rate.
+ */
 const HOP = 512;
 const RING = 1 << 16;
 const NOTE_WIN = 4096;
 const CHORD_WIN = 8192;
 const PRE_GAP = 512;
+/** a length given in samples at 48 kHz, as long in time at another rate */
+const at48 = (n: number, sr: number): number => Math.round((n * sr) / 48000);
 /**
  * The band chords are matched in. The fundamentals of the lowest strings lie below it: how much of them
  * arrives depends on the guitar's body and on the microphone, so they are left out on both sides of the
@@ -82,16 +89,6 @@ const CHORD_HIGH = 1600;
 const QUIET = 8e-4;
 /** default for Listener.ringThreshold */
 const RINGS = 0.05;
-/**
- * A note is identified from a window that begins this long after its onset, not at it. The first moments
- * of a real note belong to the attack: the thump of the guitar's body under the pluck, the knock of the
- * piano's hammer. They are as loud as the note, at pitches of their own, and gone after 30 ms.
- */
-const NOTE_DELAY = 1440;
-/** the long-window onset measure looks at this many bins, up to about 1500 Hz */
-const FINE_BINS = 128;
-/** how long after an onset it is looked at: by then a hit on muted strings must have died away */
-const THUD_WIN = 6144;
 
 interface StringCheck {
   midi: number;
@@ -115,6 +112,16 @@ interface StringCheck {
 
 export class Listener {
   readonly sr: number;
+  /**
+   * A note is identified from a window that begins this long after its onset (30 ms), not at it. The first
+   * moments of a real note belong to the attack: the thump of the guitar's body under the pluck, the knock
+   * of the piano's hammer. They are as loud as the note, at pitches of their own, and gone after 30 ms.
+   */
+  private readonly noteDelay: number;
+  /** how long after an onset it is looked at (128 ms): by then a hit on muted strings must have died away */
+  private readonly thudWin: number;
+  /** the long-window onset measure looks at this many bins, up to about 1500 Hz */
+  private readonly fineBins: number;
   /** tuning reference in Hz */
   a4 = 440;
   minMidi = 38;
@@ -174,6 +181,8 @@ export class Listener {
   private readonly pend = new Float32Array(HOP);
   private pendN = 0;
   private hops = 0;
+  /** how many samples of the hop being gathered came in as (all but) exactly zero */
+  private still = 0;
 
   private readonly fftO = new FFT(1024);
   private readonly magO = new Float32Array(513);
@@ -182,7 +191,7 @@ export class Listener {
   private flux: number[] = [];
   /** the same measure on a long window, see detectFine */
   private readonly magF = new Float32Array(NOTE_WIN / 2 + 1);
-  private readonly prevF = [new Float32Array(FINE_BINS + 2), new Float32Array(FINE_BINS + 2), new Float32Array(FINE_BINS + 2)];
+  private readonly prevF: Float32Array[];
   private fluxF: number[] = [];
   /** an onset the long window found, waiting to see whether the short window confirms it */
   private pending: { at: number; flux: number } | null = null;
@@ -226,6 +235,10 @@ export class Listener {
   constructor(sampleRate: number) {
     this.sr = sampleRate;
     this.hpR = 1 - (2 * Math.PI * 30) / sampleRate;
+    this.noteDelay = at48(1440, sampleRate);
+    this.thudWin = at48(6144, sampleRate);
+    this.fineBins = Math.round(1500 / (sampleRate / NOTE_WIN));
+    this.prevF = [0, 1, 2].map(() => new Float32Array(this.fineBins + 2));
   }
 
   /** seconds of audio processed so far */
@@ -249,6 +262,7 @@ export class Listener {
       hp[1] = y1;
       hp[2] = y1;
       hp[3] = y2;
+      if (x < 1e-6 && x > -1e-6) this.still++;
       this.pend[this.pendN++] = y2;
       if (this.pendN === HOP) {
         this.pendN = 0;
@@ -283,25 +297,32 @@ export class Listener {
     this.total += HOP;
     this.hops++;
     const rms = Math.sqrt(sq / HOP);
+    // a quarter of the hop or more came in as zeros: digital silence, not a quiet room. (A room heard by a
+    // real microphone is never that still; the high-pass above lets a step into zeros fade out over a few
+    // hops, so the filtered level alone would not tell.)
+    const digital = this.still > HOP / 4 || rms < 1e-6;
+    this.still = 0;
 
     // Background level: taken from the first moments, after that the quietest moment heard so far, drifting
     // up by about one decibel a minute so it can recover if the room gets louder. It must never follow the
     // music: while strings ring without a pause there is no silence to measure, and a floor that climbed to
-    // the level of the playing would make the listener deaf.
+    // the level of the playing would make the listener deaf. Digital silence (a microphone that is muted
+    // for a moment, a sound card that sends zeros) is no room at all and is left out: it would pin the
+    // floor at its least, and from there it takes half an hour to climb back to the real room.
     if (this.warm.length < 16) {
       this.warm.push(rms);
       this.floor = this.warm.slice().sort((a, b) => a - b)[this.warm.length >> 1];
-    } else this.floor = Math.max(1e-5, Math.min(rms, this.floor * 1.00002));
+    } else if (!digital) this.floor = Math.max(1e-5, Math.min(rms, this.floor * 1.00002));
     const gate = Math.max(this.floor * 3.2, 0.0008);
 
     this.detectOnset(rms, gate);
 
-    while (this.noteJobs.length && this.total >= this.noteJobs[0].s0 + THUD_WIN) {
+    while (this.noteJobs.length && this.total >= this.noteJobs[0].s0 + this.thudWin) {
       const job = this.noteJobs.shift()!;
       // A hit after which nothing sounds is not a note, whatever pitch its first moment suggests: a dead
       // string, the hand landing on the strings. The string check still wants to know what it sounded like.
       // (only what is down to a thirtieth by now: some real notes fall to a tenth this fast and ring on quietly)
-      this.analyzeNote(job.s0, this.died(job.s0, job.s0 + THUD_WIN, 0.001).silent);
+      this.analyzeNote(job.s0, this.died(job.s0, job.s0 + this.thudWin, 0.001).silent);
     }
     this.settleThuds(this.total, false);
     while (this.chordJobs.length && this.total >= this.chordJobs[0] + 1024 + CHORD_WIN) this.analyzeChord(this.chordJobs.shift()!);
@@ -410,9 +431,9 @@ export class Listener {
     let last = 0;
     let rising = 0;
     let inRun = false;
-    for (let k = k0 - 1; k <= FINE_BINS; k++) {
+    for (let k = k0 - 1; k <= this.fineBins; k++) {
       const v = Math.log1p(c * this.magF[k]);
-      if (k >= k0 && k < FINE_BINS) {
+      if (k >= k0 && k < this.fineBins) {
         const before = Math.max(p1[k - 1], p1[k], p1[k + 1], p2[k - 1], p2[k], p2[k + 1], last, p3[k], p3[k + 1]);
         const rise = v - before;
         if (rise > 0) flux += rise;
@@ -427,7 +448,7 @@ export class Listener {
     this.prevF[0] = cur;
     this.prevF[2] = p2;
     this.prevF[1] = p1;
-    flux /= FINE_BINS - k0;
+    flux /= this.fineBins - k0;
     const sorted = this.fluxF.slice().sort((a, b) => a - b);
     const median = sorted.length ? sorted[sorted.length >> 1] : 0;
     this.fluxF.push(flux);
@@ -439,54 +460,52 @@ export class Listener {
 
   /** An onset was found: tell whoever listens and queue the closer looks at it. */
   private fire(s0: number, flux: number): void {
-    {
-      this.lastOnset = this.total;
-      this.onOnset?.({ time: s0 / this.sr, strength: flux });
-      // A finger landing on the string or the pick touching it is heard a moment before the pluck itself.
-      // Two onsets less than a tenth of a second apart are one attack: the firmer one is looked at.
-      const earlier = this.noteJobs[this.noteJobs.length - 1];
-      if (earlier && s0 - earlier.s0 < 0.1 * this.sr) {
-        if (flux < earlier.flux) return;
-        this.noteJobs.pop();
-        if (this.thudJobs[this.thudJobs.length - 1]?.s0 === earlier.s0) this.thudJobs.pop();
-        if (this.check?.state === 'track' && this.check.s0 === earlier.s0) this.startStringCheck(this.check.midi);
-      }
-      // what came before this onset has had its time to fall silent
-      this.settleThuds(s0, true);
-      if (this.noteDetection || this.check) this.noteJobs.push({ s0, flux });
-      if (this.onThud) this.thudJobs.push({ s0, flux });
-      // the strings of one strum arrive over several milliseconds: only the first onset starts a chord
-      if (this.chordCandidates && s0 - this.lastChord > 0.18 * this.sr) {
-        this.lastChord = s0;
-        this.chordJobs.push(s0);
-      }
-      // A pluck that comes while the previous string is still being judged ends that judgement. Whoever
-      // listens usually asks for the next string right away, and then this same pluck is that string's.
-      // Such a carried-over onset may also be a finger or the room, so it can only ever confirm a string
-      // (see finishString): if it does not, the check simply goes on waiting.
-      let carried = false;
-      if (this.check?.state === 'track' && this.total - this.check.s0 > 0.2 * this.sr) {
-        this.finishString();
-        carried = true;
-      }
-      const ck = this.check;
-      if (ck && ck.state === 'wait') {
-        ck.carried = carried;
-        ck.state = 'track';
-        ck.s0 = s0;
-        ck.strength = flux;
-        // What was sounding before the pluck is taken off afterwards, so that other strings do not count for
-        // this one. But a string that rang a moment ago and is plucked again was itself part of "before":
-        // its old sound ends with the new pluck. For it, "before" is what sounded before it first rang.
-        const rang = this.rang;
-        this.copy(s0 - PRE_GAP - NOTE_WIN, NOTE_WIN, this.bufN);
-        if (rang && rang.midi === ck.midi && s0 - rang.s0 < 4 * this.sr) {
-          ck.pre.set(rang.pre);
-          ck.again = true;
-          this.fftN.magnitudes(this.bufN, this.magB);
-          ck.before = this.over(this.magB, ck.pre, midiToFreq(ck.midi, this.a4));
-        } else this.fftN.magnitudes(this.bufN, ck.pre);
-      }
+    this.lastOnset = this.total;
+    this.onOnset?.({ time: s0 / this.sr, strength: flux });
+    // A finger landing on the string or the pick touching it is heard a moment before the pluck itself.
+    // Two onsets less than a tenth of a second apart are one attack: the firmer one is looked at.
+    const earlier = this.noteJobs[this.noteJobs.length - 1];
+    if (earlier && s0 - earlier.s0 < 0.1 * this.sr) {
+      if (flux < earlier.flux) return;
+      this.noteJobs.pop();
+      if (this.thudJobs[this.thudJobs.length - 1]?.s0 === earlier.s0) this.thudJobs.pop();
+      if (this.check?.state === 'track' && this.check.s0 === earlier.s0) this.startStringCheck(this.check.midi);
+    }
+    // what came before this onset has had its time to fall silent
+    this.settleThuds(s0, true);
+    if (this.noteDetection || this.check) this.noteJobs.push({ s0, flux });
+    if (this.onThud) this.thudJobs.push({ s0, flux });
+    // the strings of one strum arrive over several milliseconds: only the first onset starts a chord
+    if (this.chordCandidates && s0 - this.lastChord > 0.18 * this.sr) {
+      this.lastChord = s0;
+      this.chordJobs.push(s0);
+    }
+    // A pluck that comes while the previous string is still being judged ends that judgement. Whoever
+    // listens usually asks for the next string right away, and then this same pluck is that string's.
+    // Such a carried-over onset may also be a finger or the room, so it can only ever confirm a string
+    // (see finishString): if it does not, the check simply goes on waiting.
+    let carried = false;
+    if (this.check?.state === 'track' && this.total - this.check.s0 > 0.2 * this.sr) {
+      this.finishString();
+      carried = true;
+    }
+    const ck = this.check;
+    if (ck && ck.state === 'wait') {
+      ck.carried = carried;
+      ck.state = 'track';
+      ck.s0 = s0;
+      ck.strength = flux;
+      // What was sounding before the pluck is taken off afterwards, so that other strings do not count for
+      // this one. But a string that rang a moment ago and is plucked again was itself part of "before":
+      // its old sound ends with the new pluck. For it, "before" is what sounded before it first rang.
+      const rang = this.rang;
+      this.copy(s0 - PRE_GAP - NOTE_WIN, NOTE_WIN, this.bufN);
+      if (rang && rang.midi === ck.midi && s0 - rang.s0 < 4 * this.sr) {
+        ck.pre.set(rang.pre);
+        ck.again = true;
+        this.fftN.magnitudes(this.bufN, this.magB);
+        ck.before = this.over(this.magB, ck.pre, midiToFreq(ck.midi, this.a4));
+      } else this.fftN.magnitudes(this.bufN, ck.pre);
     }
   }
 
@@ -495,7 +514,7 @@ export class Listener {
    * (after minus before, never below zero). magB keeps the spectrum from before the onset.
    */
   private newEnergy(s0: number): void {
-    this.copy(s0 + NOTE_DELAY, NOTE_WIN, this.bufN);
+    this.copy(s0 + this.noteDelay, NOTE_WIN, this.bufN);
     this.fftN.magnitudes(this.bufN, this.magRaw);
     this.copy(s0 - PRE_GAP - NOTE_WIN, NOTE_WIN, this.bufN);
     this.fftN.magnitudes(this.bufN, this.magB);
@@ -545,16 +564,24 @@ export class Listener {
       }
     }
     if (this.expected && !this.expected.includes(best)) {
+      // of several notes it waits for (a chord's, a phrase's), the one the evidence is best for
+      let near = -1;
+      let nearScore = -Infinity;
+      let nearConf = 0;
       for (const m of this.expected) {
         const cs = combScore(peaks, this.tuned(peaks, m), 5000);
-        if (cs.score >= 0.85 * score) {
-          second = best;
-          secondScore = score;
-          best = m;
-          score = cs.score;
-          conf = cs.explained;
-          break;
+        if (cs.score >= 0.85 * score && cs.score > nearScore) {
+          near = m;
+          nearScore = cs.score;
+          nearConf = cs.explained;
         }
+      }
+      if (near >= 0) {
+        second = best;
+        secondScore = score;
+        best = near;
+        score = nearScore;
+        conf = nearConf;
       }
     }
     return { best, score, conf, second, secondScore };
@@ -669,10 +696,10 @@ export class Listener {
     return true;
   }
 
-  /** Summed strength of the first four harmonics of f0 in a spectrum. */
-  private combAmp(mag: Float32Array, f0: number, hz: number): number {
+  /** Summed strength of the first `harmonics` harmonics of f0 in a spectrum whose bins are hz apart. */
+  private combAmp(mag: Float32Array, f0: number, hz: number, harmonics = 4): number {
     let v = 0;
-    for (let h = 1; h <= 4; h++) {
+    for (let h = 1; h <= harmonics; h++) {
       const k = Math.round((h * f0) / hz);
       if (k + 1 >= mag.length) break;
       v += Math.max(mag[k - 1], mag[k], mag[k + 1]);
@@ -684,8 +711,9 @@ export class Listener {
   private bandPower(start: number): number {
     this.copy(start, 2048, this.bufH);
     this.fftH.magnitudes(this.bufH, this.magH);
+    const hz = this.sr / 2048;
     let sum = 0;
-    for (let k = 3; k <= 213; k++) sum += this.magH[k] * this.magH[k];
+    for (let k = Math.round(60 / hz); k <= Math.round(5000 / hz); k++) sum += this.magH[k] * this.magH[k];
     return sum;
   }
 
@@ -726,17 +754,10 @@ export class Listener {
 
   /** Strength of a note's harmonics in two windows about 20 ms apart, later over earlier. */
   private ringRatio(s0: number, f0: number): number {
-    const hz = this.sr / 2048;
     const sum = (start: number): number => {
       this.copy(start, 2048, this.bufH);
       this.fftH.magnitudes(this.bufH, this.magH);
-      let v = 0;
-      for (let h = 1; h <= 6; h++) {
-        const k = Math.round((h * f0) / hz);
-        if (k + 1 >= this.magH.length) break;
-        v += Math.max(this.magH[k - 1], this.magH[k], this.magH[k + 1]);
-      }
-      return v;
+      return this.combAmp(this.magH, f0, this.sr / 2048, 6);
     };
     const early = sum(s0 + 1024);
     return early > 0 ? Math.min(1.5, sum(s0 + 2048) / early) : 0;
@@ -776,7 +797,8 @@ export class Listener {
     const ids = this.chordCandidates;
     if (!ids || !ids.length) return;
     // a hit across strings that are held down dead is not a chord
-    if (this.died(s0, s0 + 1024 + CHORD_WIN).silent) return;
+    // (judged as an early look: at 44.1 kHz this window reaches just past the 0.2 s where died() would be stricter)
+    if (this.died(s0, s0 + 1024 + CHORD_WIN, 0.01).silent) return;
     this.copy(s0 + 1024, CHORD_WIN, this.bufC);
     this.fftC.magnitudes(this.bufC, this.magCA);
     this.copy(s0 - PRE_GAP - CHORD_WIN, CHORD_WIN, this.bufC);
