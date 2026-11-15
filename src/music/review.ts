@@ -8,7 +8,7 @@
  * From the same records comes the repertoire: what the player can play, since when, how fast, and how it
  * went the last time it was played cold.
  */
-import { DAY_MS, dayOf } from '../core/days';
+import { dayOf, dayStart } from '../core/days';
 import { L } from '../core/i18n';
 import { store, type Instrument, type Review } from '../core/store';
 import { allPieces, allSongs, barKey, findPiece, findSong, phraseKey, songLines } from './content';
@@ -19,6 +19,15 @@ import { findSongToSing, sungPhraseKey, voiceBook } from './voicebook';
 export const REVIEW_DAYS = [3, 10, 30, 90, 180];
 
 export const reviewKey = (inst: Instrument, id: string): string => `${inst}:${id}`;
+
+/**
+ * A visit falls due on a day, not at an hour: so many local days after a moment, from the start of that day.
+ * Failed at eight in the evening, a song is back the next morning, when the plan of the day is made.
+ */
+export const dueAfter = (t: number, days: number): number => dayStart(dayOf(t) + days);
+
+/** Is a visit due on the day of now? Compared by local days (a due time of an older version has an hour of the day). */
+const isDue = (r: Review, now: number): boolean => dayOf(r.due) <= dayOf(now);
 
 /** The skills a song is measured with: its bars, phrases or sung phrases. */
 export function songSkills(inst: Instrument, id: string): string[] {
@@ -59,7 +68,7 @@ export function lastPlayed(inst: Instrument, id: string): number {
 export function enlist(inst: Instrument, id: string, now = Date.now()): boolean {
   const key = reviewKey(inst, id);
   if (store.reviews[key] || !exists(inst, id) || !finished(inst, id)) return false;
-  store.reviews[key] = { since: lastPlayed(inst, id) || now, step: 0, due: (lastPlayed(inst, id) || now) + REVIEW_DAYS[0] * DAY_MS, at: 0 };
+  store.reviews[key] = { since: lastPlayed(inst, id) || now, step: 0, due: dueAfter(lastPlayed(inst, id) || now, REVIEW_DAYS[0]), at: 0 };
   return true;
 }
 
@@ -84,7 +93,7 @@ export function syncReviews(inst: Instrument, now = Date.now()): void {
   for (const x of everything(inst)) {
     if (store.reviews[reviewKey(inst, x.id)] || !done(inst, x)) continue;
     const last = lastPlayed(inst, x.id) || now;
-    store.reviews[reviewKey(inst, x.id)] = { since: last, step: 0, due: last + REVIEW_DAYS[0] * DAY_MS, at: 0 };
+    store.reviews[reviewKey(inst, x.id)] = { since: last, step: 0, due: dueAfter(last, REVIEW_DAYS[0]), at: 0 };
     added = true;
   }
   if (added) store.save();
@@ -95,7 +104,7 @@ export function dueReviews(inst: Instrument, now = Date.now()): { id: string; ti
   const prefix = inst + ':';
   const titles = new Map(everything(inst).map((x) => [x.id, x.title]));
   return Object.entries(store.reviews)
-    .filter(([k, r]) => k.startsWith(prefix) && r.due <= now && titles.has(k.slice(prefix.length)))
+    .filter(([k, r]) => k.startsWith(prefix) && isDue(r, now) && titles.has(k.slice(prefix.length)))
     .map(([k, review]) => ({ id: k.slice(prefix.length), title: titles.get(k.slice(prefix.length))!, review }))
     .sort((a, b) => a.review.due - b.review.due);
 }
@@ -122,15 +131,15 @@ export function reviewed(inst: Instrument, id: string, clean: boolean, now = Dat
   if (clean) {
     r.step = Math.min(REVIEW_DAYS.length - 1, r.step + (r.relearn ? 0 : 1));
     r.relearn = false;
-    r.due = now + REVIEW_DAYS[r.step] * DAY_MS;
+    r.due = dueAfter(now, REVIEW_DAYS[r.step]);
   } else {
     r.step = 0;
     r.relearn = true;
-    r.due = now + DAY_MS;
+    r.due = dueAfter(now, 1);
   }
   store.reviews[key] = r;
   store.save();
-  const days = Math.round((r.due - now) / DAY_MS);
+  const days = dayOf(r.due) - dayOf(now);
   return clean
     ? L(`Still there, from cold. It comes back in ${days} days.`, `Sitzt noch, aus dem Stand. Es kommt in ${days} Tagen wieder.`)
     : L('It has slipped a little: that is what the visits are for. Tomorrow it comes back with the click.', 'Es ist ein wenig verrutscht: Genau dafür sind die Besuche da. Morgen kommt es mit Klick wieder.');
@@ -173,8 +182,9 @@ export function repertoire(inst: Instrument, now = Date.now()): RepertoireItem[]
         last: Math.max(r.last ?? 0, lastPlayed(inst, id)),
         best: Math.round(best),
         cold: colds.length ? Math.round(Math.min(...colds)) : 0,
-        due: r.due,
-        freshness: r.relearn ? 'slipped' : r.due <= now ? 'due' : 'fresh',
+        // the start of the day it is due on: an older save has an hour of the day in it
+        due: dayStart(dayOf(r.due)),
+        freshness: r.relearn ? 'slipped' : isDue(r, now) ? 'due' : 'fresh',
         step: r.step,
       };
     })

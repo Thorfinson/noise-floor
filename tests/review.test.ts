@@ -5,7 +5,7 @@ vi.hoisted(() => {
   const g = globalThis as unknown as { addEventListener?: unknown };
   g.addEventListener ??= () => undefined;
 });
-import { DAY_MS, dayOf, weekOf } from '../src/core/days';
+import { DAY_MS, dayOf, dayStart, weekOf } from '../src/core/days';
 import { Skills } from '../src/core/skills';
 import { store } from '../src/core/store';
 import { barKey, findSong, songLines } from '../src/music/content';
@@ -83,13 +83,39 @@ describe('songs that come back', () => {
     enlist('guitar', id, t);
     const v1 = t + 3 * DAY_MS;
     reviewed('guitar', id, true, v1);
-    expect(store.reviews[reviewKey('guitar', id)].due).toBe(v1 + REVIEW_DAYS[1] * DAY_MS);
+    // due from the start of the day so many days on
+    expect(store.reviews[reviewKey('guitar', id)].due).toBe(dayStart(dayOf(v1) + REVIEW_DAYS[1]));
     const v2 = v1 + REVIEW_DAYS[1] * DAY_MS;
     reviewed('guitar', id, false, v2);
-    expect(store.reviews[reviewKey('guitar', id)]).toMatchObject({ relearn: true, step: 0, due: v2 + DAY_MS });
+    expect(store.reviews[reviewKey('guitar', id)]).toMatchObject({ relearn: true, step: 0, due: dayStart(dayOf(v2) + 1) });
     // passed again after it slipped: back on the first gap, not further
     reviewed('guitar', id, true, v2 + DAY_MS);
-    expect(store.reviews[reviewKey('guitar', id)]).toMatchObject({ relearn: false, step: 0, due: v2 + DAY_MS + REVIEW_DAYS[0] * DAY_MS });
+    expect(store.reviews[reviewKey('guitar', id)]).toMatchObject({ relearn: false, step: 0, due: dayStart(dayOf(v2 + DAY_MS) + REVIEW_DAYS[0]) });
+  });
+
+  it('falls due by days: failed in the evening, it is back the next morning, in the session and the repertoire alike', () => {
+    const evening = new Date(2026, 10, 10, 20).getTime();
+    const morning = new Date(2026, 10, 11, 8).getTime();
+    master(id, evening - 4 * DAY_MS);
+    enlist('guitar', id, evening - 4 * DAY_MS);
+    expect(reviewed('guitar', id, false, evening)).toMatch(/Tomorrow/);
+    expect(dueReviews('guitar', new Date(2026, 10, 10, 23, 30).getTime())).toEqual([]);
+    expect(dueReviews('guitar', morning).map((x) => x.id)).toEqual([id]);
+    // a clean visit in the evening: due on the morning of its day, and said as so many days
+    expect(reviewed('guitar', id, true, morning + 12 * 3600000)).toMatch(/in 3 days/);
+    expect(dueReviews('guitar', new Date(2026, 10, 14, 7).getTime()).map((x) => x.id)).toEqual([id]);
+    expect(repertoire('guitar', new Date(2026, 10, 14, 7).getTime())[0].freshness).toBe('due');
+    // a due time of an older version, with an hour of the day in it, counts by its day too
+    store.reviews[reviewKey('guitar', id)].due = new Date(2026, 10, 20, 21).getTime();
+    expect(dueReviews('guitar', new Date(2026, 10, 20, 9).getTime()).map((x) => x.id)).toEqual([id]);
+    expect(repertoire('guitar', new Date(2026, 10, 20, 9).getTime())[0].due).toBe(new Date(2026, 10, 20).getTime());
+  });
+
+  it('a skill measured in the evening is due again on the morning of its day', () => {
+    const s = new Skills();
+    s.record('chord:Am', 10, new Date(2026, 10, 10, 21).getTime());
+    expect(s.due('chord:Am', new Date(2026, 10, 12, 7).getTime())).toBe(true);
+    expect(s.due('chord:Am', new Date(2026, 10, 11, 23).getTime())).toBe(false);
   });
 
   it('the visits go round the song two lines at a time', () => {
@@ -123,7 +149,7 @@ describe('songs that come back', () => {
 
 describe('the week', () => {
   it('counts the days played in the week from Monday, sessions and practice time alike', () => {
-    const monday = Date.UTC(2026, 10, 9, 12); // a Monday
+    const monday = new Date(2026, 10, 9, 12).getTime(); // a Monday, where the test runs (in UTC it is not one everywhere)
     expect(weekOf(dayOf(monday))).toBe(dayOf(monday));
     const sessions = store.sessions;
     const practice = store.practice;

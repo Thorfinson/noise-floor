@@ -5,7 +5,7 @@
  * the day; such if-then plans help people do what they mean to more than reminders do (Gollwitzer and
  * Sheeran 2006). And a short session of five minutes counts as fully as a long one.
  */
-import { dayOf, dayStart, weekOf } from '../core/days';
+import { atTime, dayOf, weekOf } from '../core/days';
 import { L } from '../core/i18n';
 import { store, type PracticePlan } from '../core/store';
 import { $, esc } from '../ui/dom';
@@ -51,7 +51,8 @@ export function planCard(): string {
 /** The plan as a calendar entry: every day at its time, with its words; a file any calendar opens. */
 export function planIcs(p: PracticePlan, now = Date.now()): string {
   const [h, m] = (p.time || '19:30').split(':').map(Number);
-  const start = new Date(dayStart(dayOf(now)) + ((h || 0) * 60 + (m || 0)) * 60000);
+  // the time on today's calendar, not added to midnight: on a day the clocks change that would be an hour off, every day after
+  const start = new Date(atTime(dayOf(now), h || 0, m || 0));
   const two = (n: number): string => String(n).padStart(2, '0');
   const local = (d: Date): string => `${d.getFullYear()}${two(d.getMonth() + 1)}${two(d.getDate())}T${two(d.getHours())}${two(d.getMinutes())}00`;
   const end = new Date(start.getTime() + p.minutes * 60000);
