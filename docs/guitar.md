@@ -24,17 +24,17 @@ A song in the list (and **Your song** on the start page) opens its page first (`
 
 ![A lesson: the tab read left to right, the fretboard under it](images/lesson.png)
 
-A song is learned on three rungs:
+A song is learned on three rungs. A band over the lesson shows the way through it: every line with its two rungs (✓ when learned, the tempo reached with the click), then the whole song and keeping it; a click on a line goes there. The first song lesson on an instrument explains the three rungs on a sheet of its own (**More → How this works** shows it again).
 
 - **1 Learn:** the app waits for every note or strum. A string that is struck but does not ring is called dead, a wrong note is named. A bar that slipped is played once more, alone, before the lesson moves on.
-- **2 With the click:** one line at a time with a metronome and a marker that moves through the tab. It moves on when the line was clean, gets faster when the whole song was, and slower when a line falls apart twice; a take that fell apart is followed by a take of only the bar that slipped.
-- **3 Full speed:** start to end, the line you play on top and the next one underneath. Every take at full speed is recorded (see below).
+- **2 With the click:** one line at a time with a metronome and a marker that moves through the tab. Nothing starts until you strum the first chord (or press Space); then three clicks count you in. It moves on when the line was clean, gets faster when the whole song was, and slower when a line falls apart twice; a take that fell apart is followed by a take of only the bar that slipped.
+- **3 Whole song:** start to end at full speed, the line you play on top and the next one underneath. Every take at full speed is recorded (see below).
 
-The app picks the rung from what you have proved; keys 1, 2, 3 change it. Tab is read left to right; a strummed song shows its pattern (a long stroke down, a short one with a tip for the way back up) and names each chord where it begins, also in the middle of a bar. A picked song also comes in a basic version: the same chords, one slow strum on every click. While the chord stays, the line under the instruction says how many strokes are left and what comes next ("4 strums of G from here, then the change to C").
+When a line has gone clean on rung 1, the lesson does not move on by itself: it says the line sits and offers the click (2), the next line first (→), or once more (R); clean at full speed on rung 2, it offers the next line or the whole song. The app picks the rung from what you have proved; keys 1, 2, 3 change it, and the bar at the bottom names all three. Tab is read left to right; a strummed song shows an arrow over each strum (down, or up for the way back), its count under it (the first of a bar bold) and, where the song has words, the words under the bars and names each chord where it begins, also in the middle of a bar. A picked song also comes in a basic version: the same chords, one slow strum on every click. While the chord stays, the line under the instruction says how many strokes are left and what comes next ("4 strums of G from here, then the change to C").
 
 | Key | In a lesson |
 |---|---|
-| H | **Hear it**, on every rung: the line as it should sound; on rung 1 a little slower than full speed, with the click at the tempo you practise at. During a take it pauses the take: the model is heard between tries, never over one. What the microphone picks up of it is not counted. |
+| H | **Hear this line**, on every rung: the line as it should sound, with the tune sung over the chords where the song has one; on rung 1 a little slower than full speed, with the click at the tempo you practise at. During a take it pauses the take: the model is heard between tries, never over one. What the microphone picks up of it is not counted. |
 | − + | The tempo in steps of 5 %, from 25 % up to 125 % (beyond the song's own speed, to have room to spare). |
 | L | **Loop:** the bars on show go round and round with the click, one bar counted in, until L again. **[** and **]** take in the bar before or after. Clean bars are measured as on rung 2; after three clean runs in a row the tempo rises by 5 % (**Settings → in a loop the tempo rises by itself** is on by default). |
 | A | **Backing:** a soft bass and the chords under the click. For headphones only: through speakers the microphone would hear it as playing. |

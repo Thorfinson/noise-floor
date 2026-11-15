@@ -292,7 +292,8 @@ export const songPage: Screen = (root, [id]) => {
           ? L('Play the whole piece', 'Das ganze Stück spielen')
           : L('Play the whole song', 'Den ganzen Song spielen');
   const lessonBase = `#/${piano ? 'piano' : 'song'}/${encodeURIComponent(m.id)}`;
-  const lesson = `${lessonBase}${begun && allLearned && (allFull || done) ? '/3' : ''}`;
+  // the lesson opens at a line: #/song/<id>/<rung>/<line>, the line counted from 1
+  const lesson = !begun ? lessonBase : !allLearned ? `${lessonBase}/1/${nextLine + 1}` : !allFull && !done ? lessonBase : `${lessonBase}/3`;
 
   root.innerHTML = `<div class="page bare songp">
     <div><a class="btn quiet" href="#/songs">${icon('left')}${piano ? L('All pieces', 'Alle Stücke') : L('All songs', 'Alle Songs')}</a></div>
@@ -339,7 +340,7 @@ export const songPage: Screen = (root, [id]) => {
         <ol class="sp-steps">
           <li id="sp-heard"><span class="dot">1</span><h3>${L('Hear it', 'Anhören')} <span>· ${L('once is enough', 'einmal genügt')}</span></h3></li>
           <li class="${done ? 'ok' : 'cur'}"><span class="dot">${done ? icon('check') : '2'}</span><h3>${piano ? L('Phrase by phrase', 'Phrase für Phrase') : L('Line by line', 'Zeile für Zeile')}</h3><div class="body">
-            <div class="sp-lines">${m.lines.map((_, li) => `<a class="sp-l" href="${lessonBase}" data-line="${li}"><b>${Unit} ${li + 1}</b><em>${sayLine(li)}</em><span class="sp-rp"><i class="${lineState[li].learned ? 'ok' : ''}">${lineState[li].learned ? icon('check') : '1'} ${L('Learn', 'Lernen')}</i><i class="${lineState[li].full ? 'ok' : ''}">2 ${lineState[li].learned && !lineState[li].full ? `${lineState[li].tempo} %` : L('Click', 'Klick')}</i></span></a>`).join('')}</div>
+            <div class="sp-lines">${m.lines.map((_, li) => `<a class="sp-l" href="${lessonBase}/${lineState[li].learned ? 2 : 1}/${li + 1}" data-line="${li}"><b>${Unit} ${li + 1}</b><em>${sayLine(li)}</em><span class="sp-rp"><i class="${lineState[li].learned ? 'ok' : ''}">${lineState[li].learned ? icon('check') : '1'} ${L('Learn', 'Lernen')}</i><i class="${lineState[li].full ? 'ok' : ''}">2 ${lineState[li].learned && !lineState[li].full ? `${lineState[li].tempo} %` : L('Click', 'Klick')}</i></span></a>`).join('')}</div>
             <div class="sp-key"><p><i>1</i><span><b>${L('Learn', 'Lernen')}:</b> ${L('no clock. The app waits until it hears each strum, so you can look at your fingers.', 'ohne Uhr. Die App wartet, bis sie jeden Anschlag hört, so kannst du auf deine Finger schauen.')}</span></p><p><i>2</i><span><b>${L('With the click', 'Mit Klick')}:</b> ${L('the same line in time, slow at first, faster when it goes well.', 'dieselbe Zeile im Takt, erst langsam, schneller, wenn es gut geht.')}</span></p></div>
           </div></li>
           <li class="${done ? 'ok' : ''}"><span class="dot">${done ? icon('check') : '3'}</span><h3>${piano ? L('The whole piece', 'Das ganze Stück') : L('The whole song', 'Der ganze Song')} <span>· ${L('start to end, full speed', 'von Anfang bis Ende, volles Tempo')}</span></h3><div class="body"><p>${L('Recorded, so you can listen back. Clean once: it joins your repertoire.', 'Aufgenommen, damit du es dir anhören kannst. Einmal sauber: Es kommt in dein Repertoire.')}</p></div></li>
