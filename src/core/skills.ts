@@ -5,7 +5,7 @@
  * Levels are never taken away. A skill that has not been confirmed for a week is marked rusty,
  * and rusty and low skills are sent more often in runs.
  */
-import { DAY_MS, dayOf } from './days';
+import { dayOf } from './days';
 import { L } from './i18n';
 
 export type SkillKind = 'chord' | 'pair' | 'finger' | 'bar' | 'scale' | 'beat' | 'pitch' | 'tone' | 'sing' | 'ear';
@@ -77,6 +77,41 @@ export interface LevelChange {
   after: number;
 }
 
+const isNum = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
+const isPair = (v: unknown): v is [number, number] => Array.isArray(v) && v.length === 2 && isNum(v[0]) && isNum(v[1]);
+
+/** What a best value is before anything was measured clean: nothing to beat yet. */
+const noBest = (kind: SkillKind): number => (KINDS[kind].lowerIsBetter ? Infinity : 0);
+
+/**
+ * Skill records as read from storage, a backup or a progress file, made safe to use: a record that is not
+ * one, or whose kind the app does not know, is left out, and every field has its type. JSON keeps no
+ * Infinity, so the "nothing clean yet" best of a time comes back as null; it is made Infinity again, or
+ * Math.min would make it 0, the best time there could be, and keep it there.
+ */
+export function cleanSkills(raw: unknown): Record<string, SkillRecord> {
+  const out: Record<string, SkillRecord> = {};
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return out;
+  for (const [key, r] of Object.entries(raw as Record<string, unknown>)) {
+    const kind = kindOf(key);
+    if (!Object.prototype.hasOwnProperty.call(KINDS, kind) || typeof r !== 'object' || r === null) continue;
+    const x = r as Record<string, unknown>;
+    if (!isNum(x.level)) continue;
+    const rec: SkillRecord = {
+      level: Math.max(0, Math.min(5, Math.round(x.level))),
+      best: isNum(x.best) || x.best === Infinity || x.best === -Infinity ? x.best : noBest(kind),
+      last: isNum(x.last) ? x.last : 0,
+      tops: isNum(x.tops) ? x.tops : 0,
+    };
+    if (isNum(x.strings)) rec.strings = x.strings;
+    if (isNum(x.days)) rec.days = x.days;
+    if (isPair(x.cold)) rec.cold = [x.cold[0], x.cold[1]];
+    if (Array.isArray(x.h)) rec.h = x.h.filter(isPair).map(([d, v]) => [d, v]);
+    out[key] = rec;
+  }
+  return out;
+}
+
 export class Skills {
   constructor(public data: Record<string, SkillRecord> = {}) {}
 
@@ -96,7 +131,9 @@ export class Skills {
   record(key: string, value: number, now: number, strings?: number): LevelChange {
     const kind = kindOf(key);
     const info = KINDS[kind];
-    const rec = (this.data[key] ??= { level: 0, best: info.lowerIsBetter ? Infinity : 0, last: 0, tops: 0 });
+    const rec = (this.data[key] ??= { level: 0, best: noBest(kind), last: 0, tops: 0 });
+    // a best that went through JSON as null (or was never a number) is no best at all, not 0
+    if (typeof rec.best !== 'number' || Number.isNaN(rec.best)) rec.best = noBest(kind);
     const before = rec.level;
     const checked = kind === 'chord' || kind === 'scale' || kind === 'pitch';
     if (checked && strings !== undefined && strings < 6) {
@@ -131,11 +168,12 @@ export class Skills {
    * Is a skill due to be confirmed again? The more days it has been measured clean on, the longer it keeps:
    * after one day it comes back after two, then after five, twelve, thirty and sixty days. Spaced like this,
    * what is learned is kept far better than when it is played often within a few days and then left.
+   * Counted in local days: measured in the evening, it is due on the morning of its day, not at that hour.
    */
   due(key: string, now: number): boolean {
     const rec = this.data[key];
     if (!rec || rec.level < 1 || !rec.last) return false;
-    return now - rec.last >= reviewGap(rec.days ?? 1) * DAY_MS;
+    return dayOf(now) - dayOf(rec.last) >= reviewGap(rec.days ?? 1);
   }
 
   rusty(key: string, now: number): boolean {

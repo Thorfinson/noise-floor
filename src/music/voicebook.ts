@@ -11,6 +11,7 @@
  * 2 moderate, up to 4 demanding, more is hard: as for the guitar's songs.
  */
 import { L } from '../core/i18n';
+import { store } from '../core/store';
 import { allPieces, noteTimes, type PianoNote, type PianoPiece } from './content';
 import { SUNG_SPLITS } from './lyrics';
 
@@ -71,13 +72,17 @@ function sung(id: string, phrases: { midi: number; len?: number }[][]): { midi: 
 }
 
 let book: SongToSing[] | null = null;
-let madeFrom = -1;
+/** the player's own pieces the book was made from: the pieces themselves, not how many there are */
+let madeFrom: PianoPiece[] = [];
 
 /** Every song to sing: the singable tunes of the piano book, and every melody typed in by the player. */
 export function voiceBook(): SongToSing[] {
+  // the app's own pieces never change; the player's do: one added, one taken away, or all of them
+  // replaced by a backup (as many again, but other melodies)
+  const own = store.pieces;
+  if (book && own.length === madeFrom.length && own.every((p, i) => p === madeFrom[i])) return book;
+  madeFrom = [...own];
   const pieces = allPieces();
-  if (book && madeFrom === pieces.length) return book;
-  madeFrom = pieces.length;
   book = pieces
     .filter((p) => (p.custom ? (p.kind ?? 'melody') === 'melody' && !p.of : singable(p)))
     .map((p) => ({
