@@ -12,12 +12,12 @@ import { L } from '../core/i18n';
 import { Take, TEMPOS, type TakeStep } from '../core/playalong';
 import { saveTake, TAKE_MAX } from '../core/takes';
 import { store, type Instrument } from '../core/store';
-import { findPiece, findSong, shapeOf, stepKeys } from '../music/content';
+import { findPiece, findSong, shapeOf, stepKeys, type Song } from '../music/content';
 import { pieceMaterial, songMaterial, suggest, unitDe, type Material, type Step } from '../music/material';
 import { enlist, REVIEW_DAYS, reviewed, reviewKey, reviewLines } from '../music/review';
 import { changeTip, chordName, chordNotes, isBlackKey, keyName, keysAlike, keyTip, noteName, pianoChord, STRING_FULL, strumIs } from '../music/theory';
 import { $, cap, esc, hear, icon, keys, later, pianoEars, stopTimer, type Screen, type SessionCtx } from '../ui/dom';
-import { melodyWords } from '../music/accompany';
+import { melodyWords, said as wordsOf, tuneOf } from '../music/accompany';
 import { guitarA4, guitarSetup } from '../music/tuning';
 import { SING_ALONG } from '../music/lyrics';
 import { chordBox, chordMarks, fretboard, keyboard, keyRange, LEARN, noteStrip, playhead, tabLine, type Drawn, type KeyMark, type StepLook } from '../ui/draw';
@@ -43,9 +43,11 @@ interface Mode {
   toggle: () => void;
 }
 
-function lesson(root: HTMLElement, m: Material, wanted: string | undefined, ctx?: SessionCtx): () => void {
+function lesson(root: HTMLElement, m: Material, wanted: string | undefined, ctx?: SessionCtx, song?: Song): () => void {
   const n = m.lines.length;
   const inst: Instrument = m.piano ? 'piano' : 'guitar';
+  /** a song of chords as it is sung over them: the words of each bar (under the tab) */
+  const tune = song ? tuneOf(song) : null;
   let line = Math.min(n - 1, store.progress[m.id] ?? 0);
   const first = suggest(m, line);
   /**
@@ -154,7 +156,19 @@ function lesson(root: HTMLElement, m: Material, wanted: string | undefined, ctx?
             LEARN,
             said,
           )
-      : tabLine({ bars: hidden ? l.tab.map((b) => ({ ...b, chord: b.chord ? '?' : undefined })) : l.tab, look, name: (id) => (hidden ? '?' : shapeOf(id).name), words: said }, LEARN, true);
+      : tabLine(
+          {
+            bars: hidden ? l.tab.map((b) => ({ ...b, chord: b.chord ? '?' : undefined })) : l.tab,
+            look,
+            name: (id) => (hidden ? '?' : shapeOf(id).name),
+            words: said,
+            // every strum with its direction and its count; under the bars the words sung over them
+            beat: m.beat,
+            barWords: tune?.words && !hidden ? l.bars.map((b) => wordsOf(tune.words![b] ?? [])) : undefined,
+          },
+          LEARN,
+          true,
+        );
     el.innerHTML = d.svg;
     el.setAttribute('viewBox', `0 0 1180 ${d.height}`);
     return d;
@@ -268,7 +282,7 @@ function lesson(root: HTMLElement, m: Material, wanted: string | undefined, ctx?
     const how = change ? changeTip(shapeOf(before!), shapeOf(id!)) : '';
     if (cur.chord)
       return {
-        h1: change ? L(`Change to <em>${name}</em> and strum.`, `Wechsle zu <em>${name}</em> und schlag an.`) : L(`Strum <em>${name}</em>${cur.tab?.up ? ', on the way back up' : ''}.`, `Schlag <em>${name}</em> an${cur.tab?.up ? ', auf dem Weg zurück nach oben' : ''}.`),
+        h1: change ? L(`Change to <em>${name}</em> and strum.`, `Wechsle zu <em>${name}</em> und schlag an.`) : L(`Strum <em>${name}</em>, ${cur.tab?.up ? 'on the way back up' : 'down'}.`, `Schlag <em>${name}</em> an, ${cur.tab?.up ? 'auf dem Weg zurück nach oben' : 'nach unten'}.`),
         sub: how || (cur.tab?.up ? `${L('An upstroke: the hand comes back up and brushes only the thin strings.', 'Ein Aufschlag: Die Hand kommt zurück nach oben und streift nur die dünnen Saiten.')} ${upcoming}`.trim() : upcoming || L('One stroke down across the strings of the chord.', 'Ein Abschlag über die Saiten des Akkords.')),
       };
     const t = cur.tab!;
@@ -533,7 +547,7 @@ function lesson(root: HTMLElement, m: Material, wanted: string | undefined, ctx?
           ? L('Read left to right: each block is one chord, all its keys at once.', 'Lies von links nach rechts: Jeder Block ist ein Akkord, alle Tasten zugleich.')
           : L('Read left to right. Take your time.', 'Lies von links nach rechts. Lass dir Zeit.')
         : m.lines[line].steps.every((s) => s.chord)
-          ? L('Read left to right: each slash is one strum.', 'Lies von links nach rechts: Jeder Schrägstrich ist ein Anschlag.')
+          ? L('Read left to right: one strum on each slash, the way its arrow points.', 'Lies von links nach rechts: ein Anschlag auf jeden Schrägstrich, in die Richtung seines Pfeils.')
           : L('Tab: a line is a string, lowest at the bottom. A number is a fret, 0 is open.', 'Tabulatur: Eine Linie ist eine Saite, die tiefste unten. Eine Zahl ist ein Bund, 0 heißt leer.')),
     );
     draw();
@@ -1192,7 +1206,7 @@ export const songLesson: Screen = (root, [id, rung], ctx) => {
     }
     store.opened('guitar', song.id);
   }
-  return lesson(root, songMaterial(song), rung, ctx);
+  return lesson(root, songMaterial(song), rung, ctx, song);
 };
 
 /** A piece on the piano. */
