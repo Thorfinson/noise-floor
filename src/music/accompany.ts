@@ -5,6 +5,7 @@
 import { allSongs, noteTimes, shapeOf, type Song } from './content';
 import { LYRICS, SING_ALONG, syllables } from './lyrics';
 import { pianoChord } from './theory';
+import { tuneNotes } from './tunes';
 import { voiceBook } from './voicebook';
 
 /** The chords of a bar, in the order they are struck. */
@@ -74,6 +75,17 @@ export function sheet(song: Song): { words: string[][]; melody: SungNote[] } | n
     for (const n of melody) n.midi += shift;
   }
   return { words, melody: melody.sort((a, b) => a.u - b.u) };
+}
+
+/**
+ * What a song of chords sounds like over its chords: its tune (from the words' sheet, or written for it in
+ * tunes.ts) and, where it has words, the words of each bar. Null when the app has no tune for it.
+ */
+export function tuneOf(song: Song): { melody: SungNote[]; words: string[][] | null } | null {
+  const sh = sheet(song);
+  if (sh) return { melody: sh.melody, words: sh.words };
+  const melody = tuneNotes(song);
+  return melody?.length ? { melody, words: null } : null;
 }
 
 /** The songs that can be sung and played here. */
