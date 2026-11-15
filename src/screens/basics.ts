@@ -258,7 +258,7 @@ const INSTRUMENT_INTROS = (): Intro[] => [
     title: L('Finding the keys', 'Die Tasten finden'),
     points: [
       L('The black keys come in groups of two and three. That pattern repeats along the whole keyboard and is how you find your way.', 'Die schwarzen Tasten kommen in Gruppen zu zwei und zu drei. Dieses Muster wiederholt sich über die ganze Tastatur, und daran findest du dich zurecht.'),
-      L('C is the white key just left of a group of two black keys. From there the white keys are D, E, F, G, A, B, and then C again.', 'C ist die weiße Taste direkt links neben einer Gruppe aus zwei schwarzen Tasten. Von dort aus heißen die weißen Tasten D, E, F, G, A, B und dann wieder C.'),
+      L('C is the white key just left of a group of two black keys. From there the white keys are D, E, F, G, A, B, and then C again.', 'C ist die weiße Taste direkt links neben einer Gruppe aus zwei schwarzen Tasten. Von dort aus heißen die weißen Tasten D, E, F, G, A, H und dann wieder C.'),
       L('Middle C is the C nearest the middle of the piano, usually near the lock or the maker\'s name. The app calls it C4; the C above it is C5.', 'Das mittlere C ist das C, das der Mitte des Klaviers am nächsten liegt, meist beim Schloss oder beim Namen des Herstellers. Die App nennt es C4; das C darüber ist C5.'),
       L('A black key takes its name from its neighbour: the one right of C is C sharp, written C♯.', 'Eine schwarze Taste bekommt ihren Namen von ihrer Nachbarin: Die rechts neben C ist das Cis, geschrieben C♯.'),
     ],
@@ -291,7 +291,7 @@ const INSTRUMENT_INTROS = (): Intro[] => [
     title: L('What a chord is, on the piano', 'Was ein Akkord ist, am Klavier'),
     points: [
       L('A chord is several keys sounding together. The simplest has three: play a key, leave one out, play one, leave one out, play one.', 'Ein Akkord besteht aus mehreren Tasten, die zusammen klingen. Der einfachste hat drei: Spiel eine Taste, lass eine aus, spiel eine, lass eine aus, spiel eine.'),
-      L('Its name is its lowest key. Start on C and it is the chord of C: C, E and G. Start on G and it is G: G, B and D.', 'Sein Name ist seine tiefste Taste. Fängst du auf C an, ist es der C-Akkord: C, E und G. Fängst du auf G an, ist es G: G, B und D.'),
+      L('Its name is its lowest key. Start on C and it is the chord of C: C, E and G. Start on G and it is G: G, B and D.', 'Sein Name ist seine tiefste Taste. Fängst du auf C an, ist es der C-Akkord: C, E und G. Fängst du auf G an, ist es G: G, H und D.'),
       L('A plain letter is a major chord, which sounds bright; a small m means minor, which sounds darker. Between the two only the middle key differs, by one key to the left.', 'Ein einfacher Buchstabe ist ein Durakkord, der hell klingt; ein kleines m bedeutet Moll, das dunkler klingt. Zwischen beiden unterscheidet sich nur die mittlere Taste, um eine Taste nach links.'),
       L('Most songs get by with three or four chords that take turns. In the app a chord always sits in the same place: its lowest key is the first of that name from middle C upward.', 'Die meisten Songs kommen mit drei oder vier Akkorden aus, die sich abwechseln. In der App liegt ein Akkord immer an derselben Stelle: Seine tiefste Taste ist die erste dieses Namens vom mittleren C aufwärts.'),
     ],
@@ -347,7 +347,7 @@ const INSTRUMENT_INTROS = (): Intro[] => [
         `<line x1="260" x2="260" y1="40" y2="350" stroke="${P.line}" stroke-width="1.5" stroke-dasharray="4 6"/>`
       );
     },
-    tryIt: { say: L('Play G: the keys G, B and D with fingers 1, 3 and 5, all at once. Twice.', 'Spiel G: die Tasten G, B und D mit den Fingern 1, 3 und 5, alle auf einmal. Zweimal.'), chords: ['G'], count: 2, piano: true },
+    tryIt: { say: L('Play G: the keys G, B and D with fingers 1, 3 and 5, all at once. Twice.', 'Spiel G: die Tasten G, H und D mit den Fingern 1, 3 und 5, alle auf einmal. Zweimal.'), chords: ['G'], count: 2, piano: true },
   },
   {
     id: 'p-move',
@@ -577,9 +577,9 @@ const INSTRUMENT_INTROS = (): Intro[] => [
     id: 'pluck',
     title: L('Plucking single strings', 'Einzelne Saiten zupfen'),
     points: [
-      L('Plucking (fingerpicking) sounds one string at a time. The thumb plays the three thick strings, the index finger the G string, the middle finger the B string, the ring finger the high e string.', 'Beim Zupfen (Fingerpicking) klingt jeweils eine Saite. Der Daumen spielt die drei dicken Saiten, der Zeigefinger die G-Saite, der Mittelfinger die B-Saite, der Ringfinger die hohe e-Saite.'),
+      L('Plucking (fingerpicking) sounds one string at a time. The thumb plays the three thick strings, the index finger the G string, the middle finger the B string, the ring finger the high e string.', 'Beim Zupfen (Fingerpicking) klingt jeweils eine Saite. Der Daumen spielt die drei dicken Saiten, der Zeigefinger die G-Saite, der Mittelfinger die H-Saite, der Ringfinger die hohe e-Saite.'),
       L('Rest the hand lightly on the guitar and move the fingers, not the arm. The thumb strokes down, the fingers pull up towards the palm.', 'Leg die Hand leicht auf der Gitarre ab und beweg die Finger, nicht den Arm. Der Daumen streicht nach unten, die Finger ziehen nach oben zur Handfläche.'),
-      L('A picking pattern repeats over each chord. In Greensleeves: bass string, G, B, e, B, G.', 'Ein Zupfmuster wiederholt sich über jedem Akkord. In Greensleeves: Basssaite, G, B, e, B, G.'),
+      L('A picking pattern repeats over each chord. In Greensleeves: bass string, G, B, e, B, G.', 'Ein Zupfmuster wiederholt sich über jedem Akkord. In Greensleeves: Basssaite, G, H, e, H, G.'),
       L('With a pick it works too: one string at a time, down and up in turn.', 'Mit Plektrum geht es auch: eine Saite nach der anderen, abwechselnd ab und auf.'),
     ],
     art: () =>

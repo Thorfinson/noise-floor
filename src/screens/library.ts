@@ -3,7 +3,7 @@ import { L } from '../core/i18n';
 import { store } from '../core/store';
 import { deleteTakes } from '../core/takes';
 import { songLines, type PianoPiece, type Song } from '../music/content';
-import { parseNotes, parseTab } from '../music/import';
+import { notesHelp, parseNotes, parseTab } from '../music/import';
 import { $, $$, cap, esc, go, icon, type Screen } from '../ui/dom';
 import { LEARN, noteStrip, tabLine } from '../ui/draw';
 import { pips } from './home';
@@ -248,10 +248,7 @@ export const importer: Screen = (root) => {
     <div><p class="kick">${voice ? L('Voice · your own melody', 'Stimme · deine eigene Melodie') : piano ? L('Piano · your own melody', 'Klavier · deine eigene Melodie') : L('Guitar · your own song', 'Gitarre · dein eigener Song')}</p><h1>${piano ? L('Type a melody.', 'Tipp eine Melodie ein.') : L('Paste a tab.', 'Füg eine Tabulatur ein.')}</h1>
       <p class="lede">${
         piano
-          ? L(
-              'Note names with their octave, left to right: <b>E4 E4 F4 G4</b>. A new line starts a new phrase. <b>F#4</b> and <b>Bb3</b> are black keys, <b>C4:2</b> is twice as long, <b>E4(3)</b> is played with finger 3.',
-              'Notennamen mit ihrer Oktave, von links nach rechts: <b>E4 E4 F4 G4</b>. Eine neue Zeile beginnt eine neue Phrase. <b>F#4</b> und <b>Bb3</b> sind schwarze Tasten, <b>C4:2</b> ist doppelt so lang, <b>E4(3)</b> wird mit Finger 3 gespielt.',
-            )
+          ? notesHelp()
           : L(
               'A text tab as you find them everywhere: six lines, the high e string on top, fret numbers on dashes, bars split by <b>|</b>. Numbers in the same column are played together.',
               'Eine Tabulatur als Text, wie man sie überall findet: sechs Zeilen, die hohe e-Saite oben, Bundnummern auf Strichen, Takte getrennt durch <b>|</b>. Zahlen in derselben Spalte werden zusammen gespielt.',
