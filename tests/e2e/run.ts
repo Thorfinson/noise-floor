@@ -202,7 +202,9 @@ const sections: [string, () => Promise<void>][] = [
       const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
       await page.goto(base + '?autostart#/tuner');
       await page.waitForSelector('#strings');
-      check('tuner: asks for the low E string first', (await text(page, '#h1')).includes('low E string'), await text(page, '#h1'));
+      // "Pluck the low E string", or on a slow machine already "Low E string: tighten it." once the
+      // microphone's flat E has been heard: either way the tuner is on the low E string
+      check('tuner: asks for the low E string first', /low E string/i.test(await text(page, '#h1')), await text(page, '#h1'));
       const flat = await page
         .waitForFunction(() => /cents too low/.test(document.querySelector('#msg')?.textContent ?? ''), null, { timeout: 12000 })
         .then(() => true)
