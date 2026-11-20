@@ -149,7 +149,7 @@ export const groove: Screen = (root, [id, how = 'free', partParam = '0'], ctx?: 
       return;
     }
     const bandMode: BandMode = mode === 'phones' ? 'phones' : 'speakers';
-    const parts = renderBand({ chords, clicks, units: units(), unit: u, sr: engine.ctx.sampleRate, a4: guitarA4(), mode: bandMode, strums, feel: strumPatternOf(song) ?? undefined, loop: true } as Parameters<typeof renderBand>[0]);
+    const parts = renderBand({ chords, clicks, units: units(), unit: u, sr: engine.ctx.sampleRate, a4: guitarA4(), mode: bandMode, strums, feel: strumPatternOf(song) ?? undefined, loop: true });
     band = engine.playBand(at, parts, { drums: 1, bass: 1, keys: 0.8, lead: 0.6 }, { loop: true, volume: store.settings.bandVolume });
   }
 
