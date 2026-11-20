@@ -37,6 +37,8 @@ export interface Bar {
   notes: TabNote[];
   /** the part of the song that starts with this bar: "Verse", "Chorus" */
   part?: string;
+  /** the words sung over this bar, the first time its part is played */
+  words?: string;
 }
 
 export interface Song {
@@ -57,6 +59,56 @@ export interface Song {
   exercise?: boolean;
   /** for the guitar only: the piano book and the voice leave it out */
   guitarOnly?: boolean;
+  /**
+   * The order of the parts when the whole song is played, by the names the bars' `part` gives ("Verse",
+   * "Chorus"). The bars hold each part once, which is what is learned line by line; the whole song repeats
+   * them. Left out, the whole song is the bars as they stand.
+   */
+  form?: string[];
+  /** the words of each repetition of a part after its first, bar by bar: verses.Verse[0] is the second verse */
+  verses?: Record<string, string[][]>;
+}
+
+/** One bar of the whole song, as it is played from the start to the end with every repetition of its parts. */
+export interface FormBar {
+  bar: Bar;
+  /** its index in song.bars */
+  index: number;
+  /** the part it belongs to, if the song has parts */
+  part?: string;
+  /** which time round that part is, counted from 0 */
+  rep: number;
+  words?: string;
+}
+
+/** The bars of a song's parts: each part from the bar that starts it to the bar before the next part. */
+export function partsOf(song: Song): { name: string; from: number; to: number }[] {
+  const out: { name: string; from: number; to: number }[] = [];
+  song.bars.forEach((b, i) => {
+    if (b.part) out.push({ name: b.part, from: i, to: song.bars.length });
+    if (out.length > 1 && b.part) out[out.length - 2].to = i;
+  });
+  return out;
+}
+
+/** The whole song from start to end: the parts in the order of its form, each with the words of that time round. */
+export function wholeSong(song: Song): FormBar[] {
+  const parts = partsOf(song);
+  if (!song.form?.length || !parts.length) return song.bars.map((bar, index) => ({ bar, index, rep: 0, words: bar.words, part: parts.find((p) => index >= p.from && index < p.to)?.name }));
+  const seen: Record<string, number> = {};
+  const out: FormBar[] = [];
+  for (const name of song.form) {
+    const p = parts.find((x) => x.name === name);
+    if (!p) continue;
+    const rep = seen[name] ?? 0;
+    seen[name] = rep + 1;
+    for (let i = p.from; i < p.to; i++) {
+      const bar = song.bars[i];
+      const later = rep > 0 ? song.verses?.[name]?.[rep - 1]?.[i - p.from] : undefined;
+      out.push({ bar, index: i, part: name, rep, words: later ?? bar.words });
+    }
+  }
+  return out;
 }
 
 /** Bars of strums: one chord a bar, so many strums in each. */

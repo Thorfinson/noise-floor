@@ -239,8 +239,9 @@ const shape =
 const all = <T>(fields: { [K in keyof T]-?: Check<T[K]> }): Check<T> => shape(fields, Object.keys(fields) as (keyof T)[]);
 
 const tabNote: Check<TabNote> = shape<TabNote>({ s: within(0, 5), f: within(0, 30), fg: num, len: positive, more: (v) => list(tabNote, true)(v), strum: str, up: bool }, ['s', 'f']);
-const bar = shape<Bar>({ chord: str, notes: list(tabNote, true), part: str }, ['notes']);
-const song = shape<Song>({ id, title: str, by: str, noteDur: positive, beat: positive, bars: some(list(bar, true)), custom: bool, of: id, exercise: bool, guitarOnly: bool }, ['id', 'title', 'noteDur', 'beat', 'bars']);
+const bar = shape<Bar>({ chord: str, notes: list(tabNote, true), part: str, words: str }, ['notes']);
+const wordRows: Check<string[][]> = (v) => (Array.isArray(v) && v.every((r) => Array.isArray(r) && r.every((x) => typeof x === 'string')) ? (v as string[][]) : undefined);
+const song = shape<Song>({ id, title: str, by: str, noteDur: positive, beat: positive, bars: some(list(bar, true)), custom: bool, of: id, exercise: bool, guitarOnly: bool, form: list(str, true), verses: dict(wordRows) }, ['id', 'title', 'noteDur', 'beat', 'bars']);
 const pianoNote = shape<PianoNote>({ midi: within(0, 127), fg: num, len: positive, chord: str, over: str, left: bool, bass: within(0, 127) }, ['midi']);
 /** the parts of a piece line up with its phrases, so a phrase without one stays in the list (JSON makes it null) */
 const parts: Check<(string | undefined)[]> = (v) => (Array.isArray(v) && v.every((x) => x === null || typeof x === 'string') ? v.map((x: string | null) => x ?? undefined) : undefined);

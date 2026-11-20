@@ -5,6 +5,7 @@
  * metronome is scheduled on the audio clock.
  */
 import { Listener } from './listener';
+import { LAYERS, type BandHandle, type BandParts, type Layer, type LayerGains } from './band';
 import { chime, click, strum, tone, voiceTone, type Articulation, type Chime } from './synth';
 import { CHORDS, chordNotes, OPEN_STRINGS, pianoChord } from '../music/theory';
 import { L } from '../core/i18n';
@@ -393,6 +394,65 @@ export class AudioEngine {
     src.onended = () => this.ticks.delete(src);
     src.start(when, skip);
     this.ticks.add(src);
+  }
+
+  /**
+   * Plays a band (src/audio/band.ts) from a moment on the listener's clock, through the speakers only, each
+   * layer at its own gain. With `loop` it repeats until stopped (the game's groove). Cancelled with the ticks.
+   */
+  playBand(at: number, parts: BandParts, gains: LayerGains, opts: { loop?: boolean; volume?: number } = {}): BandHandle {
+    const ctx = this.ctx;
+    const none: BandHandle = { setGain: () => undefined, stop: () => undefined };
+    if (!ctx) return none;
+    let when = at + (this.offset ?? ctx.currentTime - (this.listener?.time ?? 0));
+    let skip = 0;
+    if (when < ctx.currentTime) {
+      skip = ctx.currentTime - when;
+      when = ctx.currentTime;
+    }
+    const master = ctx.createGain();
+    master.gain.value = opts.volume ?? 0.9;
+    master.connect(ctx.destination);
+    const nodes = new Map<Layer, { src: AudioBufferSourceNode; gain: GainNode }>();
+    for (const layer of LAYERS) {
+      const samples = parts.layers[layer];
+      if (!samples?.length) continue;
+      const buf = ctx.createBuffer(1, samples.length, ctx.sampleRate);
+      buf.getChannelData(0).set(samples);
+      const src = ctx.createBufferSource();
+      src.buffer = buf;
+      src.loop = !!opts.loop;
+      const gain = ctx.createGain();
+      gain.gain.value = gains[layer] ?? 0;
+      src.connect(gain).connect(master);
+      src.onended = () => this.ticks.delete(src);
+      src.start(when, opts.loop ? skip % Math.max(1e-3, parts.length) : Math.min(skip, parts.length));
+      this.ticks.add(src);
+      nodes.set(layer, { src, gain });
+    }
+    return {
+      setGain: (layer, g, ramp = 0.4) => {
+        const n = nodes.get(layer);
+        if (!n) return;
+        const t = ctx.currentTime;
+        n.gain.gain.cancelScheduledValues(t);
+        n.gain.gain.setValueAtTime(n.gain.gain.value, t);
+        n.gain.gain.linearRampToValueAtTime(Math.max(0, g), t + Math.max(0.01, ramp));
+      },
+      stop: (fade = 0.3) => {
+        const t = ctx.currentTime;
+        master.gain.cancelScheduledValues(t);
+        master.gain.setValueAtTime(master.gain.value, t);
+        master.gain.linearRampToValueAtTime(0, t + Math.max(0.01, fade));
+        for (const { src } of nodes.values()) {
+          try {
+            src.stop(t + Math.max(0.01, fade) + 0.05);
+          } catch {
+            // already ended
+          }
+        }
+      },
+    };
   }
 
   private droneSrc: { src: AudioBufferSourceNode; gain: GainNode } | null = null;
