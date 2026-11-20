@@ -21,6 +21,7 @@ import { askAgain, chooseFile, fileState, forgetFile, takeNewer } from '../core/
 import { clearTakes } from '../core/takes';
 import { TUNINGS } from '../music/tuning';
 import { dayStart } from '../core/days';
+import { weekHome } from './today';
 
 export { skillLabel };
 
@@ -35,6 +36,8 @@ let editingPlan = false;
 export const home: Screen = (root) => {
   const now = Date.now();
   const inst = store.settings.instrument;
+  // the guitar's day is built around the song of the week
+  if (inst === 'guitar') return weekHome(root, inst, now);
   const piano = inst === 'piano';
   const voice = inst === 'voice';
   const steps = plan();
@@ -197,8 +200,26 @@ const PIC = {
   game: '<svg viewBox="0 0 140 70" width="120"><path d="M58 64l4-46h10l4 46zM60 18v-8h14v8M67 10V4" fill="none" stroke="#26262e" stroke-width="2.5" stroke-linejoin="round"/><path d="M74 14 132 4M60 14 8 4" stroke="#f2b24a" stroke-width="3" opacity=".7"/></svg>',
 };
 /** The picture of a step of the session: its chords, its song, or what it trains. */
-function stepPicture(st: Step): string {
+export function stepPicture(st: Step): string {
   const piano = store.settings.instrument === 'piano';
+  const pair = (a: string, b: string): string => `<span class="boxes">${miniBox(a, 44)}<svg viewBox="0 0 24 24" width="16"><path d="M4 12h14m-5-5 5 5-5 5" stroke="#26262e" stroke-width="2" fill="none" stroke-linecap="round"/></svg>${miniBox(b, 44)}</span>`;
+  // the steps of the guitar's week: warm up on a song, a focus (a chord, a change or a pattern), the song, the encore
+  if (!piano && store.settings.instrument === 'guitar')
+    switch (st.kind) {
+      case 'warm': {
+        const ids = songChords(st.params[1] ?? '');
+        return ids.length ? chordChips(ids) : PIC.tune;
+      }
+      case 'focus':
+        if (st.params.length === 2 && CHORDS[st.params[0]] && CHORDS[st.params[1]]) return pair(st.params[0], st.params[1]);
+        if (CHORDS[st.params[0]]) return miniBox(st.params[0], 58);
+        return PIC.strum;
+      case 'new':
+      case 'encore': {
+        const ids = st.params[0] === 'changes' ? [] : songChords(st.params[0] ?? '');
+        return ids.length ? chordChips(ids) : PIC.game;
+      }
+    }
   switch (st.kind) {
     case 'tune':
     case 'pitch':

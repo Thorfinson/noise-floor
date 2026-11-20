@@ -145,6 +145,19 @@ export interface RunSummary {
   rows: RunRow[];
 }
 
+/** The song of the week: which, and the day it was chosen (days counted as in core/days.ts). */
+export interface WeekState {
+  id: string;
+  start: number;
+}
+
+/** The barre chord as a project: which shape, from which day, and the most strings that rang on each day. */
+export interface BarreProject {
+  chord: string;
+  start: number;
+  rings: Record<string, number>;
+}
+
 interface Saved {
   settings: Settings;
   skills: Record<string, SkillRecord>;
@@ -164,6 +177,10 @@ interface Saved {
   ratings: SelfRating[];
   takes: Record<string, { first?: TakeMeta; last?: TakeMeta }>;
   planOff: Partial<Record<Instrument, string[]>>;
+  /** the song of the week on each instrument: everything the session practises serves it (music/week.ts) */
+  weeks: Partial<Record<Instrument, WeekState>>;
+  /** the barre chord as a project of its own: two minutes a day, and how many strings rang on each day */
+  barre: BarreProject | null;
   /** when this was saved, to tell which of two copies (the browser's, a progress file's) is newer */
   savedAt: number;
 }
@@ -333,10 +350,12 @@ const FIELDS: { [K in keyof Saved]-?: Check<Saved[K]> } = {
   ratings: list(all<SelfRating>({ t: num, self: num, app: num })),
   takes: dict(shape<{ first?: TakeMeta; last?: TakeMeta }>({ first: takeMeta, last: takeMeta })),
   planOff: perInstrument(list(str)),
+  weeks: perInstrument(all<WeekState>({ id, start: num })),
+  barre: (v) => (v === null ? null : all<BarreProject>({ chord: str, start: num, rings: dict(within(0, 6)) })(v)),
   savedAt: num,
 };
 /** What is kept when nothing was saved yet. */
-const EMPTY = (): Saved => ({ settings: { ...DEFAULTS }, skills: {}, speeds: {}, best: {}, runs: [], sessions: [], progress: {}, songs: [], pieces: [], current: {}, reviews: {}, favs: [], recent: {}, practice: {}, plan: null, ratings: [], takes: {}, planOff: {}, savedAt: 0 });
+const EMPTY = (): Saved => ({ settings: { ...DEFAULTS }, skills: {}, speeds: {}, best: {}, runs: [], sessions: [], progress: {}, songs: [], pieces: [], current: {}, reviews: {}, favs: [], recent: {}, practice: {}, plan: null, ratings: [], takes: {}, planOff: {}, weeks: {}, barre: null, savedAt: 0 });
 
 /** Saved data checked field by field: every field that passes, defaults for the others, and the names of those that failed. */
 function checkSaved(raw: unknown): { saved: Saved; failed: string[] } {
@@ -381,6 +400,8 @@ export class Store {
   plan!: PracticePlan | null;
   /** the steps of the session the player has left out of their plan, per instrument (Step.kind) */
   planOff!: Partial<Record<Instrument, string[]>>;
+  weeks!: Partial<Record<Instrument, WeekState>>;
+  barre!: BarreProject | null;
   /** when what is held was last saved (ms) */
   savedAt!: number;
   /** called after every save: a progress file of the player's is written then (src/core/progressfile.ts) */
@@ -431,6 +452,8 @@ export class Store {
     this.ratings = saved.ratings;
     this.takes = saved.takes;
     this.planOff = saved.planOff;
+    this.weeks = saved.weeks;
+    this.barre = saved.barre;
     this.savedAt = saved.savedAt;
     return failed;
   }
@@ -540,7 +563,7 @@ export class Store {
   }
 
   private snapshot(): Saved {
-    return { settings: this.settings, skills: this.skills.data, speeds: this.speeds, best: this.best, runs: this.runs.slice(-40), sessions: this.sessions.slice(-400), progress: this.progress, songs: this.songs, pieces: this.pieces, current: this.current, reviews: this.reviews, favs: this.favs, recent: this.recent, practice: this.practice, plan: this.plan, ratings: this.ratings.slice(-30), takes: this.takes, planOff: this.planOff, savedAt: this.savedAt };
+    return { settings: this.settings, skills: this.skills.data, speeds: this.speeds, best: this.best, runs: this.runs.slice(-40), sessions: this.sessions.slice(-400), progress: this.progress, songs: this.songs, pieces: this.pieces, current: this.current, reviews: this.reviews, favs: this.favs, recent: this.recent, practice: this.practice, plan: this.plan, ratings: this.ratings.slice(-30), takes: this.takes, planOff: this.planOff, weeks: this.weeks, barre: this.barre, savedAt: this.savedAt };
   }
 
   save(): void {

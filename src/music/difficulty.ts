@@ -259,9 +259,12 @@ export function finished(inst: Instrument, id: string): boolean {
   return song.bars.every((_, i) => store.skills.level(barKey(song, i)) >= 4);
 }
 
-/** The song the session works on: the one the player opened, otherwise the easiest that is not finished. */
+/**
+ * The song the session works on: the song of the week, otherwise the one the player opened, otherwise the
+ * easiest that is not finished.
+ */
 export function currentSong(): Song {
-  const chosen = store.current.guitar;
+  const chosen = store.weeks.guitar?.id ?? store.current.guitar;
   if (chosen && allSongs().some((s) => s.id === chosen)) return findSong(chosen);
   // the session's song is a song: exercises are chosen by the player, or come with their own stages
   const order = songsByDifficulty().filter((s) => !s.exercise);
@@ -277,7 +280,7 @@ export function currentSongToSing(): SongToSing {
 }
 
 export function currentPiece(): PianoPiece {
-  const chosen = store.current.piano;
+  const chosen = store.weeks.piano?.id ?? store.current.piano;
   if (chosen && allPieces().some((p) => p.id === chosen)) return findPiece(chosen);
   const order = piecesByDifficulty().filter((p) => !p.of);
   return order.find((p) => !finished('piano', p.id)) ?? order[0];

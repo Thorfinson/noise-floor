@@ -1199,6 +1199,91 @@ canvas.world ~ .page .sectitle h2 { text-shadow: 0 1px 12px rgba(252, 248, 242, 
   .heroacts .btn { flex: 1 1 100%; justify-content: center; }
 }
 
+/* ───────── The song of the week on Today: the song as the title, its parts, play, the band; then and now and
+   the shelf beside it; today's set underneath. Choosing a song: three that suit, or one's own. */
+.wsong-top { display: grid; grid-template-columns: minmax(0, 7fr) minmax(0, 5fr); gap: 20px; align-items: stretch; }
+.wsong-top .herosheet { width: auto; }
+.wsong-hero h1 { font-size: clamp(2.4rem, 4.4vw, 3.9rem); line-height: 1; letter-spacing: -0.03em; }
+.wsong-hero .lede { margin-top: 10px; font-size: 1.1875rem; color: var(--muted); max-width: 42ch; }
+.wsong-form { display: flex; gap: 6px; margin: 16px 0 0; padding: 0; list-style: none; }
+.wsong-form li { flex: 1 1 0; min-width: 0; padding: 10px 12px 9px; border-radius: 10px; background: rgba(229, 218, 203, 0.7); font-size: var(--t-small); line-height: 1.25; }
+.wsong-form b { display: block; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.wsong-form span { color: var(--muted); font-size: var(--t-meta); }
+.wsong-form .sits { background: #d6eadf; }
+.wsong-form .sits span { color: var(--good); }
+.wsong-form .today { background: #fffdf8; box-shadow: inset 0 0 0 2px var(--now); }
+.wsong-form .today span { color: var(--now); font-weight: 600; }
+.wsong-form .ahead { background: none; box-shadow: inset 0 0 0 1.5px var(--line); }
+.wsong-bandrow { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 18px; margin-top: 16px; font-size: var(--t-small); color: var(--muted); }
+.wsong-bandrow .weekrow { margin: 0; }
+.wsong-band { display: inline-flex; gap: 4px; padding: 4px; border-radius: 12px; background: rgba(229, 218, 203, 0.7); }
+.wsong-band button { border: 0; background: none; padding: 7px 12px; border-radius: 9px; font: 600 var(--t-small) var(--font); color: var(--muted); cursor: pointer; }
+.wsong-band button[aria-pressed='true'] { background: #fffdf8; color: var(--text); box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12); }
+.wsong-listen { display: grid; gap: 10px; align-content: start; }
+.wsong-listen h2 { margin: 0; font: 700 var(--t-h3) / 1.2 var(--font); }
+.wsong-listen .note { margin: 0; }
+.wsong-shelf { display: flex; align-items: flex-end; gap: 6px; min-height: 74px; }
+.wsong-spine { display: grid; place-items: center; width: 28px; height: var(--h, 64px); padding: 6px 0; border-radius: 4px 4px 2px 2px; background: var(--c, #7d4a5e); color: rgba(255, 255, 255, 0.92); text-decoration: none; overflow: hidden; }
+.wsong-spine span { writing-mode: vertical-rl; transform: rotate(180deg); font: 600 10px / 1 var(--font); letter-spacing: 0.04em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-height: 100%; }
+.wsong-spine.empty { background: none; box-shadow: inset 0 0 0 1.5px var(--line); color: var(--faint); border-style: dashed; }
+.wsong-after { margin: 16px 0 0; }
+.wsong-after a, .linkbtn { color: var(--text); font-weight: 600; border-bottom: 1px solid var(--line); text-decoration: none; }
+.linkbtn { padding: 0; border-top: 0; border-left: 0; border-right: 0; background: none; font: inherit; font-weight: 600; cursor: pointer; }
+.wsong-choose h1 { max-width: 22ch; }
+.wsong-picks { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+.wsong-pick { display: grid; grid-template-rows: auto 1fr; overflow: hidden; border: 1px solid rgba(255, 255, 255, 0.75); border-radius: 18px; background: var(--sheet); box-shadow: var(--shadow); backdrop-filter: blur(10px); }
+.wsong-pick.first { box-shadow: 0 0 0 3px var(--now), var(--shadow); }
+.wsong-pickhead { display: flex; align-items: center; min-height: 64px; padding: 10px 12px; background: rgba(229, 218, 203, 0.6); }
+.wsong-pickhead .chips2 { justify-content: flex-start; }
+.wsong-pickbody { display: grid; gap: 6px; align-content: start; padding: 16px 18px 18px; }
+.wsong-pickbody h3 { margin: 0; font: 700 var(--t-h3) / 1.15 var(--font); }
+.wsong-pickbody .by { margin: 0; font-size: var(--t-small); color: var(--muted); }
+.wsong-pickbody .why { margin: 0 0 6px; font-size: var(--t-small); }
+.wsong-own { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 14px; }
+.wsong-own h2 { margin: 0; font: 700 var(--t-h3) / 1.2 var(--font); }
+.wsong-own .note { margin: 4px 0 0; }
+@media (max-width: 1100px) {
+  .wsong-top, .wsong-picks { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 700px) {
+  .wsong-form { flex-wrap: wrap; }
+  .wsong-form li { flex: 1 1 40%; }
+}
+
+/* the end of a day with the song of the week */
+.wsong-endp { align-items: center; }
+.wsong-end { display: grid; gap: 18px; width: min(860px, 100%); }
+.wsong-end h1 { margin: 0; font: 700 clamp(2.4rem, 4.4vw, 3.75rem) / 1.02 var(--font); letter-spacing: -0.03em; }
+.wsong-end .lede { margin: 0; font-size: 1.1875rem; color: var(--muted); }
+.wsong-end .kick .weekrow { margin-left: 10px; text-transform: none; letter-spacing: 0; }
+.wsong-gains { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+.wsong-gains div { padding: 10px 14px; border-left: 3px solid var(--good); }
+.wsong-gains b { display: block; font: 700 1.5rem / 1.1 var(--font); }
+.wsong-gains span { font-size: var(--t-small); color: var(--muted); }
+.wsong-tomorrow { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 14px; padding-top: 18px; border-top: 1px solid var(--line); }
+.wsong-tomorrow p { margin: 0; }
+@media (max-width: 700px) { .wsong-gains { grid-template-columns: minmax(0, 1fr); } }
+
+/* then and now: two recordings of the same music, the first one faint */
+.thn { display: grid; gap: 0; }
+.thn-row { display: grid; grid-template-columns: 44px minmax(0, 1fr); gap: 12px; align-items: center; padding: 10px 0; border-top: 1px solid var(--line); }
+.thn-row:first-child { border-top: 0; }
+.thn-play { display: grid; place-items: center; width: 44px; height: 44px; border: 0; border-radius: 50%; background: var(--text); color: var(--bg); cursor: pointer; }
+.thn-play svg { width: 18px; height: 18px; margin-left: 2px; }
+.thn-meta { display: flex; justify-content: space-between; gap: 8px; font-size: var(--t-small); margin-bottom: 2px; }
+.thn-meta span { color: var(--muted); }
+.thn-wave { height: 40px; }
+.thn-wave svg { display: block; width: 100%; height: 40px; }
+
+/* in the groove: the chord of the moment large, the loop as tab, a pulse when the right chord is heard */
+.groove-chord { display: grid; justify-items: center; gap: 2px; flex: none; }
+.groove-chord svg { height: clamp(118px, 24vh, 220px); width: auto; }
+.groove-name { font: 700 clamp(1.75rem, 2.6vw, 3rem) / 1 var(--font); }
+.groove-chord.groove-hit svg { animation: groove-hit 0.5s ease-out; }
+@keyframes groove-hit { 0% { filter: drop-shadow(0 0 0 rgba(46, 139, 106, 0.9)); transform: scale(1.04); } 100% { filter: drop-shadow(0 0 14px rgba(46, 139, 106, 0)); transform: scale(1); } }
+.groove-next { opacity: 0.45; }
+@media (prefers-reduced-motion: reduce) { .groove-chord.groove-hit svg { animation: none; } }
+
 /* ───────── Songs: search and filters in one row, a shelf of what to play now, one line per song */
 .songsp { gap: 20px; }
 .songtop { display: grid; grid-template-columns: minmax(0, 1fr) minmax(240px, 420px); gap: 24px; align-items: end; }

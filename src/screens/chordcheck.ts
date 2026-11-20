@@ -5,6 +5,7 @@
 import type { StringResult } from '../audio/listener';
 import { engine } from '../audio/engine';
 import { L } from '../core/i18n';
+import { dayOf } from '../core/days';
 import { store } from '../core/store';
 import { barreStrings, chordMidis, CHORDS, noteName, STRING_FULL, STRING_NAMES, stringName, type Chord } from '../music/theory';
 import { $, cap, esc, hear, icon, keys, later, learnRing, stopTimer, type Screen } from '../ui/dom';
@@ -202,6 +203,12 @@ export const chordCheck: Screen = (root, ids, ctx) => {
     const clean = cleanCount();
     // the tip is shown as HTML: what the session says comes next can hold the title of an own song
     const after = nextName() ? L(`Next: ${nextName()}.`, `Als Nächstes: ${nextName()}.`) : stay ? L('Once more with R, or finish with the right arrow.', 'Noch einmal mit R, oder mit dem Pfeil nach rechts abschließen.') : ctx ? L(`Next: ${esc(ctx.after)}.`, `Als Nächstes: ${esc(ctx.after)}.`) : L('It starts over in a moment.', 'Gleich geht es von vorn los.');
+    // the barre project keeps the most strings that rang on each day, its course over the thirty days
+    if (store.barre && store.barre.chord === chord.id) {
+      const d = String(dayOf(Date.now()));
+      store.barre.rings[d] = Math.max(store.barre.rings[d] ?? 0, Math.round((clean / n) * 6));
+      store.save();
+    }
     if (clean === n && !left.size && startT >= 0) {
       passed.add(chord.id);
       const secs = time - startT;

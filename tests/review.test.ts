@@ -128,13 +128,14 @@ describe('songs that come back', () => {
     if (n > 2) expect(reviewLines('guitar', id)).toEqual([2, 3 % n]);
   });
 
-  it("puts a due song into today's session, right after tuning, as a visit from cold", () => {
+  it("puts a due song into today's session as its warm-up, after tuning: a visit from cold", () => {
     const t = Date.now() - 4 * DAY_MS;
     master(id, t);
     syncReviews('guitar', Date.now());
     const steps = plan();
-    expect(steps[1].params).toEqual([id, 'review']);
-    expect(steps[0].params).toEqual([]);
+    // the guitar warms up on it (the warm-up tunes first, then plays the visit); another instrument visits after its first step
+    if (store.settings.instrument === 'guitar') expect(steps[0].kind).toBe('warm'), expect(steps[0].params).toEqual(['visit', id, '0']);
+    else expect(steps[1].params).toEqual([id, 'review']);
   });
 
   it('lists the repertoire with its best, its last cold try and its freshness', () => {

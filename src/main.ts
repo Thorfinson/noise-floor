@@ -34,6 +34,8 @@ import { rhythmReading } from './screens/rhythm';
 import { hearingCheck } from './screens/check';
 import { slurTrainer } from './screens/slur';
 import { stride } from './screens/stride';
+import { groove } from './screens/groove';
+import { weekPage } from './screens/today';
 import { holdTone, pitchMatch, singLesson, voiceRangeTest } from './screens/sing';
 
 interface Route {
@@ -57,6 +59,8 @@ const routes: Record<string, Route> = {
   drone: { screen: droneTool, mode: 'learn', audio: true },
   compose: { screen: compose, nav: true, mode: 'learn', audio: false },
   jam: { screen: jam, mode: 'learn', audio: true },
+  groove: { screen: groove, mode: 'learn', audio: true },
+  week: { screen: weekPage, nav: true, mode: 'learn', audio: false },
   ear: { screen: withIntro('ear', earTraining), mode: 'learn', audio: true },
   strum: { screen: withIntro('strumming', strumTrainer), mode: 'learn', audio: true },
   singalong: { screen: singAlong, mode: 'learn', audio: true },
@@ -165,7 +169,7 @@ const places = (): [string, string, string][] => [
   ['progress', L('Progress', 'Fortschritt'), 'progress'],
 ];
 /** Pages that belong to a place light up its entry. */
-const PLACE_OF: Record<string, string> = { basics: 'learn', import: 'songs', repertoire: 'songs', takes: 'songs', singalongs: 'songs', compose: 'songs', trends: 'progress' };
+const PLACE_OF: Record<string, string> = { week: '', basics: 'learn', import: 'songs', repertoire: 'songs', takes: 'songs', singalongs: 'songs', compose: 'songs', trends: 'progress' };
 
 /**
  * The toolbox: tuner, metronome, drone, chords and the hearing check, opened over whatever page is on show (Q,
@@ -303,6 +307,8 @@ function route(): void {
     drone: L('Drone', 'Bordunton'),
     compose: L('Your own song', 'Dein eigener Song'),
     jam: L('Play freely', 'Frei spielen'),
+    groove: L('In the groove', 'Im Groove'),
+    week: L('Song of the week', 'Song der Woche'),
     ear: L('By ear', 'Nach Gehör'),
     strum: L('Strumming', 'Anschlagen'),
     singalong: L('Sing and play', 'Singen und spielen'),

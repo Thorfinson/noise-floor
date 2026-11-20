@@ -22,6 +22,9 @@ const keyOf = (inst: Instrument, id: string): string => `${inst}:${id}`;
 
 export const hasTakes = (inst: Instrument, id: string): boolean => !!store.takes[keyOf(inst, id)]?.last;
 
+/** The id a take of one line of a song is kept under: its first and its latest are what "then and now" plays. */
+export const lineTakeId = (id: string, line: number): string => `${id}~l${line}`;
+
 export const takeMeta = (inst: Instrument, id: string, which: Which): TakeMeta | undefined => store.takes[keyOf(inst, id)]?.[which];
 
 function open(): Promise<IDBDatabase | null> {

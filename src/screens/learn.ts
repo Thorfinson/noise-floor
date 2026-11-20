@@ -7,6 +7,7 @@
 import type { ChordEvent, NoteEvent, ThudEvent } from '../audio/listener';
 import { engine } from '../audio/engine';
 import { backing } from '../audio/backing';
+import { renderBand, type BandHandle } from '../audio/band';
 import { songSound } from '../audio/songsound';
 import { mixInto, strum, tone } from '../audio/synth';
 import { L } from '../core/i18n';
@@ -21,6 +22,8 @@ import { $, cap, esc, hear, icon, keys, later, pianoEars, stopTimer, type Screen
 import { melodyWords, said as wordsOf, tuneOf } from '../music/accompany';
 import { guitarA4, guitarSetup } from '../music/tuning';
 import { SING_ALONG } from '../music/lyrics';
+import { strumPatternOf } from '../music/strums';
+import { lineTakeId } from '../core/takes';
 import { chordBox, chordMarks, fretboard, keyboard, keyRange, LEARN, noteStrip, playhead, tabLine, type Drawn, type KeyMark, type StepLook } from '../ui/draw';
 import { staffLine } from '../ui/staff';
 import { setSimTarget, type SimTarget } from '../ui/practice';
@@ -33,6 +36,9 @@ const RUNGS = (piano: boolean): { long: string; short: string }[] => [
   { long: L('With the click', 'Mit Klick'), short: L('Click', 'Klick') },
   piano ? { long: L('Whole piece', 'Ganzes Stück'), short: L('Whole', 'Ganz') } : { long: L('Whole song', 'Ganzer Song'), short: L('Whole', 'Ganz') },
 ];
+
+/** What plays along on the guitar, as the switch names it. */
+const bandName = (): string => (store.settings.band === 'phones' ? L('Full band (headphones)', 'Volle Band (Kopfhörer)') : store.settings.band === 'speakers' ? L('Band for speakers', 'Band für Lautsprecher') : L('The click alone', 'Nur der Klick'));
 
 /** A triangle to play, for the buttons that sound something. */
 const PLAY = '<svg class="ic" viewBox="0 0 20 20" aria-hidden="true"><path d="M6 3.8l10 6.2-10 6.2z" fill="currentColor"/></svg>';
@@ -162,7 +168,7 @@ function lesson(root: HTMLElement, m: Material, wanted: string | undefined, ctx?
      <details class="more" id="more"><summary class="btn quiet">${L('More', 'Mehr')}</summary><div class="morepanel">
        <div class="row"><button class="btn quiet" id="howbtn">${L('How this works', 'So funktioniert es')}</button></div>
        <p class="k">${L('Loop', 'Schleife')}</p><div class="row"><button class="btn quiet" id="widenl">${L('Take in the bar before', 'Takt davor dazu')} <kbd>[</kbd></button><button class="btn quiet" id="widenr">${L('Take in the bar after', 'Takt danach dazu')} <kbd>]</kbd></button></div>
-       <p class="k">${L('Playing along', 'Mitspielen')}</p><div class="row"><button class="btn quiet tog" id="backbtn" aria-pressed="false">${L('Backing: bass and chords', 'Begleitung: Bass und Akkorde')} <kbd>A</kbd></button>${melody ? `<button class="btn quiet tog" id="wordsbtn" aria-pressed="${wordsOn.on}">${L('Words under the notes', 'Text unter den Noten')} <kbd>K</kbd></button>` : ''}${SING_ALONG[m.id] ? `<a class="btn quiet" href="#/singalong/${encodeURIComponent(m.id)}">${L('Sing and play: the words under the chords', 'Singen und spielen: der Text unter den Akkorden')}</a>` : ''}</div><p class="note">${L('Headphones only: through speakers the microphone would hear the backing as your playing.', 'Nur mit Kopfhörern: Über Lautsprecher würde das Mikrofon die Begleitung als dein Spiel hören.')}</p>
+       <p class="k">${L('Playing along', 'Mitspielen')}</p><div class="row"><button class="btn quiet tog" id="backbtn" aria-pressed="false">${m.piano ? L('Backing: bass and chords', 'Begleitung: Bass und Akkorde') : `<span id="bandname">${bandName()}</span>`} <kbd>A</kbd></button>${melody ? `<button class="btn quiet tog" id="wordsbtn" aria-pressed="${wordsOn.on}">${L('Words under the notes', 'Text unter den Noten')} <kbd>K</kbd></button>` : ''}${SING_ALONG[m.id] ? `<a class="btn quiet" href="#/singalong/${encodeURIComponent(m.id)}">${L('Sing and play: the words under the chords', 'Singen und spielen: der Text unter den Akkorden')}</a>` : ''}</div><p class="note">${m.piano ? L('Headphones only: through speakers the microphone would hear the backing as your playing.', 'Nur mit Kopfhörern: Über Lautsprecher würde das Mikrofon die Begleitung als dein Spiel hören.') : L('A switches: full band for headphones, the band for speakers, the click alone.', 'A schaltet um: volle Band für Kopfhörer, die Band für Lautsprecher, nur der Klick.')}</p>
        ${m.piano ? `<p class="k">${L('The music', 'Die Noten')}</p><div class="row"><button class="btn quiet tog" id="staffbtn" aria-pressed="false">${L('On the staff', 'Als Notenzeile')} <kbd>S</kbd></button><button class="btn quiet" id="namesbtn"></button></div><p class="note">${L('The staff as in printed music, with the left hand on its own staff below. The names under the notes are a help to leave away: by default they go once a phrase sits.', 'Die Notenzeile wie in gedruckten Noten, die linke Hand auf einem eigenen System darunter. Die Namen unter den Noten sind eine Hilfe zum Weglassen: Von selbst verschwinden sie, sobald eine Phrase sitzt.')}</p>` : ''}
        <p class="k">${L('Learning a line', 'Eine Zeile lernen')}</p><div class="row"><button class="btn quiet tog" id="earbtn" aria-pressed="false">${L('By ear: notes hidden', 'Nach Gehör: Töne verdeckt')} <kbd>E</kbd></button><button class="btn quiet tog" id="imagbtn" aria-pressed="false">${L('Rest the hands: listen and imagine', 'Hände ausruhen: zuhören und vorstellen')} <kbd>I</kbd></button></div><p class="note">${L('On rung 1 the line is played first and the notes stay hidden; T shows them.', 'Auf Stufe 1 wird die Zeile zuerst vorgespielt, und die Töne bleiben verdeckt; T zeigt sie.')}</p>
        <p class="k">${L('Full speed', 'Volles Tempo')}</p><div class="row"><button class="btn quiet tog" id="perfbtn" aria-pressed="false">${L('Performance: no marks, recorded', 'Vortrag: ohne Markierungen, aufgenommen')} <kbd>V</kbd></button></div><p class="note">${L('The whole thing from the top. You say how it went before the app does, then listen back bar by bar.', 'Das Ganze von vorn. Du sagst, wie es lief, bevor die App es tut; dann hörst du es Takt für Takt an.')}</p>
@@ -222,7 +228,8 @@ function lesson(root: HTMLElement, m: Material, wanted: string | undefined, ctx?
             words: said,
             // every strum with its direction and its count; under the bars the words sung over them
             beat: m.beat,
-            barWords: tune?.words && !hidden ? l.bars.map((b) => wordsOf(tune.words![b] ?? [])) : undefined,
+            // the song's own words of each bar where it has them (its whole form is written out), else the sung tune's syllables
+            barWords: hidden ? undefined : song && l.bars.some((b) => song.bars[b]?.words) ? l.bars.map((b) => song.bars[b]?.words ?? '') : tune?.words ? l.bars.map((b) => wordsOf(tune.words![b] ?? [])) : undefined,
           },
           LEARN,
           true,
@@ -669,9 +676,13 @@ function lesson(root: HTMLElement, m: Material, wanted: string | undefined, ctx?
   function clickMode(straight = false): Mode {
     const whole = stage === 2 && !review && !loop;
     if (stage === 2) tempo = 100;
+    /** the band of this take, faded out when it ends or is left */
+    let band: BandHandle | null = null;
     // the lines a loop runs through: every line one of its bars is in
     const looped = loop ? m.lines.map((_, i) => i).filter((i) => m.lines[i].bars.some((b) => b >= loop!.from && b <= loop!.to)) : null;
     const idxs = review ? review.lines : looped ?? (whole ? m.lines.map((_, i) => i).slice(line) : [line]);
+    /** one line with the click is recorded too: its first and its latest take are what "then and now" plays */
+    const lineTake = stage === 1 && !review && !loop && idxs.length === 1;
     const rows = [rowA, rowB];
     // a note is only reported some 0.15 s after it was played, a strum after 0.25 s
     const grace = strummed.length ? 0.36 : 0.22;
@@ -813,8 +824,9 @@ function lesson(root: HTMLElement, m: Material, wanted: string | undefined, ctx?
       endT = t0 + (uEnd - uShift) * unit;
       take = new Take(steps);
       steps.forEach((s, i) => (s.t === -1e9 ? (take!.state[i] = 'hit') : undefined));
-      // under headphones: a bass and the chords with it
-      if (store.settings.backing && engine.ctx) {
+      // the band: on the guitar under every take in time, unless the player wants the click alone; through
+      // speakers it is the band arranged around what the microphone listens for (audio/band.ts)
+      if (store.settings.band !== 'click' && engine.ctx && !m.piano) {
         const chords: { u: number; id: string }[] = [];
         let was: string | undefined;
         flat.forEach((s, i) => {
@@ -825,11 +837,22 @@ function lesson(root: HTMLElement, m: Material, wanted: string | undefined, ctx?
         // a stretch that starts inside a chord takes that chord along from its first beat
         const before = flat.filter((_, i) => gu[i] < uShift - 1e-6).map(chordAt).filter(Boolean).pop();
         if (before && (!chords.length || chords[0].u > 1e-6)) chords.unshift({ u: 0, id: before });
-        const sound = backing({ chords, clicks: clicks.filter((c) => c.u >= uShift - 1e-6 && c.u < uEnd - 1e-6).map((c) => ({ u: c.u - uShift, accent: c.accent })), units: uEnd - uShift, unit, sr: engine.ctx.sampleRate, a4: m.piano ? store.settings.pianoA4 : guitarA4() });
-        engine.playAt(t0, sound, 0.9);
+        const strums = flat.filter((s, i) => !!s && gu[i] >= uShift - 1e-6 && gu[i] < uEnd - 1e-6).map((s) => gu[flat.indexOf(s)] - uShift);
+        const parts = renderBand({ chords, clicks: clicks.filter((c) => c.u >= uShift - 1e-6 && c.u < uEnd - 1e-6).map((c) => ({ u: c.u - uShift, accent: c.accent })), units: uEnd - uShift, unit, sr: engine.ctx.sampleRate, a4: guitarA4(), mode: store.settings.band === 'phones' ? 'phones' : 'speakers', strums, feel: song ? (strumPatternOf(song) ?? undefined) : undefined });
+        band = engine.playBand(t0, parts, { drums: 1, bass: 1, keys: 0.8, lead: whole ? 0.6 : 0 }, { volume: store.settings.bandVolume });
+      } else if (store.settings.backing && engine.ctx && m.piano) {
+        // the piano keeps its soft bass and chords under headphones, as before
+        const chords: { u: number; id: string }[] = [];
+        let was: string | undefined;
+        flat.forEach((s, i) => {
+          const id = chordAt(s);
+          if (id && id !== was && gu[i] >= uShift - 1e-6 && gu[i] < uEnd - 1e-6) chords.push({ u: gu[i] - uShift, id });
+          if (id) was = id;
+        });
+        engine.playAt(t0, backing({ chords, clicks: clicks.filter((c) => c.u >= uShift - 1e-6 && c.u < uEnd - 1e-6).map((c) => ({ u: c.u - uShift, accent: c.accent })), units: uEnd - uShift, unit, sr: engine.ctx.sampleRate, a4: store.settings.pianoA4 }), 0.9);
       }
       // the whole piece, or a loop, is recorded, to be listened to afterwards
-      recFrom = whole && engine.micOn && store.settings.recordTakes ? engine.now() : -1;
+      recFrom = (whole || lineTake) && engine.micOn && store.settings.recordTakes ? engine.now() : -1;
       if (recFrom >= 0) engine.record(TAKE_MAX);
       if (whole) panel.hide();
       shown = '';
@@ -924,7 +947,13 @@ function lesson(root: HTMLElement, m: Material, wanted: string | undefined, ctx?
         const meta = { t: Date.now(), secs: kept ? kept.samples.length / kept.sampleRate : 0, tempo: played, bars: order.map(([bar, from], k) => ({ bar, from: Math.max(0, from), to: order[k + 1]?.[1] ?? endT - zero, clean: r.cleanBars.includes(bar) })) };
         panel.show(kept ? { samples: kept.samples, rate: kept.sampleRate, meta } : { samples: new Float32Array(0), rate: 48000, meta }, !!perform);
         if (kept) void saveTake(inst, m.id, kept.samples, kept.sampleRate, meta);
+      } else if (lineTake && rec && rec.samples.length > rec.sampleRate) {
+        const zero = recFrom;
+        const meta = { t: Date.now(), secs: rec.samples.length / rec.sampleRate, tempo: played, bars: m.lines[idxs[0]].bars.map((bar) => ({ bar, from: 0, to: endT - zero, clean: r.cleanBars.includes(bar) })) };
+        void saveTake(inst, lineTakeId(m.id, idxs[0]), rec.samples, rec.sampleRate, meta);
       }
+      band?.stop(1.2);
+      band = null;
       recFrom = -1;
       if (loop) {
         // the loop is practice that counts: clean bars are measured, and three clean runs in a row speed it up
@@ -1273,7 +1302,9 @@ function lesson(root: HTMLElement, m: Material, wanted: string | undefined, ctx?
     $('#loopbtn', root).setAttribute('aria-pressed', String(!!loop));
     $<HTMLButtonElement>('#widenl', root).disabled = !loop || loop.from === 0;
     $<HTMLButtonElement>('#widenr', root).disabled = !loop || loop.to === lastBar;
-    $('#backbtn', root).setAttribute('aria-pressed', String(store.settings.backing));
+    $('#backbtn', root).setAttribute('aria-pressed', String(m.piano ? store.settings.backing : store.settings.band !== 'click'));
+    const bn = root.querySelector('#bandname');
+    if (bn) bn.textContent = bandName();
     $('#perfbtn', root).setAttribute('aria-pressed', String(perform));
     $('#earbtn', root).setAttribute('aria-pressed', String(byEar));
     if (m.piano) {
@@ -1328,6 +1359,14 @@ function lesson(root: HTMLElement, m: Material, wanted: string | undefined, ctx?
 
   /** B: the accompaniment, on or off. It is kept for next time. */
   function toggleBacking(): void {
+    if (!m.piano) {
+      // the guitar: full band, the band for speakers, the click alone, and round again
+      store.settings.band = store.settings.band === 'phones' ? 'speakers' : store.settings.band === 'speakers' ? 'click' : 'phones';
+      store.save();
+      extras();
+      say('info', L(`${bandName()}, from the next take.`, `${bandName()}, ab dem nächsten Durchgang.`));
+      return;
+    }
     store.settings.backing = !store.settings.backing;
     store.save();
     extras();

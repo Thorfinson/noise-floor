@@ -10,7 +10,7 @@ import { dayOf } from '../core/days';
 import { L } from '../core/i18n';
 import { kindOf, type SkillRecord } from '../core/skills';
 import { store, type Instrument } from '../core/store';
-import { allPieces, allSongs, KEY_CHORDS, shapeOf, type Song } from '../music/content';
+import { allPieces, allSongs, findSong, KEY_CHORDS, shapeOf, type Song } from '../music/content';
 import { chordKey, chordWeight, currentPiece, currentSong, currentSongToSing, finished, LEVELS, pieceProfile, piecesByDifficulty, readiness, songProfile, songsByDifficulty, type Profile } from '../music/difficulty';
 import { songsToSing, voiceProfile } from '../music/voicebook';
 import { holdTone, pitchMatch, rangeMeasured, singLesson, voiceRangeTest } from './sing';
@@ -20,7 +20,7 @@ import { OPEN_CHORDS } from '../music/path';
 import { chordName, CHORDS } from '../music/theory';
 import { $, esc, keys, stopAllLater, type Screen, type SessionCtx } from '../ui/dom';
 import { cleanStrings, skillLabel } from '../music/labels';
-import { describe, pieceMaterial, songMaterial } from '../music/material';
+import { describe, pieceMaterial, songMaterial, type Material } from '../music/material';
 import { pianoLesson, songLesson } from './learn';
 import { chordCheck } from './chordcheck';
 import { hearFirst } from './songpage';
@@ -32,6 +32,11 @@ import { tuner } from './tuner';
 import { earTraining, motifSource } from './ear';
 import { weekLine } from './habit';
 import { strumTrainer } from './strum';
+import { groove } from './groove';
+import { weekSummary } from './today';
+import { arcOf, lineParam, nextLabel, weekOf, type Arc } from '../music/week';
+import { pairKey } from '../music/difficulty';
+import { repertoire } from '../music/review';
 import { STRUM_PATTERNS, strumKey, strumPatternOf } from '../music/strums';
 
 
@@ -277,6 +282,8 @@ export function setPlanned(kind: string, on: boolean): void {
 /** The plan with a visit to an old song after the first step, when one is due: every step the app would choose. */
 export function fullPlan(now = Date.now()): Step[] {
   const steps = basePlan();
+  // the guitar's warm-up takes a due visit in already
+  if (store.settings.instrument === 'guitar') return steps;
   const visit = visitStep(store.settings.instrument, now);
   if (!visit) return steps;
   // on a day with a visit to an old song, the ear has the day off: one thing more at a time, not two
@@ -329,7 +336,133 @@ export function strumStep(song: Song): Step | null {
   };
 }
 
+/**
+ * Warming up: the guitar tuned in passing (pluck each string once; only a string that is off asks for more),
+ * then music straight away: a visit to an old song when one is due, otherwise a song from the shelf, or the
+ * groove of the song of the week, with the band. Nothing in it is a test of the day's new material.
+ */
+const warmUp: Screen = (root, [kind, id, part], ctx) => {
+  if (!ctx) return groove(root, [id, 'free', part ?? '0']);
+  let stop: void | (() => void);
+  let tuned = false;
+  const then = (): void => {
+    if (tuned) return;
+    tuned = true;
+    stop?.();
+    document.body.dataset.mode = 'learn';
+    stop = kind === 'visit' ? withIntro('song', songLesson)(root, [id, 'review'], ctx) : kind === 'shelf' ? songLesson(root, [id, '3'], ctx) : groove(root, [id, 'warm', part ?? '0'], ctx);
+  };
+  stop = tuner(root, ['quick'], { ...ctx, after: kind === 'groove' ? L('the warm-up with the band', 'das Einspielen mit Band') : L('a song you know', 'ein Song, den du kannst'), next: then });
+  return () => stop?.();
+};
+
+/** The change of the week's song that needs it most, measured with one calm minute: no game after it here. */
+const focusChange: Screen = (root, params, ctx) => changeDrill(root, params, ctx);
+
+/** The chords of some lines of the material in the order they come, each change once: [from, to]. */
+function changesIn(m: Material, lines: number[]): [string, string][] {
+  const seq: string[] = [];
+  for (const k of lines) for (const st of m.lines[k]?.steps ?? []) if (st.chord && seq[seq.length - 1] !== shapeOf(st.chord).id) seq.push(shapeOf(st.chord).id);
+  const out: [string, string][] = [];
+  for (let i = 1; i < seq.length; i++) if (!out.some(([a, b]) => a === seq[i - 1] && b === seq[i])) out.push([seq[i - 1], seq[i]]);
+  return out;
+}
+
+/**
+ * The one thing to work on today, chosen from the song of the week: a chord of the coming part that does not
+ * ring yet, else its strumming pattern when that is new, else the change in it that is slowest. Each with
+ * its reason, said in the step's title. Null when nothing stands out.
+ */
+export function focusStep(song: Song, a: Arc): Step | null {
+  const m = songMaterial(song);
+  const part = a.next.kind === 'learn' || a.next.kind === 'click' ? a.parts[a.next.part] : null;
+  const lines = part ? part.lines : m.lines.map((_, k) => k);
+  const where = part ? part.label : song.title;
+  const chordsHere = [...new Set(lines.flatMap((k) => m.lines[k].steps.map((st) => st.chord).filter((c): c is string => !!c)).map((c) => shapeOf(c).id))];
+  const fresh = chordsHere.find((c) => CHORDS[c] && store.skills.level('chord:' + c) < 1);
+  if (fresh)
+    return {
+      kind: 'focus', short: L('Focus', 'Fokus'),
+      as: L(`the new chord ${CHORDS[fresh].name}`, `der neue Griff ${CHORDS[fresh].name}`),
+      title: L(`New chord: ${CHORDS[fresh].name}`, `Neuer Griff: ${CHORDS[fresh].name}`),
+      detail: L(`${where} needs it. String by string, no clock`, `${where} braucht ihn. Saite für Saite, ohne Uhr`),
+      minutes: 3, mode: 'learn', screen: withIntro('chord', chordCheck), params: [fresh],
+    };
+  const strum = strumStep(song);
+  if (strum) return { ...strum, kind: 'focus', short: L('Focus', 'Fokus') };
+  const pairs = changesIn(m, lines);
+  const rate = (p: [string, string]): number => store.skills.get(pairKey(p[0], p[1], false))?.best ?? 0;
+  const worst = pairs.length ? pairs.reduce((x, y) => (rate(y) < rate(x) ? y : x)) : null;
+  // when the hands have what the song asks (every change at 30 a minute), the ear has its turn: motifs of
+  // the song played back, its sound before its signs
+  if (!worst || rate(worst) >= 30) return { ...earStep(false), kind: 'focus', short: L('Focus', 'Fokus') };
+  const [p, q] = worst.map((c) => CHORDS[c].name);
+  const was = rate(worst);
+  return {
+    kind: 'focus', short: L('Focus', 'Fokus'),
+    as: L(`the change ${p} → ${q}`, `der Wechsel ${p} → ${q}`),
+    title: L(`Focus: ${p} → ${q}`, `Fokus: ${p} → ${q}`),
+    detail: was ? L(`From the ${where.toLowerCase()}. Last time ${(60 / was).toFixed(1)} s a change`, `Aus: ${where}. Zuletzt ${(60 / was).toFixed(1).replace('.', ',')} s pro Wechsel`) : L(`From the ${where.toLowerCase()}. Once without a clock, then one calm minute`, `Aus: ${where}. Einmal ohne Uhr, dann eine ruhige Minute`),
+    minutes: 3, mode: 'learn', screen: withIntro('change', focusChange), params: worst,
+  };
+}
+
+/** The game the encore plays: tonight's run where there is one, otherwise the changes run. */
+const encoreRun: Screen = (root, params, ctx) => nfRun(root, params, ctx);
+
+/** The guitar's day around the song of the week: warm up, one focus, the next part of the song, an encore. */
+export function weekPlan(now = Date.now()): Step[] {
+  const id = weekOf('guitar')?.id ?? currentSong().id;
+  const a = arcOf('guitar', id, now)!;
+  const song = findSong(id);
+  const steps: Step[] = [];
+  // 1. warm up: a visit when one is due, else a song from the shelf, else the groove of this week's song
+  const due = dueReviews('guitar', now).find((r) => r.id !== id);
+  const shelf = repertoire('guitar', now).filter((r) => r.id !== id).sort((x, y) => x.last - y.last)[0];
+  const warmKind = due ? 'visit' : shelf ? 'shelf' : 'groove';
+  const warmTitle = due ? due.title : shelf ? shelf.title : song.title;
+  steps.push({
+    kind: 'warm', short: L('Warm up', 'Einspielen'),
+    as: L('the warm-up', 'das Einspielen'),
+    title: warmKind === 'groove' ? L(`Warm up: ${warmTitle} in the groove`, `Einspielen: ${warmTitle} im Groove`) : L(`Warm up: ${warmTitle}`, `Einspielen: ${warmTitle}`),
+    detail: warmKind === 'visit' ? L('Tune, then two lines you know, from cold, with the band', 'Stimmen, dann zwei Zeilen, die du kannst, aus dem Stand, mit Band') : warmKind === 'shelf' ? L('Tune, then a song you know, with the band', 'Stimmen, dann ein Song, den du kannst, mit Band') : L('Tune, then three rounds with the band, nothing measured', 'Stimmen, dann drei Runden mit Band, nichts gemessen'),
+    minutes: warmKind === 'groove' ? 2 : 3, mode: 'learn', screen: warmUp,
+    params: [warmKind, due ? due.id : shelf ? shelf.id : id, '0'],
+  });
+  // 2. the focus of the day, from the part that comes next
+  const focus = focusStep(song, a);
+  if (focus) steps.push(focus);
+  // 3. the next part of the song of the week, on its rung
+  const n = a.next;
+  if (n.kind !== 'done') {
+    const said = n.kind === 'whole' ? L('the whole song', 'der ganze Song') : a.parts[n.part].label;
+    steps.push({
+      kind: 'new', short: L('New', 'Neu'),
+      as: `${song.title}: ${said}`,
+      title: `${song.title}: ${said}`,
+      detail: nextLabel(a),
+      minutes: 4, mode: 'learn', screen: hearFirst(withIntro('song', songLesson)),
+      params: n.kind === 'whole' ? [id, '3'] : [id, n.kind === 'learn' ? '1' : '2', lineParam(n.line)],
+    });
+  }
+  // 4. the encore: the game of tonight with this week's chords (the whole song is the encore once it is ready)
+  steps.push(
+    n.kind === 'done'
+      ? { kind: 'encore', short: L('Encore', 'Zugabe'), as: L('the encore', 'die Zugabe'), title: L(`Encore: ${song.title} with the band`, `Zugabe: ${song.title} mit Band`), detail: L('Start to end, recorded', 'Von vorn bis hinten, aufgenommen'), minutes: 3, mode: 'learn', screen: songLesson, params: [id, '3'] }
+      : { kind: 'encore', short: L('Encore', 'Zugabe'), as: L('the encore', 'die Zugabe'), title: L("Encore: tonight's game", 'Zugabe: die Nacht von heute'), detail: L("The game, in time, with this week's chords", 'Das Spiel, im Takt, mit den Akkorden der Woche'), minutes: 2, mode: 'nf', screen: withIntro('run', encoreRun), params: ['changes'] },
+  );
+  // 5. the barre chord, when it is a project of the player's: last and optional
+  const b = store.barre;
+  if (b && CHORDS[b.chord]) {
+    const day = Math.max(1, dayOf(now) - b.start + 1);
+    if (day <= 30)
+      steps.push({ kind: 'barre', short: L('Barre', 'Barré'), as: L('the barre project, if you like', 'das Barré-Projekt, wenn du magst'), title: L(`Barre project: ${CHORDS[b.chord].name}, day ${day} of 30`, `Barré-Projekt: ${CHORDS[b.chord].name}, Tag ${day} von 30`), detail: L('Two minutes, if you like', 'Zwei Minuten, wenn du magst'), minutes: 2, mode: 'learn', screen: withIntro('chord', chordCheck), params: [b.chord, 'stay'] });
+  }
+  return steps;
+}
+
 function basePlan(): Step[] {
+  if (store.settings.instrument === 'guitar') return weekPlan();
   if (store.settings.instrument === 'voice') {
     const song = currentSongToSing();
     // the first time the range is found, so that everything after it lies in the voice; later a held tone warms it up
@@ -403,7 +536,7 @@ export function nextAfter(inst: Instrument, id: string): { done: { id: string; t
 export function shortPlan(): Step[] {
   const all = plan();
   const id = currentId(store.settings.instrument);
-  const song = all.find((s) => s.params.length === 1 && s.params[0] === id) ?? all[all.length - 1];
+  const song = all.find((s) => s.kind === 'new') ?? all.find((s) => s.params.length === 1 && s.params[0] === id) ?? all[all.length - 1];
   return [all[0], song].map((s) => (s === song ? { ...s, minutes: Math.min(s.minutes, 4) } : s));
 }
 
@@ -413,6 +546,8 @@ export const session: Screen = (root, [how]) => {
   const steps = short ? shortPlan() : plan();
   const before: Record<string, SkillRecord> = JSON.parse(JSON.stringify(store.skills.data));
   const began = Date.now();
+  /** where the song of the week stood when the session began, for what the end says changed */
+  const arcBefore = inst === 'guitar' ? arcOf(inst, weekOf(inst)?.id ?? currentSong().id) : null;
   /** remembers the step reached, so that leaving by mistake costs nothing */
   const mark = (step: number): void => {
     // a short session is not resumed as the long one: its steps are others
@@ -479,6 +614,13 @@ export const session: Screen = (root, [how]) => {
       choices = songChoices(inst);
     }
     store.save();
+    // the guitar's day ends on the song of the week: what changed, then and now, and tomorrow
+    if (inst === 'guitar') {
+      stopKeys();
+      const mins = Math.max(1, Math.round((now - began) / 60000));
+      stopKeys = weekSummary(root, { inst, before: arcBefore, skillsBefore: before, minutes: mins, now });
+      return;
+    }
     const rows = Object.keys(store.skills.data)
       .map((key) => {
         const was = before[key];

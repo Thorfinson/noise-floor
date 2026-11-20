@@ -165,9 +165,9 @@ describe('both hands together on the piano', () => {
 describe('the player plans', () => {
   it('leaves out the steps the player left out, every day, and never all of them', () => {
     const all = fullPlan().map((s) => s.kind);
-    expect(all).toContain('changes');
-    setPlanned('changes', false);
-    expect(plan().map((s) => s.kind)).not.toContain('changes');
+    expect(all).toContain('focus');
+    setPlanned('focus', false);
+    expect(plan().map((s) => s.kind)).not.toContain('focus');
     for (const k of all) setPlanned(k, false);
     expect(plan().length).toBe(fullPlan().length);
     for (const k of all) setPlanned(k, true);

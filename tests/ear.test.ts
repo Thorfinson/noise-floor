@@ -11,6 +11,9 @@ import { skillLabel } from '../src/music/labels';
 import { learningPath } from '../src/music/path';
 import { earChords, earKey, motifSource, pickMotifs, seeded } from '../src/screens/ear';
 import { instrumentOf, plan } from '../src/screens/session';
+import { currentSong, pairKey, songProfile } from '../src/music/difficulty';
+import { shapeOf } from '../src/music/content';
+import { strumKey, strumPatternOf } from '../src/music/strums';
 
 afterEach(() => {
   store.skills.data = {};
@@ -62,10 +65,18 @@ describe('playing by ear', () => {
     const ear = learningPath('guitar').find((s) => s.id === 'ear')!;
     expect(ear.state).toBe('side');
     expect(ear.items.map((i) => i.href)).toEqual(['#/ear/motif', '#/ear/chords', '#/ear/sing']);
+    // on the guitar the ear is the focus of a day when the hands have what the song of the week asks:
+    // every chord rings and every change is at 30 a minute
+    const song = currentSong();
+    for (const c of songProfile(song).chords) store.skills.record('chord:' + c, 20, Date.now());
+    const seq = song.bars.map((b) => b.chord).filter((c): c is string => !!c);
+    for (let i = 1; i < seq.length; i++) if (seq[i] !== seq[i - 1]) store.skills.record(pairKey(shapeOf(seq[i - 1]).id, shapeOf(seq[i]).id, false), 40, Date.now());
+    const pattern = strumPatternOf(song);
+    if (pattern) store.skills.record(strumKey(pattern), 90, Date.now());
     const steps = plan();
     const at = steps.findIndex((s) => s.params[0] === 'motif' || s.params[0] === 'chords');
     expect(at).toBeGreaterThan(0);
     // it comes just before the song
-    expect(steps[at + 1].short).toMatch(/Song/);
+    expect(steps[at + 1].kind).toBe('new');
   });
 });
