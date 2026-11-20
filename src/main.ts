@@ -14,6 +14,7 @@ import { tuner } from './screens/tuner';
 import { pianoLesson, songLesson } from './screens/learn';
 import { chordCheck } from './screens/chordcheck';
 import { nfRun, nfStart } from './screens/nf';
+import { nightRun } from './screens/nightrun';
 import { importer, library } from './screens/library';
 import { basics, withIntro } from './screens/basics';
 import { learnPage } from './screens/skills';
@@ -83,6 +84,7 @@ const routes: Record<string, Route> = {
   import: { screen: importer, nav: true, mode: 'learn', audio: false },
   nf: { screen: nfStart, nav: true, mode: 'learn', audio: false },
   run: { screen: withIntro('run', nfRun), mode: 'nf', audio: true },
+  night: { screen: nightRun, mode: 'nf', audio: true },
   stride: { screen: withIntro('stride', stride), mode: 'nf', audio: true },
   // the voice
   range: { screen: withIntro('range', voiceRangeTest), mode: 'learn', audio: true },
@@ -332,6 +334,7 @@ function route(): void {
     import: L('Add your own', 'Eigenes hinzufügen'),
     nf: L('Games', 'Spiele'),
     run: L('Game', 'Spiel'),
+    night: L('Tonight', 'Die Nacht'),
     stride: L('Stepping stones', 'Trittsteine'),
     range: L('Your range', 'Dein Stimmumfang'),
     match: L('Match the tone', 'Töne treffen'),

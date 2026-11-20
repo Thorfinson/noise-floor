@@ -1,6 +1,6 @@
 /** Noise Floor: choosing a run, playing it, the boss, the upgrades between waves and the debrief. */
 import { engine } from '../audio/engine';
-import { L, num } from '../core/i18n';
+import { L, lang, num } from '../core/i18n';
 import { store, type RunRow, type RunSummary } from '../core/store';
 import { MuteGesture } from '../game/gesture';
 import { currentPiece, currentSong, currentSongToSing, pairKey } from '../music/difficulty';
@@ -11,6 +11,10 @@ import { placeFor, voiceEars, voiceRange } from './sing';
 import { CHORD_PAIRS, KEY_PAIRS, PIANO_PIECES, shapeOf, SONGS } from '../music/content';
 import { changeTip, chordName, CHORDS, keyTip, noteName, STRING_FULL, stringName, strumIs } from '../music/theory';
 import { $, cap, esc, go, hear, keys, learnRing, micMeter, pianoEars, type Screen } from '../ui/dom';
+import { armed, bossChord, menuOn, pickHint, pickMenu, pickState, slowly, STRUM, tenths } from './runkit';
+import { groovePlan, grooveRun } from './nightrun';
+import { grooveOf } from '../game/groove';
+import { nightDate, nightLog } from '../game/night';
 import { chordBox, keyboard, keyChord, keyRange, NF, NFX, type KeyMark } from '../ui/draw';
 import { hourOf, STORM, Watch } from '../ui/watch';
 import { practiceBar, setSimTarget } from '../ui/practice';
@@ -30,11 +34,7 @@ const NAMES: Record<RunType, string> = {
   get ssong() { return L('Song run', 'Songrunde'); },
 };
 const TYPES: RunType[] = ['fingers', 'changes', 'song', 'keys', 'piece', 'kchanges', 'sing', 'ssong'];
-const STRUM = ['Em', 'Am', 'C'];
-const KEYS = ['C', 'D', 'E'];
 
-// a menu is picked from the instrument on the guitar and the piano; a voice picks with the keys
-const menuOn = (): boolean => engine.running && store.settings.strumSelect && store.settings.instrument !== 'voice';
 /** The skill of keeping the beat in a pattern of Stepping stones, on the guitar, the piano or with the voice. */
 export const beatKey = (pattern: string, piano: boolean | 'voice'): string => `beat:${piano === 'voice' ? 'v.' : piano ? 'p.' : ''}${pattern}`;
 
@@ -43,109 +43,6 @@ const storedSpeed = (type: RunType): number => {
   const v = Number(store.speeds[type]);
   return Number.isFinite(v) ? Math.round(v) : 60;
 };
-/** Seconds to a tenth, written the way the language writes them: 6.2, 6,2; num() leaves out a tenth that is 0. */
-const tenths = (s: number): string => {
-  const t = Math.round(s * 10) / 10;
-  return num(t) + (Number.isInteger(t) ? L('.0', ',0') : '');
-};
-
-/**
- * Where the picture is only a backdrop (the menu, the page before a run and the one after it), what moves in
- * it drifts slowly: thirty frames a second show that as well as sixty, and spare the battery. Says whether a
- * frame is to be drawn.
- */
-function slowly(): (ts: number) => boolean {
-  let drawn = -Infinity;
-  return (ts) => {
-    if (ts - drawn < 1000 / 30 - 4) return false;
-    drawn = ts;
-    return true;
-  };
-}
-
-/** How to pick card i from the instrument. */
-const pickHint = (i: number, piano: boolean): string =>
-  menuOn()
-    ? piano
-      ? L(`Play ${KEYS[i]} or press ${i + 1}`, `Spiel ${KEYS[i]} oder drück ${i + 1}`)
-      : // the chord that picks the card, with its shape: nobody should have to know a chord to choose from a menu
-        `<svg class="pickfig" viewBox="0 0 96 104" role="img" aria-label="${L(`Chord diagram of ${STRUM[i]}`, `Griffbild von ${STRUM[i]}`)}">${chordBox(CHORDS[STRUM[i]], 14, 24, 68, NF, false, undefined, 15)}</svg><span>${L(`Strum ${STRUM[i]} or press ${i + 1}`, `Schlag ${STRUM[i]} an oder drück ${i + 1}`)}</span>`
-    : L(`Press ${i + 1}`, `Drück ${i + 1}`);
-
-/** Where a menu says whether it is listening to the instrument yet. */
-const pickState = (): string => (menuOn() ? `<p class="pickstate" id="pickstate" role="status" aria-live="polite"></p>` : '');
-
-/**
- * A menu chosen from the instrument listens only once the instrument has been quiet for a moment: notes
- * still ringing from a run, or played on after it, must not pick a card. Until then, and from then on, the
- * menu says what it is doing.
- */
-function armed(root: HTMLElement, pick: (i: number) => void, piano: boolean): { heard: (i: number) => void; stop: () => void } {
-  const shown = performance.now();
-  let last = shown;
-  let on = false;
-  const say = (): void => {
-    const el = root.querySelector<HTMLElement>('#pickstate');
-    if (!el) return;
-    el.classList.toggle('on', on);
-    el.textContent = on
-      ? piano
-        ? L('Listening: play C, D or E to choose, or press 1, 2, 3.', 'Hört zu: Spiel C, D oder E zum Wählen, oder drück 1, 2, 3.')
-        : L('Listening: strum Em, Am or C to choose, or press 1, 2, 3.', 'Hört zu: Schlag Em, Am oder C zum Wählen an, oder drück 1, 2, 3.')
-      : L('Let the instrument go quiet for a moment: then it chooses. The keys 1, 2, 3 choose at once.', 'Lass das Instrument einen Moment ruhen: dann wählt es. Die Tasten 1, 2, 3 wählen sofort.');
-  };
-  const timer = window.setInterval(() => {
-    const now = performance.now();
-    const ready = now - shown >= 1500 && now - last >= 1000;
-    if (ready !== on) {
-      on = ready;
-      say();
-    }
-  }, 100);
-  say();
-  return {
-    /** something was played: a card when it is listening and the sound picks one, otherwise the quiet starts again */
-    heard: (i) => {
-      if (on && i >= 0) pick(i);
-      else if (!on) last = performance.now();
-    },
-    stop: () => clearInterval(timer),
-  };
-}
-
-/** Lets a menu be operated from the instrument: strum Em, Am or C, or play C, D or E on the piano, for card 1, 2 or 3. */
-function pickMenu(root: HTMLElement, pick: (i: number) => void, piano: boolean): () => void {
-  if (!menuOn()) return () => undefined;
-  const gate = armed(root, pick, piano);
-  const stop = piano
-    ? hear(
-        root,
-        {
-          onNote: (e) => {
-            const i = [0, 2, 4].indexOf(e.midi % 12);
-            gate.heard(i >= 0 && e.conf > 0.7 && e.midi >= 48 && e.midi <= 84 ? i : -1);
-          },
-        },
-        pianoEars,
-      )
-    : hear(
-        root,
-        {
-          onChord: (e) => {
-            const i = e.best ? STRUM.indexOf(e.best) : -1;
-            gate.heard(i >= 0 && e.score > 0.8 && e.margin > 0.12 ? i : -1);
-          },
-        },
-        (l) => {
-          l.noteDetection = false;
-          l.chordCandidates = STRUM;
-        },
-      );
-  return () => {
-    gate.stop();
-    stop();
-  };
-}
 
 /**
  * The chords a run of chord changes may ask for: those that have rung clean in the chord check at least
@@ -214,25 +111,38 @@ export const nfStart: Screen = (root) => {
         { type: 'piece', tag: L('Piece', 'Stück'), name: L('Piece run', 'Stückrunde'), text: L(`${pool('piece').some((p) => p.kind === 'keys') ? 'Phrases' : 'The chord changes'} of ${currentPiece().title}, the weak ones more often.`, `${pool('piece').some((p) => p.kind === 'keys') ? 'Die Phrasen' : 'Die Akkordwechsel'} aus ${currentPiece().title}, die schwachen öfter.`) },
       ]
     : [
-        { type: 'fingers', tag: L('Fingers', 'Finger'), name: L('Finger gym', 'Fingertraining'), text: L('Spider, reverse and skip patterns at the fifth fret, one finger per fret. Trains reach and independence.', 'Spinnen-, Rückwärts- und Sprungmuster am fünften Bund, ein Finger pro Bund. Trainiert Spannweite und Unabhängigkeit.') },
-        { type: 'changes', tag: L('Changes', 'Wechsel'), name: L('Chord changes', 'Akkordwechsel'), text: L('Pairs of chords come at you. Every clean change is a hit, and your slow pairs come more often.', 'Akkordpaare kommen auf dich zu. Jeder saubere Wechsel ist ein Treffer, und deine langsamen Paare kommen öfter.') },
+        { type: 'fingers', tag: L('Fingers', 'Finger'), name: L('Finger gym', 'Fingertraining'), text: L('Spider and skip patterns at the fifth fret, one finger per fret.', 'Spinnen- und Sprungmuster am fünften Bund, ein Finger pro Bund.') },
+        { type: 'changes', tag: L('Changes', 'Wechsel'), name: L('Chord changes', 'Akkordwechsel'), text: L('Chords drift in on a groove: play one to strike it.', 'Akkorde treiben auf einem Groove heran: Spiel einen, um ihn zu treffen.') },
         { type: 'song', tag: L('Song', 'Song'), name: L('Song run', 'Songrunde'), text: L(`${pool('song').some((p) => p.kind === 'tab') ? 'Bars' : 'The chord changes'} of ${currentSong().title}, the weak ones more often.`, `${pool('song').some((p) => p.kind === 'tab') ? 'Die Takte' : 'Die Akkordwechsel'} aus ${currentSong().title}, die schwachen öfter.`) },
       ];
   const suggested = types.reduce((a, b) => (avgLevel(b.type) < avgLevel(a.type) ? b : a)).type;
+  // tonight's night comes first, on the guitar: the run of the day, the same all day
+  const plan = !piano && !voice ? groovePlan(true, now) : null;
+  const nightCard = plan
+    ? (() => {
+        const log = nightLog(store.progress, plan.today, 3);
+        const tonight = log.find((e) => e.day === plan.today);
+        const before = log.filter((e) => e.day !== plan.today).slice(0, 2);
+        const date = nightDate(plan.today, lang());
+        const groove = grooveOf(plan.song) ? L(`on the groove of ${plan.song.title}`, `auf dem Groove von ${plan.song.title}`) : L('on a groove of your changes', 'auf einem Groove deiner Wechsel');
+        return `<a class="card night-card" href="#/night" id="nightcard"><div class="night-card-text"><span class="k">${L('Tonight', 'Heute Nacht')} · ${esc(plan.rule!.name)}</span><h2>${L(`The night of ${date}`, `Die Nacht vom ${date}`)}</h2><p>${esc(plan.rule!.text)} ${esc(L(`Three waves ${groove}, about four minutes.`, `Drei Wellen ${groove}, etwa vier Minuten.`))}</p><span class="meta">${tonight ? L(`Best tonight: ${num(tonight.best)}`, `Bestwert heute: ${num(tonight.best)}`) : L('Not played yet tonight', 'Heute noch nicht gespielt')}${before.map((e) => ` · ${esc(nightDate(e.day, lang()))}: ${num(e.best)}`).join('')}</span></div><div class="night-card-go"><div class="night-card-chords" aria-label="${L('Its chords', 'Ihre Akkorde')}">${plan.chords.map((c) => `<b>${esc(chordName(c))}</b>`).join('')}</div><span class="night-card-key">${L('Play', 'Spielen')} <kbd>${L('Space', 'Leertaste')}</kbd></span></div></a>`;
+      })()
+    : '';
+  const grooveBpm = Number(store.speeds.groove) > 0 ? Math.round(Number(store.speeds.groove)) : 66;
   root.innerHTML = `<div class="page mid">
     <div>
       <p class="kick">${L(`Games · ${voice ? 'voice' : piano ? 'piano' : 'guitar'} · run ${store.runs.length + 1}`, `Spiele · ${voice ? 'Stimme' : piano ? 'Klavier' : 'Gitarre'} · Runde ${store.runs.length + 1}`)}</p>
       <h1>${L('Choose a game.', 'Wähl ein Spiel.')}</h1>
-      <p class="lede">${menuOn() ? L(`${piano ? 'Play the key' : 'Strum the chord'} on a card to start, or press its number.`, piano ? 'Spiel die Taste einer Karte, um zu starten, oder drück ihre Nummer.' : 'Schlag den Akkord einer Karte an, um zu starten, oder drück ihre Nummer.') : L(`Press ${types.map((_, i) => i + 1).join(', ')}, or click a card.`, `Drück ${types.map((_, i) => i + 1).join(', ')} oder klick eine Karte an.`)} ${L(`New ${piano ? 'pieces' : 'songs'} are learned in the calm Learn mode first. Runs drill what you already know.`, `Neue ${piano ? 'Stücke' : 'Songs'} lernst du zuerst in Ruhe im Modus „Lernen“. Runden trainieren, was du schon kannst.`)}${voice ? L(' Sing on “la”; any octave counts.', ' Sing auf „la“; jede Oktave zählt.') : ''}</p>${pickState()}
+      <p class="lede">${menuOn() ? L(`${piano ? 'Play the key' : 'Strum the chord'} on a card, or press its number.`, piano ? 'Spiel die Taste einer Karte, oder drück ihre Nummer.' : 'Schlag den Akkord einer Karte an, oder drück ihre Nummer.') : L(`Press ${types.map((_, i) => i + 1).join(', ')}, or click a card.`, `Drück ${types.map((_, i) => i + 1).join(', ')} oder klick eine Karte an.`)}${voice ? L(' Sing on “la”; any octave counts.', ' Sing auf „la“; jede Oktave zählt.') : ''}</p>${pickState()}
     </div>
-    <div class="cards${types.length >= 3 ? ' four' : ''}">${types
+    <div class="cards${types.length >= 3 ? ' four' : ''}">${nightCard}${types
       .map(
         (t, i) => `<a class="card${t.type === suggested ? ' sug' : ''}" href="#/run/${t.type}"><span class="k">${t.tag}${t.type === suggested ? L(' · suggested', ' · empfohlen') : ''}</span><h2>${t.name}</h2><p>${esc(t.text)}</p>
-        <span class="meta">${L(`Starts at ${storedSpeed(t.type)}% speed · weakest: ${esc(weakest(t.type))}`, `Beginnt bei ${storedSpeed(t.type)} % Tempo · am schwächsten: ${esc(weakest(t.type))}`)}</span><span class="pick">${pickHint(i, piano)}</span></a>`,
+        <span class="meta">${t.type === 'changes' ? L(`Starts at ${grooveBpm} bpm`, `Beginnt bei ${grooveBpm} bpm`) : L(`Starts at ${storedSpeed(t.type)}% speed`, `Beginnt bei ${storedSpeed(t.type)} % Tempo`)} · ${L(`weakest: ${esc(weakest(t.type))}`, `am schwächsten: ${esc(weakest(t.type))}`)}</span><span class="pick">${pickHint(i, piano)}</span></a>`,
       )
-      .join('')}<a class="card" href="#/stride"><span class="k">${L('Rhythm', 'Rhythmus')}</span><h2>${L('Stepping stones', 'Trittsteine')}</h2><p>${voice ? L('A wanderer with a lantern crosses the water on stones: one stone for every sung “ta”, in time with the click, on a note that changes every bar. Trains keeping the pulse and moving to the next note in time.', 'Ein Wanderer mit einer Laterne überquert das Wasser auf Steinen: ein Stein für jedes gesungene „ta“, im Takt mit dem Klick, auf einem Ton, der jeden Takt wechselt. Trainiert, den Puls zu halten und rechtzeitig zum nächsten Ton zu gehen.') : L(`A wanderer with a lantern crosses the water on stones: one stone for every ${piano ? 'chord' : 'strum'}, in time with the click. Trains keeping the pulse through a chord change.`, `Ein Wanderer mit einer Laterne überquert das Wasser auf Steinen: ein Stein für jeden ${piano ? 'Akkord' : 'Anschlag'}, im Takt mit dem Klick. Trainiert, den Puls über einen Akkordwechsel hinweg zu halten.`)}</p>
+      .join('')}<a class="card" href="#/stride"><span class="k">${L('Rhythm', 'Rhythmus')}</span><h2>${L('Stepping stones', 'Trittsteine')}</h2><p>${voice ? L('One sung “ta” on every stone, in time with the click; the note changes every bar.', 'Ein gesungenes „ta“ auf jeden Stein, im Takt mit dem Klick; der Ton wechselt jeden Takt.') : L(`One ${piano ? 'chord' : 'strum'} on every stone, in time with the click, through a chord change.`, `Ein ${piano ? 'Akkord' : 'Anschlag'} auf jeden Stein, im Takt mit dem Klick, über einen Akkordwechsel hinweg.`)}</p>
         <span class="meta">${L(`Four ${piano || voice ? 'rhythms' : 'strumming patterns'} · weakest: `, `Vier ${piano || voice ? 'Rhythmen' : 'Schlagmuster'} · am schwächsten: `)}${esc(PATTERNS.reduce((a, b) => (store.skills.level(beatKey(b.id, voice ? 'voice' : piano)) < store.skills.level(beatKey(a.id, voice ? 'voice' : piano)) ? b : a)).name)}</span><span class="pick"><span>${L(`Press ${types.length + 1}`, `Drück ${types.length + 1}`)}</span></span></a></div>
-    <div class="row">${menuOn() ? micMeter() : ''}<span class="note">${L(`<b>The runs are played at the lighthouse</b>, from sunset into the night. A full run ends with the Mute: ${voice ? 'a sung scale, one seal for each note' : piano ? 'a scale, one seal for each key' : 'a barre chord, one seal for each string'}.`, `<b>Die Runden werden am Leuchtturm gespielt</b>, vom Sonnenuntergang bis in die Nacht. Eine volle Runde endet mit der Stille: ${voice ? 'eine gesungene Tonleiter, ein Siegel für jeden Ton' : piano ? 'eine Tonleiter, ein Siegel für jede Taste' : 'ein Barré-Akkord, ein Siegel für jede Saite'}.`)}</span></div>
+    ${menuOn() ? `<div class="row">${micMeter()}</div>` : ''}
   </div>`;
   const pick = (i: number): void => {
     if (types[i]) go('/run/' + types[i].type);
@@ -251,7 +161,7 @@ export const nfStart: Screen = (root) => {
     scene.draw(null, ts / 1000, false);
   });
   const stopMenu = pickMenu(root, pick, piano);
-  const stopKeys = keys({ '1': () => pick(0), '2': () => pick(1), '3': () => (types[2] ? pick(2) : go('/stride')), '4': () => types.length >= 3 && go('/stride') });
+  const stopKeys = keys({ ' ': () => plan && go('/night'), '1': () => pick(0), '2': () => pick(1), '3': () => (types[2] ? pick(2) : go('/stride')), '4': () => types.length >= 3 && go('/stride') });
   return () => {
     cancelAnimationFrame(raf);
     stopMenu();
@@ -384,14 +294,10 @@ function consoleSvg(f: Foe, nx: Foe | null): string {
   return h;
 }
 
-/** The barre chord a run ends with: the small shape first, then the full one. */
-function bossChord(): string {
-  const ladder = store.settings.smallShapes ? ['F#m-easy', 'F#m', 'Bm-easy', 'Bm'] : ['F#m', 'Bm'];
-  return ladder.find((c) => store.skills.level('chord:' + c) < 4) ?? 'Bm';
-}
-
 export const nfRun: Screen = (root, [t, short, again], ctx) => {
   const type: RunType = TYPES.find((x) => x === t) ?? (store.settings.instrument === 'voice' ? 'sing' : store.settings.instrument === 'piano' ? 'keys' : 'song');
+  // the guitar's changes are played on a groove, with the band (screens/nightrun.ts)
+  if (type === 'changes') return grooveRun(root, ctx, { night: false, waves: Number(short) || 0, again: !!again });
   const piano = isPianoRun(type);
   const voice = isVoiceRun(type);
   // the first run of a kind starts slowly
@@ -493,40 +399,26 @@ export const nfRun: Screen = (root, [t, short, again], ctx) => {
                 : type === 'song'
               ? L(`Song run: ${currentSong().title}`, `Songrunde: ${currentSong().title}`)
               : L(`Piece run: ${currentPiece().title}`, `Stückrunde: ${currentPiece().title}`);
+    // one line: the first wave shows the rest
     const what = voice
-      ? [
-          L('You keep the light. Noise comes in over the sea toward the lamp, and each piece carries a short tune to sing.', 'Du hütest das Licht. Rauschen kommt über das Meer auf die Lampe zu, und jeder Fetzen trägt eine kurze Melodie zum Singen.'),
-          L('The tune of the piece nearest the lamp is shown large underneath, read left to right, higher notes higher. Sing its notes in order on “la” and hold each for a moment: every right one is a bolt of light, the last one bursts the piece.', 'Die Melodie des Fetzens, der der Lampe am nächsten ist, steht groß darunter, von links nach rechts gelesen, höhere Töne höher. Sing ihre Töne der Reihe nach auf „la“ und halte jeden kurz: Jeder richtige ist ein Lichtblitz, der letzte lässt den Fetzen platzen.'),
-          L('Any octave counts. A note held clearly elsewhere breaks your chain, nothing more. A piece that reaches the lamp dims it: three of those and the light is out.', 'Jede Oktave zählt. Ein Ton, der deutlich daneben gehalten wird, bricht deine Kette, mehr nicht. Ein Fetzen, der die Lampe erreicht, dämpft sie: drei davon, und das Licht ist aus.'),
-        ]
+      ? L('Sing the tune of the framed piece on “la” to strike it. Any octave counts.', 'Sing die Melodie des eingerahmten Teils auf „la“, um es zu treffen. Jede Oktave zählt.')
       : hasNotes
-      ? piano
-        ? [L('You keep the light. Noise comes in over the sea toward the lamp, and each piece carries a short phrase.', 'Du hütest das Licht. Rauschen kommt über das Meer auf die Lampe zu, und jeder Fetzen trägt eine kurze Phrase.'), L('The phrase of the piece nearest the lamp is shown large underneath, read left to right. Play its notes in order: every right one is a bolt of light, the last one bursts the piece.', 'Die Phrase des Fetzens, der der Lampe am nächsten ist, steht groß darunter, von links nach rechts gelesen. Spiel ihre Noten der Reihe nach: Jede richtige ist ein Lichtblitz, die letzte lässt den Fetzen platzen.'), L('The first wave sends one piece at a time. A wrong key breaks your chain, nothing more. A piece that reaches the lamp dims it: three of those and the light is out.', 'Die erste Welle schickt einen Fetzen nach dem anderen. Eine falsche Taste bricht deine Kette, mehr nicht. Ein Fetzen, der die Lampe erreicht, dämpft sie: drei davon, und das Licht ist aus.')]
-        : [L('You keep the light. Noise comes in over the sea toward the lamp, and each piece carries a short phrase as tab.', 'Du hütest das Licht. Rauschen kommt über das Meer auf die Lampe zu, und jeder Fetzen trägt eine kurze Phrase als Tabulatur.'), L('The phrase of the piece nearest the lamp is shown large underneath, read left to right. Play its notes in order: every right one is a bolt of light, the last one bursts the piece.', 'Die Phrase des Fetzens, der der Lampe am nächsten ist, steht groß darunter, von links nach rechts gelesen. Spiel ihre Noten der Reihe nach: Jede richtige ist ein Lichtblitz, die letzte lässt den Fetzen platzen.'), L('The first wave sends one piece at a time. A wrong note breaks your chain, nothing more. A piece that reaches the lamp dims it: three of those and the light is out.', 'Die erste Welle schickt einen Fetzen nach dem anderen. Ein falscher Ton bricht deine Kette, mehr nicht. Ein Fetzen, der die Lampe erreicht, dämpft sie: drei davon, und das Licht ist aus.')]
-      : [L('You keep the light. Noise comes in over the sea toward the lamp. Each piece carries a change between two chords, shown large underneath.', 'Du hütest das Licht. Rauschen kommt über das Meer auf die Lampe zu. Jeder Fetzen trägt einen Wechsel zwischen zwei Akkorden, groß darunter gezeigt.'), L(`${piano ? 'Play the first chord (all its keys at once)' : 'Strum the first chord (one unhurried stroke down)'}, then the second, and back: every clean change is a bolt of light, the fourth bursts the piece.`, `${piano ? 'Spiel den ersten Akkord (alle seine Tasten zugleich)' : 'Schlag den ersten Akkord an (ein ruhiger Abschlag)'}, dann den zweiten, und zurück: Jeder saubere Wechsel ist ein Lichtblitz, der vierte lässt den Fetzen platzen.`), L('The first wave sends one piece at a time. A wrong chord only breaks your chain; a piece that reaches the lamp dims it, and three of those put the light out.', 'Die erste Welle schickt einen Fetzen nach dem anderen. Ein falscher Akkord bricht nur deine Kette; ein Fetzen, der die Lampe erreicht, dämpft sie, und drei davon löschen das Licht.')];
-    // the changes this run can send, weakest first: how each is made, and where the player stands with it
-    const changes = phrases
-      .filter((p) => p.kind === 'chg')
-      .sort((x, y) => store.skills.level(x.key) - store.skills.level(y.key))
-      .slice(0, 3)
-      .map((p) => {
-        const best = store.skills.get(p.key)?.best;
-        const next = store.skills.next(p.key);
-        return { label: p.label, tip: p.piano ? keyTip(p.pair![0], p.pair![1]) : changeTip(shapeOf(p.pair![0]), shapeOf(p.pair![1])), mark: best ? L(`Your best: ${Math.round(best)} a minute${next ? `, next level at ${next.value}` : ''}.`, `Dein Bestwert: ${Math.round(best)} pro Minute${next ? `, nächste Stufe bei ${next.value}` : ''}.`) : L('Not measured yet. 30 a minute is enough for a song.', 'Noch nicht gemessen. 30 pro Minute reichen für einen Song.') };
-      });
+        ? piano
+          ? L('Play the keys of the framed piece, left to right, to strike it.', 'Spiel die Tasten des eingerahmten Teils von links nach rechts, um es zu treffen.')
+          : L('Play the tab of the framed piece, left to right, to strike it.', 'Spiel die Tabulatur des eingerahmten Teils von links nach rechts, um es zu treffen.')
+        : L(`${piano ? 'Play' : 'Strum'} its two chords in turn, there and back, to strike a piece.`, `${piano ? 'Spiel' : 'Schlag'} seine zwei Akkorde abwechselnd${piano ? '' : ' an'}, hin und zurück, um ein Teil zu treffen.`);
     const start = menuOn() ? (hasNotes ? L('or play any note', 'oder spiel irgendeinen Ton') : L(`or ${piano ? 'play' : 'strum'} ${names.length > 1 ? 'one of these chords' : names[0]}`, piano ? `oder spiel ${names.length > 1 ? 'einen dieser Akkorde' : names[0]}` : `oder schlag ${names.length > 1 ? 'einen dieser Akkorde' : names[0]} an`)) : '';
     mid.innerHTML = `<div class="page mid" id="brief">
-        <div><p class="kick">${ctx ? ctx.label + ' · ' : ''}${NAMES[type]} · ${L(`${run.waves} ${run.waves === 1 ? 'wave' : 'waves'}${run.boss || !ctx ? ', then the Mute' : ''} · from sunset into the night`, `${run.waves} ${run.waves === 1 ? 'Welle' : 'Wellen'}${run.boss || !ctx ? ', dann die Stille' : ''} · vom Sonnenuntergang bis in die Nacht`)}</p><h1>${esc(title)}</h1></div>
+        <div><p class="kick">${ctx ? ctx.label + ' · ' : ''}${NAMES[type]} · ${L(`${run.waves} ${run.waves === 1 ? 'wave' : 'waves'}${run.boss ? ', then the Mute' : ''}`, `${run.waves} ${run.waves === 1 ? 'Welle' : 'Wellen'}${run.boss ? ', dann die Stille' : ''}`)}</p><h1>${esc(title)}</h1></div>
         <div class="${runChords.length ? 'brief2' : 'side'}">
           ${runChords.length ? `<div class="shapes${runChords.length > 3 ? ' many' : ''}${piano ? ' keysfig' : ''}" role="list" aria-label="${L('The chords of this run', 'Die Akkorde dieser Runde')}">${runChords.map((c) => (piano ? `<figure role="listitem"><svg viewBox="0 0 220 150" role="img" aria-label="${L(`The keys of ${chordName(c, true)}`, `Die Tasten von ${chordName(c, true)}`)}">${keyChord(c, NF, { x: 4, y: 8, w: 212, h: 134 }, false, runChords)}</svg><figcaption>${chordName(c, true)}</figcaption></figure>` : `<figure role="listitem"><svg viewBox="0 0 170 190" role="img" aria-label="${L(`Chord diagram of ${CHORDS[c].name}`, `Griffbild von ${CHORDS[c].name}`)}">${chordBox(CHORDS[c], 30, 34, 110, NF, false, undefined, 28)}</svg><figcaption>${CHORDS[c].name}</figcaption></figure>`)).join('')}</div>` : ''}
           <div class="side">
-            <ol class="how">${what.map((w) => `<li>${w}</li>`).join('')}</ol>
-            ${changes.length ? `<ul class="tips" aria-label="${L('The changes of this run', 'Die Wechsel dieser Runde')}">${changes.map((c) => `<li><b>${esc(c.label)}</b>${esc(c.tip)} <span>${esc(c.mark)}</span></li>`).join('')}</ul>` : ''}
+            <p class="lede">${what}</p>
             <div class="row"><button class="btn primary big" id="begin">${L('Start', 'Starten')} <kbd>${L('Space', 'Leertaste')}</kbd></button><span class="note">${start ? L(cap(start) + ' to start. ', cap(start) + ', um zu starten. ') : ''}${L('It counts to four first.', 'Erst wird bis vier gezählt.')}</span></div>
           </div>
         </div>
       </div>`;
-    $('#hints', root).innerHTML = `${voice ? `<span><b>${L('Voice', 'Stimme')}</b>${L('on “la”, at a comfortable loudness; any octave counts', 'auf „la“, in angenehmer Lautstärke; jede Oktave zählt')}</span>` : ''}<span><b>${L('Speed', 'Tempo')}</b>${L(`starts at ${Math.round(run.speed)}% and follows your pace: faster when pieces are gone early, slower when they get near the lamp`, `beginnt bei ${Math.round(run.speed)} % und passt sich dir an: schneller, wenn Fetzen früh verschwinden, langsamer, wenn sie der Lampe nahe kommen`)}</span>${runChords.length ? `<span><b>${L('Fingers', 'Finger')}</b>${piano ? L('1 thumb · 2 index · 3 middle · 4 ring · 5 little finger', '1 Daumen · 2 Zeigefinger · 3 Mittelfinger · 4 Ringfinger · 5 kleiner Finger') : L('1 index · 2 middle · 3 ring · 4 little finger', '1 Zeigefinger · 2 Mittelfinger · 3 Ringfinger · 4 kleiner Finger')}</span>` : ''}`;
+    $('#hints', root).innerHTML = '';
     $('#begin', root).onclick = begin;
     // nothing to pause yet
     $('#pause', root).hidden = true;
@@ -580,7 +472,7 @@ export const nfRun: Screen = (root, [t, short, again], ctx) => {
       scene.over = $('#arena', root);
       scene.aim(hourOf(run.wave, run.waves) + hourShift);
       const perks = [...run.perks].map((id) => ({ grid: L('even timing ×2', 'gleichmäßiges Timing ×2'), ring: L('ringing notes ×2', 'klingende Noten ×2'), chain: L('chain to ×12', 'Kette bis ×12'), slow: L('heavy air', 'schwere Luft'), shield: L('spare wick', 'Ersatzdocht'), burst: L('clean sweep', 'reiner Tisch'), change: L('quick change ×2', 'schneller Wechsel ×2') })[id]).filter(Boolean);
-      $('#hints', root).innerHTML = `<span><b>${L('Switch target', 'Ziel wechseln')}</b>${voice ? L('sing the first note of another phrase', 'sing den ersten Ton einer anderen Phrase') : L(`play the first ${hasNotes ? 'note' : 'chord'} of another phrase`, `spiel ${hasNotes ? 'den ersten Ton' : 'den ersten Akkord'} einer anderen Phrase`)}</span><span><b>${L('Pause', 'Pause')}</b>${L(`Space${mutePause ? ', or hit the muted strings twice and stop' : ''}`, `Leertaste${mutePause ? ', oder schlag zweimal auf die abgedämpften Saiten und halte inne' : ''}`)}</span><span><b>${L('Speed', 'Tempo')}</b><span id="speed"></span></span>${perks.length ? `<span><b>${L('Upgrades', 'Upgrades')}</b>${perks.join(' · ')}</span>` : voice ? `<span><b>${L('Voice', 'Stimme')}</b>${L('on “la”; any octave counts', 'auf „la“; jede Oktave zählt')}</span>` : piano ? `<span><b>${L('Fingers', 'Finger')}</b>${L('1 thumb · 2 index · 3 middle · 4 ring · 5 little finger', '1 Daumen · 2 Zeigefinger · 3 Mittelfinger · 4 Ringfinger · 5 kleiner Finger')}</span>` : type === 'fingers' ? '' : `<span><b>${L('Fingers', 'Finger')}</b>${L('1 index · 2 middle · 3 ring · 4 little finger', '1 Zeigefinger · 2 Mittelfinger · 3 Ringfinger · 4 kleiner Finger')}</span>`}`;
+      $('#hints', root).innerHTML = `<span><b>${L('Pause', 'Pause')}</b>${L(`Space${mutePause ? ' or two muted hits' : ''}`, `Leertaste${mutePause ? ' oder zwei gedämpfte Anschläge' : ''}`)}</span>${perks.length ? `<span><b>${L('Upgrades', 'Upgrades')}</b>${perks.join(' · ')}</span>` : ''}`;
     } else if (view === 'boss') {
       const b = run.boss!;
       mid.innerHTML = `<div class="arena" id="boss" aria-label="${L(`The Mute: a black disc over the sea, held shut by a ring of seals, one for each ${voice ? 'note of the scale' : piano ? 'key of the scale' : 'string of the chord'}`, `Die Stille: eine schwarze Scheibe über dem Meer, verschlossen von einem Ring aus Siegeln, ${voice ? 'eines für jeden Ton der Tonleiter' : piano ? 'eines für jede Taste der Tonleiter' : 'eines für jede Saite des Akkords'}`)}"><div class="banner" id="banner" hidden></div></div>
@@ -593,10 +485,9 @@ export const nfRun: Screen = (root, [t, short, again], ctx) => {
       drawBoss();
     } else if (view === 'perk') {
       scene.over = null;
-      mid.innerHTML = `<div class="page mid"><div><p class="kick">${L(`Wave ${run.wave} cleared`, `Welle ${run.wave} geschafft`)}</p><h1>${L('Pick one upgrade.', 'Wähl ein Upgrade.')}</h1><p class="lede">${menuOn() ? L(`${piano ? 'Play the key' : 'Strum the chord'} on a card to take it, or press its number.`, piano ? 'Spiel die Taste einer Karte, um sie zu nehmen, oder drück ihre Nummer.' : 'Schlag den Akkord einer Karte an, um sie zu nehmen, oder drück ihre Nummer.') : L('Press 1, 2 or 3.', 'Drück 1, 2 oder 3.')}</p>${pickState()}</div>
-        <dl class="stats"><div><dt>${L('Score', 'Punkte')}</dt><dd>${num(run.score)}</dd></div><div><dt>${L('Best chain', 'Beste Kette')}</dt><dd>×${run.bestChain}</dd></div><div><dt>${L('Speed', 'Tempo')}</dt><dd>${Math.round(run.speed)}%</dd></div><div><dt>${L('Lamp', 'Lampe')}</dt><dd>${run.integrity}/${run.maxIntegrity}</dd></div></dl>
-        <div class="cards">${run.offered.map((p, i) => `<button class="card" data-perk="${p.id}"><span class="k">${p.tag}</span><h2>${p.name}</h2><p>${p.text}</p><span class="pick">${pickHint(i, piano)}</span></button>`).join('')}</div></div>`;
-      $('#hints', root).innerHTML = `<span><b>${L('The run adapts', 'Die Runde passt sich an')}</b>${L('phrases you are slow on come back more often', 'Phrasen, bei denen du langsam bist, kommen öfter wieder')}</span>`;
+      mid.innerHTML = `<div class="page mid"><div><p class="kick">${L(`Wave ${run.wave} of ${run.waves} cleared`, `Welle ${run.wave} von ${run.waves} geschafft`)}</p><h1>${L('Pick one.', 'Wähl eins.')}</h1>${pickState()}</div>
+        <div class="cards">${run.offered.map((p, i) => `<button class="card" data-perk="${p.id}"><h2>${p.name}</h2><p>${p.text}</p><span class="pick">${pickHint(i, piano)}</span></button>`).join('')}</div></div>`;
+      $('#hints', root).innerHTML = '';
       const pick = (i: number): void => {
         if (run.offered[i]) run.choosePerk(run.offered[i].id);
       };
@@ -660,7 +551,7 @@ export const nfRun: Screen = (root, [t, short, again], ctx) => {
       conShown = shown;
       $('#con', root).innerHTML = l ? consoleSvg(l, run.nextUp()) : `<text x="600" y="120" class="ins" text-anchor="middle" style="fill:${NF.muted}">${L(`Wave ${run.wave}: incoming`, `Welle ${run.wave}: im Anflug`)}</text>`;
     }
-    $('#speed', root).textContent = L(`${Math.round(run.speed)}%, follows your pace`, `${Math.round(run.speed)} %, passt sich dir an`);
+
     // for whoever watches from outside: how far the nearest piece has come, 0 at the edge, 1 at the lamp
     canvas.dataset.near = l ? (l.y / LAND_Y).toFixed(3) : '';
     const p = l?.phrase;
@@ -740,7 +631,7 @@ export const nfRun: Screen = (root, [t, short, again], ctx) => {
     store.save();
   }
 
-  /** What the run made the player play, and how it went. */
+  /** What the run made the player play, and how it went: one sentence, three gains, the way on; the table behind "Details". */
   function debrief(): void {
     if (debriefed || !summary) return;
     debriefed = true;
@@ -751,11 +642,26 @@ export const nfRun: Screen = (root, [t, short, again], ctx) => {
     const b: Boss | null = run.boss;
     const weak = rows.filter((r) => r.cleared < r.sent).sort((a, c) => a.cleared / a.sent - c.cleared / c.sent)[0] ?? rows.slice().sort((a, c) => c.avg - a.avg)[0];
     const unit = hasNotes ? (hasChords ? 's' : L('s per phrase', 's pro Phrase')) : L('s per change', 's pro Wechsel');
+    const head = run.state === 'over' ? L(`The light went out in wave ${run.wave}: ${num(run.score)} points.`, `Das Licht ging in Welle ${run.wave} aus: ${num(run.score)} Punkte.`) : L(`The light held: ${num(run.score)} points.`, `Das Licht hat gehalten: ${num(run.score)} Punkte.`);
+    const sent = rows.reduce((n, r) => n + r.sent, 0);
+    const cleared = rows.reduce((n, r) => n + r.cleared, 0);
+    const what = voice ? L('notes', 'Töne') : piano ? L('keys', 'Tasten') : L('strings', 'Saiten');
+    const gains = [
+      ...ups.slice(0, 1).map((u) => u + '.'),
+      ...(previous && run.score >= (store.best[type] ?? 0) ? [L('Your best run of this kind so far.', 'Deine beste Runde dieser Art bisher.')] : []),
+      ...(b && b.startT >= 0 ? [L(`The Mute: ${b.results.filter((r) => r === 'clean').length} of ${b.steps.length} ${what} clean.`, `Die Stille: ${b.results.filter((r) => r === 'clean').length} von ${b.steps.length} ${what} sauber.`)] : []),
+      ...(sent ? [L(`${cleared} of ${sent} pieces struck.`, `${cleared} von ${sent} Teilen getroffen.`)] : []),
+      ...(weak ? [L(`Next time more of ${weak.label}, at ${storedSpeed(type)}% speed.`, `Nächstes Mal mehr von ${weak.label}, bei ${storedSpeed(type)} % Tempo.`)] : []),
+    ];
     mid.innerHTML = `<div class="page mid">
-      <div><p class="kick">${NAMES[type]} · ${run.state === 'over' ? L(`over at wave ${run.wave} of ${run.waves}`, `vorbei in Welle ${run.wave} von ${run.waves}`) : L('all waves cleared', 'alle Wellen geschafft')} · ${Math.max(1, Math.round((now - began) / 60000))} min</p>
-        <h1>${L(`${num(run.score)} points. Best: ${num(store.best[type])}.`, `${num(run.score)} Punkte. Bestwert: ${num(store.best[type])}.`)}</h1>
-        <p class="lede">${L('What the run made you play, and how it went.', 'Was die Runde dich spielen ließ, und wie es lief.')}</p></div>
-      <div class="scroll"><table><thead><tr><th>${L('Phrase', 'Phrase')}</th><th>${L('Level', 'Stufe')}</th><th class="n">${L('Sent', 'Geschickt')}</th><th class="n">${L('Cleared', 'Geschafft')}</th><th class="n">${L(`Avg ${unit}`, `Schnitt ${unit}`)}</th><th class="n">${L('vs last run', 'vs. letzte Runde')}</th></tr></thead><tbody>
+      <div><p class="kick">${NAMES[type]} · ${Math.max(1, Math.round((now - began) / 60000))} min</p>
+        <h1>${head}</h1></div>
+      <ul class="night-gains">${gains
+        .slice(0, 3)
+        .map((g) => `<li>${esc(g)}</li>`)
+        .join('')}</ul>
+      <div class="row">${ctx ? `<button class="btn primary" id="rerun">${L('Next step', 'Weiter')} <kbd>${L('Space', 'Leertaste')}</kbd></button><span class="note">${L(`Next: ${esc(ctx.after)}.`, `Als Nächstes: ${esc(ctx.after)}.`)}</span>` : `<button class="btn primary" id="rerun">${L('Again', 'Nochmal')} <kbd>${L('Space', 'Leertaste')}</kbd></button><a class="btn" id="onward" href="#/nf">${L('Go on', 'Weiter')}</a>`}</div>
+      <details class="night-more"><summary>${L('Details', 'Details')}</summary><div class="scroll"><table><thead><tr><th>${L('Phrase', 'Phrase')}</th><th>${L('Level', 'Stufe')}</th><th class="n">${L('Sent', 'Geschickt')}</th><th class="n">${L('Cleared', 'Geschafft')}</th><th class="n">${L(`Avg ${unit}`, `Schnitt ${unit}`)}</th><th class="n">${L('vs last run', 'vs. letzte Runde')}</th></tr></thead><tbody>
         ${rows
           .map((r) => {
             const old = previous?.rows.find((o) => o.key === r.key);
@@ -764,10 +670,7 @@ export const nfRun: Screen = (root, [t, short, again], ctx) => {
           })
           .join('')}
         ${b ? `<tr><td>${L('The Mute', 'Die Stille')} · ${b.name}</td><td>${pips(store.skills.level(b.key))}</td><td class="n">1</td><td class="n">${L(`${b.results.filter((r) => r === 'clean').length} of ${b.steps.length} ${voice ? 'notes' : piano ? 'keys' : 'strings'}`, `${b.results.filter((r) => r === 'clean').length} von ${b.steps.length} ${voice ? 'Tönen' : piano ? 'Tasten' : 'Saiten'}`)}</td><td class="n">${b.endT >= 0 ? tenths(b.endT - b.startT) + ' s' : '–'}</td><td class="n">–</td></tr>` : ''}
-      </tbody></table></div>
-      ${ups.length ? `<p class="note"><b>${L('Levels gained:', 'Neue Stufen:')}</b> ${ups.map(esc).join(' · ')}</p>` : ''}
-      <p class="note">${L(`<b>Next run</b> starts at ${storedSpeed(type)}% speed${weak ? ` and sends more of ${esc(weak.label)}` : ''}.`, `<b>Die nächste Runde</b> beginnt bei ${storedSpeed(type)} % Tempo${weak ? ` und schickt mehr von ${esc(weak.label)}` : ''}.`)}</p>
-      <div class="row">${ctx ? `<button class="btn primary" id="rerun">${L('Next step', 'Nächster Schritt')} <kbd>${L('Space', 'Leertaste')}</kbd></button><span class="note">${L(`Next: ${esc(ctx.after)}.`, `Als Nächstes: ${esc(ctx.after)}.`)}</span>` : `<button class="btn primary" id="rerun">${L('Run again', 'Nochmal')} <kbd>${L('Space', 'Leertaste')}</kbd></button><a class="btn" href="#/nf">${L('Other run', 'Andere Runde')}</a><a class="btn quiet" href="#/">${L('Stop for today', 'Für heute aufhören')}</a>`}</div>
+      </tbody></table></div></details>
     </div>`;
     $('#hints', root).innerHTML = '';
     $('#pause', root).hidden = true;

@@ -33,6 +33,7 @@ import { earTraining, motifSource } from './ear';
 import { weekLine } from './habit';
 import { strumTrainer } from './strum';
 import { groove } from './groove';
+import { nightRun } from './nightrun';
 import { weekSummary } from './today';
 import { arcOf, lineParam, nextLabel, weekOf, type Arc } from '../music/week';
 import { pairKey } from '../music/difficulty';
@@ -409,8 +410,8 @@ export function focusStep(song: Song, a: Arc): Step | null {
   };
 }
 
-/** The game the encore plays: tonight's run where there is one, otherwise the changes run. */
-const encoreRun: Screen = (root, params, ctx) => nfRun(root, params, ctx);
+/** The game the encore plays: tonight's night, the same all day, with this week's chords. */
+const encoreRun: Screen = (root, _params, ctx) => nightRun(root, [], ctx);
 
 /** The guitar's day around the song of the week: warm up, one focus, the next part of the song, an encore. */
 export function weekPlan(now = Date.now()): Step[] {
@@ -451,7 +452,7 @@ export function weekPlan(now = Date.now()): Step[] {
   steps.push(
     n.kind === 'done'
       ? { kind: 'encore', short: L('Encore', 'Zugabe'), as: L('the encore', 'die Zugabe'), title: L(`Encore: ${song.title} with the band`, `Zugabe: ${song.title} mit Band`), detail: L('Start to end, recorded', 'Von vorn bis hinten, aufgenommen'), minutes: 3, mode: 'learn', screen: songLesson, params: [id, '3'] }
-      : { kind: 'encore', short: L('Encore', 'Zugabe'), as: L('the encore', 'die Zugabe'), title: L("Encore: tonight's game", 'Zugabe: die Nacht von heute'), detail: L("The game, in time, with this week's chords", 'Das Spiel, im Takt, mit den Akkorden der Woche'), minutes: 2, mode: 'nf', screen: withIntro('run', encoreRun), params: ['changes'] },
+      : { kind: 'encore', short: L('Encore', 'Zugabe'), as: L('the encore', 'die Zugabe'), title: L("Encore: tonight's game", 'Zugabe: die Nacht von heute'), detail: L("The game, in time, with this week's chords", 'Das Spiel, im Takt, mit den Akkorden der Woche'), minutes: 4, mode: 'nf', screen: withIntro('run', encoreRun), params: ['changes'] },
   );
   // 5. the barre chord, when it is a project of the player's: last and optional
   const b = store.barre;
