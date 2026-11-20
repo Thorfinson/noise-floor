@@ -150,6 +150,28 @@ export interface RunSummary {
   rows: RunRow[];
 }
 
+/** One thing played in a kept lick of Freestyle: a note (string and fret), a hit on muted strings, or a strummed chord. */
+export interface LickNote {
+  kind: 'note' | 'chk' | 'stab';
+  /** seconds from the first */
+  d: number;
+  s?: number;
+  f?: number;
+  /** hammered on or pulled off: not plucked */
+  slur?: boolean;
+  chord?: string;
+}
+
+/** A line of Freestyle the player kept: as tab, with its points and tricks. Its sound is a take of id (core/takes.ts). */
+export interface Lick {
+  id: string;
+  t: number;
+  spot: string;
+  total: number;
+  tricks: string[];
+  notes: LickNote[];
+}
+
 /** The song of the week: which, and the day it was chosen (days counted as in core/days.ts). */
 export interface WeekState {
   id: string;
@@ -186,6 +208,8 @@ interface Saved {
   weeks: Partial<Record<Instrument, WeekState>>;
   /** the barre chord as a project of its own: two minutes a day, and how many strings rang on each day */
   barre: BarreProject | null;
+  /** the lines of Freestyle the player kept, newest first */
+  licks: Lick[];
   /** when this was saved, to tell which of two copies (the browser's, a progress file's) is newer */
   savedAt: number;
 }
@@ -332,6 +356,8 @@ const takeMeta: Check<TakeMeta> = (v) =>
         bars: Array.isArray(v.bars) ? v.bars.filter(isObj).map((b) => ({ bar: num0(b.bar), from: num0(b.from), to: num0(b.to), clean: b.clean === true })) : [],
       }
     : undefined;
+const lickNote: Check<LickNote> = shape<LickNote>({ kind: oneOf('note', 'chk', 'stab'), d: within(0, 600), s: within(0, 5), f: within(0, 30), slur: bool, chord: id }, ['kind', 'd']);
+const lick: Check<Lick> = all<Lick>({ id, t: num, spot: id, total: within(0, 1e9), tricks: list(id), notes: list(lickNote) });
 const perInstrument = <T>(c: Check<T>): Check<Partial<Record<Instrument, T>>> => shape<Partial<Record<Instrument, T>>>({ guitar: c, piano: c, voice: c });
 const time: Check<string> = (v) => (typeof v === 'string' && /^(\d{1,2}:\d{2}(:\d{2})?)?$/.test(v) ? v : undefined);
 const FIELDS: { [K in keyof Saved]-?: Check<Saved[K]> } = {
@@ -358,10 +384,11 @@ const FIELDS: { [K in keyof Saved]-?: Check<Saved[K]> } = {
   planOff: perInstrument(list(str)),
   weeks: perInstrument(all<WeekState>({ id, start: num })),
   barre: (v) => (v === null ? null : all<BarreProject>({ chord: str, start: num, rings: dict(within(0, 6)) })(v)),
+  licks: list(lick),
   savedAt: num,
 };
 /** What is kept when nothing was saved yet. */
-const EMPTY = (): Saved => ({ settings: { ...DEFAULTS }, skills: {}, speeds: {}, best: {}, runs: [], sessions: [], progress: {}, songs: [], pieces: [], current: {}, reviews: {}, favs: [], recent: {}, practice: {}, plan: null, ratings: [], takes: {}, planOff: {}, weeks: {}, barre: null, savedAt: 0 });
+const EMPTY = (): Saved => ({ settings: { ...DEFAULTS }, skills: {}, speeds: {}, best: {}, runs: [], sessions: [], progress: {}, songs: [], pieces: [], current: {}, reviews: {}, favs: [], recent: {}, practice: {}, plan: null, ratings: [], takes: {}, planOff: {}, weeks: {}, barre: null, licks: [], savedAt: 0 });
 
 /** Saved data checked field by field: every field that passes, defaults for the others, and the names of those that failed. */
 function checkSaved(raw: unknown): { saved: Saved; failed: string[] } {
@@ -408,6 +435,8 @@ export class Store {
   planOff!: Partial<Record<Instrument, string[]>>;
   weeks!: Partial<Record<Instrument, WeekState>>;
   barre!: BarreProject | null;
+  /** the lines of Freestyle the player kept, newest first (their sound is kept as takes) */
+  licks!: Lick[];
   /** when what is held was last saved (ms) */
   savedAt!: number;
   /** called after every save: a progress file of the player's is written then (src/core/progressfile.ts) */
@@ -460,6 +489,7 @@ export class Store {
     this.planOff = saved.planOff;
     this.weeks = saved.weeks;
     this.barre = saved.barre;
+    this.licks = saved.licks;
     this.savedAt = saved.savedAt;
     return failed;
   }
@@ -569,7 +599,7 @@ export class Store {
   }
 
   private snapshot(): Saved {
-    return { settings: this.settings, skills: this.skills.data, speeds: this.speeds, best: this.best, runs: this.runs.slice(-40), sessions: this.sessions.slice(-400), progress: this.progress, songs: this.songs, pieces: this.pieces, current: this.current, reviews: this.reviews, favs: this.favs, recent: this.recent, practice: this.practice, plan: this.plan, ratings: this.ratings.slice(-30), takes: this.takes, planOff: this.planOff, weeks: this.weeks, barre: this.barre, savedAt: this.savedAt };
+    return { settings: this.settings, skills: this.skills.data, speeds: this.speeds, best: this.best, runs: this.runs.slice(-40), sessions: this.sessions.slice(-400), progress: this.progress, songs: this.songs, pieces: this.pieces, current: this.current, reviews: this.reviews, favs: this.favs, recent: this.recent, practice: this.practice, plan: this.plan, ratings: this.ratings.slice(-30), takes: this.takes, planOff: this.planOff, weeks: this.weeks, barre: this.barre, licks: this.licks.slice(0, 30), savedAt: this.savedAt };
   }
 
   save(): void {

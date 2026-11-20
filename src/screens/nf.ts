@@ -128,6 +128,12 @@ export const nfStart: Screen = (root) => {
         return `<a class="card night-card" href="#/night" id="nightcard"><div class="night-card-text"><span class="k">${L('Tonight', 'Heute Nacht')} · ${esc(plan.rule!.name)}</span><h2>${L(`The night of ${date}`, `Die Nacht vom ${date}`)}</h2><p>${esc(plan.rule!.text)} ${esc(L(`Three waves ${groove}, about four minutes.`, `Drei Wellen ${groove}, etwa vier Minuten.`))}</p><span class="meta">${tonight ? L(`Best tonight: ${num(tonight.best)}`, `Bestwert heute: ${num(tonight.best)}`) : L('Not played yet tonight', 'Heute noch nicht gespielt')}${before.map((e) => ` · ${esc(nightDate(e.day, lang()))}: ${num(e.best)}`).join('')}</span></div><div class="night-card-go"><div class="night-card-chords" aria-label="${L('Its chords', 'Ihre Akkorde')}">${plan.chords.map((c) => `<b>${esc(chordName(c))}</b>`).join('')}</div><span class="night-card-key">${L('Play', 'Spielen')} <kbd>${L('Space', 'Leertaste')}</kbd></span></div></a>`;
       })()
     : '';
+  // Freestyle, on the guitar: a solo of the player's own, as wide as the night
+  const freeBest = Math.max(0, ...Object.entries(store.best).filter(([k]) => k.startsWith('free:')).map(([, v]) => v));
+  const freeCard =
+    !piano && !voice
+      ? `<a class="card free-card" href="#/free" id="freecard"><div class="night-card-text"><span class="k">${L('Freestyle · 90 seconds', 'Freestyle · 90 Sekunden')}</span><h2>${L('A solo is a line of tricks.', 'Ein Solo ist eine Linie aus Tricks.')}</h2><p>${L('Play what you like over the band. Land the line on E, or lose it.', 'Spiel über die Band, was du willst. Lande die Linie auf E, oder verlier sie.')}</p><span class="meta">${freeBest ? L(`Your best: ${num(freeBest)}`, `Dein Bestwert: ${num(freeBest)}`) : L('All six open strings are in the scale.', 'Alle sechs leeren Saiten gehören zur Tonleiter.')}</span></div><div class="night-card-go"><span class="night-card-key">${L('Play', 'Spielen')} <kbd>${types.length + 2}</kbd></span></div></a>`
+      : '';
   const grooveBpm = Number(store.speeds.groove) > 0 ? Math.round(Number(store.speeds.groove)) : 66;
   root.innerHTML = `<div class="page mid">
     <div>
@@ -135,7 +141,7 @@ export const nfStart: Screen = (root) => {
       <h1>${L('Choose a game.', 'Wähl ein Spiel.')}</h1>
       <p class="lede">${menuOn() ? L(`${piano ? 'Play the key' : 'Strum the chord'} on a card, or press its number.`, piano ? 'Spiel die Taste einer Karte, oder drück ihre Nummer.' : 'Schlag den Akkord einer Karte an, oder drück ihre Nummer.') : L(`Press ${types.map((_, i) => i + 1).join(', ')}, or click a card.`, `Drück ${types.map((_, i) => i + 1).join(', ')} oder klick eine Karte an.`)}${voice ? L(' Sing on “la”; any octave counts.', ' Sing auf „la“; jede Oktave zählt.') : ''}</p>${pickState()}
     </div>
-    <div class="cards${types.length >= 3 ? ' four' : ''}">${nightCard}${types
+    <div class="cards${types.length >= 3 ? ' four' : ''}">${nightCard}${freeCard}${types
       .map(
         (t, i) => `<a class="card${t.type === suggested ? ' sug' : ''}" href="#/run/${t.type}"><span class="k">${t.tag}${t.type === suggested ? L(' · suggested', ' · empfohlen') : ''}</span><h2>${t.name}</h2><p>${esc(t.text)}</p>
         <span class="meta">${t.type === 'changes' ? L(`Starts at ${grooveBpm} bpm`, `Beginnt bei ${grooveBpm} bpm`) : L(`Starts at ${storedSpeed(t.type)}% speed`, `Beginnt bei ${storedSpeed(t.type)} % Tempo`)} · ${L(`weakest: ${esc(weakest(t.type))}`, `am schwächsten: ${esc(weakest(t.type))}`)}</span><span class="pick">${pickHint(i, piano)}</span></a>`,
@@ -161,7 +167,7 @@ export const nfStart: Screen = (root) => {
     scene.draw(null, ts / 1000, false);
   });
   const stopMenu = pickMenu(root, pick, piano);
-  const stopKeys = keys({ ' ': () => plan && go('/night'), '1': () => pick(0), '2': () => pick(1), '3': () => (types[2] ? pick(2) : go('/stride')), '4': () => types.length >= 3 && go('/stride') });
+  const stopKeys = keys({ ' ': () => plan && go('/night'), '1': () => pick(0), '2': () => pick(1), '3': () => (types[2] ? pick(2) : go('/stride')), '4': () => types.length >= 3 && go('/stride'), '5': () => !!freeCard && go('/free') });
   return () => {
     cancelAnimationFrame(raf);
     stopMenu();

@@ -1667,3 +1667,86 @@ body[data-mode='nf'] .night-hud { background: none; border-bottom: 0; }
 .night-card-key kbd { border-color: rgba(255, 255, 255, 0.5); color: #fdf6e8; background: none; }
 a.night-card:hover { border-color: transparent; box-shadow: 0 0 0 2px #f2c25c; }
 @media (max-width: 640px) { .cards .night-card { grid-template-columns: minmax(0, 1fr); } .night-card-go { justify-items: start; } .night-card-chords { font-size: 1.75rem; } }
+
+/* Freestyle (screens/freestyle.ts): a solo over the band, drawn in light across the night. The painting fills the
+   window; the line and the landed lines are drawn on a canvas of their own over it; the strip at the bottom holds
+   the line as tab, the box and the spot's goals. */
+canvas.world ~ canvas.free-sky { position: fixed; inset: 0; width: 100vw; height: 100vh; height: 100dvh; z-index: 1; pointer-events: none; }
+body[data-mode='nf'] .free-hud { background: none; border-bottom: 0; }
+.free-hud .night-title { padding: 6px 12px; border-radius: 999px; background: rgba(252, 248, 242, 0.85); white-space: nowrap; }
+.free-hud .mic { padding: 4px 10px; border-radius: 10px; background: rgba(252, 248, 242, 0.85); }
+.free-strip[hidden] { display: none; }
+.free-sheet h1 { font-size: clamp(1.5rem, min(2.4vw, 4.2vh), 2.125rem); }
+.free-stat { display: inline-flex; align-items: baseline; gap: 8px; padding: 4px 12px; border-radius: 10px; background: rgba(252, 248, 242, 0.88); }
+.free-stat .k { font: 500 var(--t-meta) var(--mono); letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); }
+.free-stat b { font: 700 var(--t-h3)/1.1 var(--mono); }
+.free-layers { display: inline-flex; gap: 6px; padding: 6px 10px; border-radius: 10px; background: rgba(14, 26, 40, 0.55); }
+.free-layers span { display: grid; justify-items: center; gap: 4px; font: 500 0.625rem var(--mono); letter-spacing: 0.1em; text-transform: uppercase; color: rgba(243, 238, 230, 0.5); }
+.free-layers i { width: 30px; height: 5px; border-radius: 3px; background: rgba(243, 238, 230, 0.18); transition: background 0.3s, box-shadow 0.3s; }
+.free-layers span.on { color: rgba(243, 238, 230, 0.95); }
+.free-layers span.on i { background: #9ff0d0; box-shadow: 0 0 10px rgba(159, 240, 208, 0.7); }
+.free-sea { min-height: 260px; }
+.free-combo { position: absolute; left: 0; right: 0; bottom: 6px; z-index: 2; display: grid; justify-items: center; gap: 6px; pointer-events: none; color: #f6f2ea; text-shadow: 0 2px 14px rgba(5, 10, 25, 0.95); }
+.free-combo[hidden] { display: none; }
+.free-tricks { display: flex; align-items: baseline; gap: 16px; max-width: calc(100% - 32px); margin: 0; }
+.free-tricks span:first-child { font: 700 calc(var(--t-h3) * var(--k, 1))/1.15 var(--font); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.free-tricks small { font: 500 0.75em var(--mono); opacity: 0.75; }
+.free-tricks b { font: 700 calc(var(--t-h2) * var(--k, 1))/1 var(--mono); color: #ffd27a; }
+.free-tricks span:last-child { font: 500 var(--t-small) var(--mono); color: rgba(246, 242, 234, 0.8); }
+.free-combo.idle .free-tricks span:first-child { font-weight: 600; font-size: var(--t-body); color: rgba(246, 242, 234, 0.8); }
+.free-pocket { display: flex; align-items: center; gap: 10px; margin: 0; font: 500 0.6875rem var(--mono); letter-spacing: 0.14em; text-transform: uppercase; color: rgba(246, 242, 234, 0.7); }
+.free-pocket .bar { position: relative; width: 200px; height: 8px; border-radius: 4px; background: rgba(11, 10, 24, 0.7); box-shadow: 0 0 0 1px rgba(243, 238, 230, 0.3); }
+.free-pocket .bar::before { content: ''; position: absolute; left: 50%; top: -3px; bottom: -3px; width: 1.5px; background: rgba(243, 238, 230, 0.45); }
+.free-pocket .bar i { position: absolute; left: 50%; top: -4px; width: 10px; height: 16px; margin-left: -5px; border-radius: 4px; background: #9ff0d0; box-shadow: 0 0 10px rgba(159, 240, 208, 0.8); }
+.free-pocket.hot { color: #ff9d8a; }
+.free-pocket.hot .bar i { background: #ff8f7d; box-shadow: 0 0 12px rgba(255, 143, 125, 0.9); }
+.free-sheet { width: min(900px, calc(100% - 32px)); }
+.free-brief { display: grid; grid-template-columns: minmax(0, 1fr) 240px; gap: 24px; align-items: center; }
+.free-rules { margin: 0; padding-left: 1.3em; display: grid; gap: 6px; font-size: var(--t-body); }
+.free-bigbox { margin: 0; text-align: center; }
+.free-bigbox svg { display: block; width: 100%; }
+.free-bigbox figcaption { font: 500 var(--t-meta) var(--mono); color: var(--muted); }
+.free-spots { display: flex; flex-wrap: wrap; gap: 10px; }
+.free-spot { display: grid; grid-template-columns: auto 1fr; gap: 0 10px; align-items: center; padding: 8px 14px; border: 1.5px solid var(--line); border-radius: 10px; background: rgba(252, 248, 242, 0.7); text-align: left; font: inherit; color: var(--text); cursor: pointer; }
+.free-spot kbd { grid-row: span 2; }
+.free-spot b { font-weight: 600; }
+.free-spot span { font: 500 var(--t-meta) var(--mono); color: var(--muted); }
+.free-spot[aria-pressed='true'] { border-color: var(--now); box-shadow: 0 0 0 1px var(--now); }
+.free-goallist { display: flex; flex-wrap: wrap; gap: 6px 18px; margin: 0; padding: 0; list-style: none; font-size: var(--t-small); color: var(--muted); }
+.free-goallist li::before { content: '○ '; }
+.free-goallist li.done { color: var(--text); font-weight: 600; }
+.free-goallist li.done::before { content: '✓ '; color: var(--good); }
+.free-licks { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.free-licks .k { font: 500 var(--t-meta) var(--mono); letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); }
+.free-lick { display: flex; align-items: center; gap: 8px; padding: 4px 10px 4px 4px; border: 1px solid var(--line); border-radius: 8px; background: #fcf8f2; font: 500 var(--t-meta) var(--mono); color: var(--text); cursor: pointer; }
+.free-lick svg { width: 150px; height: 26px; }
+.night-sheet h1.free-total { font: 700 clamp(2rem, min(5vw, 8vh), 4rem)/1 var(--mono); }
+.free-besthead { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+.free-besthead p { flex: 1; }
+.free-bestline { display: grid; gap: 8px; padding: 12px 16px; border-radius: 12px; background: rgba(229, 218, 203, 0.55); }
+.free-bestline p { margin: 0; font-size: var(--t-small); }
+.free-bestline svg { display: block; width: 100%; height: auto; max-height: min(90px, 12vh); }
+.free-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.free-chips span { padding: 3px 9px; border-radius: 999px; background: var(--text); color: #fcf8f2; font: 500 0.75rem var(--mono); }
+.free-strip { display: grid; grid-template-columns: minmax(0, 1fr) 150px 230px; gap: 22px; align-items: center; min-height: 0; padding: 8px 32px 10px; background: var(--sheet); border-top: 1px solid rgba(255, 255, 255, 0.6); }
+.free-strip .k { font: 500 0.6875rem var(--mono); letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); }
+.free-tab svg { display: block; width: 100%; height: clamp(64px, 11vh, 96px); }
+.free-box { display: grid; justify-items: center; gap: 2px; }
+.free-box svg { width: 150px; }
+.free-goals { display: grid; gap: 4px; font-size: var(--t-meta); color: var(--muted); }
+.free-goals span:not(.k) { display: flex; align-items: center; gap: 8px; }
+.free-goals i { flex: none; width: 11px; height: 11px; border-radius: 50%; box-shadow: inset 0 0 0 1.5px var(--faint); }
+.free-goals .done { color: var(--text); font-weight: 600; }
+.free-goals .done i { background: #e9b54a; box-shadow: none; }
+.free-practice { gap: 14px; }
+.free-practice kbd { margin-right: 2px; }
+/* beside tonight's night, half the row each, so that the four games stay in sight below them */
+.cards:has(.free-card) .night-card, .cards .free-card { grid-column: span 2; }
+.cards .free-card { grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 8px 32px; border: 0; color: #f6f2ea; background: linear-gradient(112deg, rgba(12, 34, 52, 0.96), rgba(28, 72, 92, 0.93) 60%, rgba(70, 150, 140, 0.9)); }
+.cards .free-card .k, .cards .free-card p, .cards .free-card .meta { color: rgba(246, 242, 234, 0.88); }
+.cards .free-card h2 { font-size: var(--t-h2); color: #fffdf8; }
+.cards .free-card .pick { margin: 0; padding: 0; border: 0; color: #fdf6e8; }
+a.free-card:hover { border-color: transparent; box-shadow: 0 0 0 2px #9ff0d0; }
+@media (max-width: 1100px) { .free-strip { grid-template-columns: minmax(0, 1fr) 140px; } .free-goals, .free-hud .night-title { display: none; } }
+@media (max-width: 640px) { .cards:has(.free-card) .night-card, .cards .free-card { grid-column: 1 / -1; } }
+@media (max-width: 760px) { .free-brief { grid-template-columns: 1fr; } .free-bigbox { max-width: 240px; } .free-strip { grid-template-columns: 1fr; padding: 8px 16px; } .free-box, .free-layers { display: none; } .cards .free-card { grid-template-columns: minmax(0, 1fr); } }
