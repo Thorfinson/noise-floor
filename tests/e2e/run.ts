@@ -962,12 +962,13 @@ const sections: [string, () => Promise<void>][] = [
       // the rhythm game: stones in time with the click, the chord changing at every bar line
       await page.goto(base + '?autostart#/nf');
       await page.waitForSelector('.cards');
-      const cardTops = await page.locator('.cards .card:not(.night-card)').evaluateAll((els) => els.map((e) => Math.round(e.getBoundingClientRect().top)));
+      const cardTops = await page.locator('.cards .card:not(.night-card):not(.free-card)').evaluateAll((els) => els.map((e) => Math.round(e.getBoundingClientRect().top)));
+      const bannerTops = await page.locator('.cards .night-card, .cards .free-card').evaluateAll((els) => els.map((e) => Math.round(e.getBoundingClientRect().top)));
       const cardBottom = await page.locator('.cards .card').evaluateAll((els) => Math.max(...els.map((e) => e.getBoundingClientRect().bottom)));
       const firstCard = (await page.locator('.cards .card').first().getAttribute('class')) ?? '';
       check(
-        "games: tonight's night comes first, across the row; the four games side by side below it, none of them below the fold",
-        firstCard.includes('night-card') && /^The night of [A-Z][a-z]+ \d+$/.test(await text(page, '.night-card h2')) && cardTops.length === 4 && new Set(cardTops).size === 1 && cardBottom <= 900 && (await text(page, '.cards')).includes('Stepping stones') && (await page.title()) === 'Games · Noise Floor',
+        "games: tonight's night comes first, Freestyle beside it; the four games side by side below them, none of them below the fold",
+        firstCard.includes('night-card') && /^The night of [A-Z][a-z]+ \d+$/.test(await text(page, '.night-card h2')) && bannerTops.length === 2 && new Set(bannerTops).size === 1 && cardTops.length === 4 && new Set(cardTops).size === 1 && cardTops[0] > bannerTops[0] && cardBottom <= 900 && (await text(page, '.cards')).includes('Stepping stones') && (await page.title()) === 'Games · Noise Floor',
         `${firstCard} · ${await text(page, '.night-card h2')} · ${cardTops.length} cards at y ${[...new Set(cardTops)].join(', ')}, bottom ${Math.round(cardBottom)} · ${await page.title()}`,
       );
       await page.goto(base + '?autostart#/stride/four');
@@ -2099,6 +2100,58 @@ const sections: [string, () => Promise<void>][] = [
       check('touch: on a phone a lesson is played by tapping, and the panel of More opens with a tap', /note 4 of/.test(tapped.eb) && tapped.more, JSON.stringify(tapped));
 
       check('what was still missing: no script errors', errors.length === 0, errors.join(' | '));
+      await browser.close();
+    }
+  }],
+  ['2f', async () => {
+    // 2f. Freestyle: a solo over the band, played on the practice instrument's keys, which go into the same
+    // listener as a guitar. Three notes are enough for a line: even off the beat they cannot shake it apart.
+    {
+      const browser = await chromium.launch({ channel: 'msedge', headless: true, args: ['--autoplay-policy=no-user-gesture-required', '--lang=en-US'] });
+      const ctx = await browser.newContext({ viewport: { width: 1366, height: 768 } });
+      await ctx.addInitScript(() => {
+        if (!localStorage.getItem('noise-floor/v1')) localStorage.setItem('noise-floor/v1', JSON.stringify({ settings: { mic: false, practiceInstrument: true, lang: 'en', band: 'phones' } }));
+      });
+      const page = await ctx.newPage();
+      const errors: string[] = [];
+      page.on('pageerror', (e) => errors.push(e.message));
+      const arena = (): Promise<Record<string, string>> => page.evaluate(() => ({ ...(document.querySelector('#arena') as HTMLElement | null)?.dataset }) as Record<string, string>);
+
+      await page.goto(base + '?autostart#/nf');
+      await page.waitForSelector('#freecard', { timeout: 8000 }).catch(() => undefined);
+      check('freestyle: the Games page of the guitar offers it', (await page.locator('#freecard').count()) === 1);
+
+      await page.goto(base + '?autostart&intros#/free/night/12');
+      await page.waitForSelector('.intro, .leaf, #brief', { timeout: 8000 }).catch(() => undefined);
+      const introText = (await page.locator('body').textContent()) ?? '';
+      check('freestyle: the first time, it is introduced before it is played', /Freestyle: a solo of your own|Plucking/i.test(introText), introText.replace(/\s+/g, ' ').slice(0, 160));
+
+      await page.goto(base + '?autostart#/free/night/12');
+      await page.waitForSelector('#brief', { timeout: 8000 });
+      check('freestyle: before a run, the rules, the box and the spots', (await text(page, '#brief')).includes('Land it, or lose it') && (await page.locator('#brief [data-spot]').count()) === 2);
+      await page.keyboard.press('Space');
+      await page.waitForFunction(() => (document.querySelector('#arena') as HTMLElement).dataset.view === 'play', null, { timeout: 10000 });
+      // the low E, the open D (a string skipped), the E on the D string (Shift: fretted): a line that ends on E
+      const beat = 60000 / 84;
+      for (const k of ['a', 'd', 'Shift+D']) {
+        await page.keyboard.press(k);
+        await page.waitForTimeout(beat);
+      }
+      await page.waitForFunction(() => Number((document.querySelector('#arena') as HTMLElement).dataset.lines) >= 1, null, { timeout: 6000 }).catch(() => undefined);
+      const landed = await arena();
+      check('freestyle: three notes ending on E are a line, and two beats of rest land it', Number(landed.lines) >= 1 && Number(landed.score) >= 70, JSON.stringify(landed));
+      await page.waitForFunction(() => (document.querySelector('#arena') as HTMLElement).dataset.view === 'end', null, { timeout: 20000 }).catch(() => undefined);
+      const end = await arena();
+      const best = await page.evaluate(() => JSON.parse(localStorage.getItem('noise-floor/v1') ?? '{}').best?.['free:night'] ?? 0);
+      check('freestyle: the run ends after its time, with the score kept as the best', end.view === 'end' && (await page.locator('#result').count()) === 1 && best === Number(end.score), `${JSON.stringify(end)} best ${best}`);
+      await page.keyboard.press('k');
+      await page.waitForTimeout(300);
+      const licks = await page.evaluate(() => JSON.parse(localStorage.getItem('noise-floor/v1') ?? '{}').licks ?? []);
+      check('freestyle: the best line can be kept as a lick, as tab', licks.length === 1 && licks[0].notes.length >= 3 && licks[0].tricks.includes('skip'), JSON.stringify(licks).slice(0, 200));
+      await page.keyboard.press('Space');
+      await page.waitForFunction(() => ['count', 'play'].includes((document.querySelector('#arena') as HTMLElement).dataset.view ?? ''), null, { timeout: 4000 }).catch(() => undefined);
+      check('freestyle: Space after a run starts the next one', ['count', 'play'].includes((await arena()).view));
+      check('freestyle: no script errors', errors.length === 0, errors.join(' | '));
       await browser.close();
     }
   }],

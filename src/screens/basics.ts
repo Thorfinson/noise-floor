@@ -124,6 +124,29 @@ const INSTRUMENT_INTROS = (): Intro[] => [
     },
   },
   {
+    id: 'free',
+    title: L('Freestyle: a solo of your own', 'Freestyle: ein Solo von dir'),
+    points: [
+      L('Nothing to read: the band plays, and you play whatever you like from five notes, E, G, A, B and D. All six open strings are among them; one finger on fret 2 or 3 gives the other six.', 'Nichts zu lesen: Die Band spielt, und du spielst, was du willst, aus fünf Tönen: E, G, A, H und D. Alle sechs leeren Saiten gehören dazu; ein Finger im zweiten oder dritten Bund gibt dir die anderen sechs.'),
+      L('Everything you do has a name and is worth points: four strings in a row (an arpeggio), a jump over a string, four steps up the scale (a run), a hit on muted strings, a strummed chord. Different things in one line multiply.', 'Alles, was du tust, hat einen Namen und bringt Punkte: vier Saiten nacheinander (ein Arpeggio), ein Sprung über eine Saite, vier Schritte die Tonleiter hinauf (ein Lauf), ein Anschlag auf gedämpfte Saiten, ein angeschlagener Akkord. Verschiedenes in einer Linie multipliziert sich.'),
+      L('Keep to the beat: notes off it shake the line until it is lost. End the line on an E and let it ring for two beats: then it is banked. That is how solos end anyway: on the home note, with space after it.', 'Bleib im Takt: Töne daneben bringen die Linie ins Wanken, bis sie verloren ist. Ende die Linie auf einem E und lass es zwei Schläge klingen: Dann ist sie gesichert. So enden Soli ohnehin: auf dem Grundton, mit Luft danach.'),
+    ],
+    art: () => {
+      let h = '';
+      const fx = (f: number): number => (f === 0 ? 70 : 110 + (f - 0.5) * 100);
+      for (let k = 0; k <= 4; k++) h += `<line x1="${110 + k * 100}" x2="${110 + k * 100}" y1="80" y2="280" stroke="${k ? P.faint : P.text}" stroke-width="${k ? 2 : 6}"/>`;
+      for (let s = 0; s < 6; s++) h += `<line x1="110" x2="510" y1="${80 + (5 - s) * 40}" y2="${80 + (5 - s) * 40}" stroke="${P.text}" stroke-width="${1 + (5 - s) * 0.4}"/>`;
+      const box: [number, number, string][] = [[0, 0, 'E'], [0, 3, 'G'], [1, 0, 'A'], [1, 2, 'B'], [2, 0, 'D'], [2, 2, 'E'], [3, 0, 'G'], [3, 2, 'A'], [4, 0, 'B'], [4, 3, 'D'], [5, 0, 'E'], [5, 3, 'G']];
+      for (const [s, f, n] of box) {
+        const root = n === 'E';
+        const y = 80 + (5 - s) * 40;
+        h += `<circle cx="${fx(f)}" cy="${y}" r="16" fill="${f ? P.text : P.bg}" stroke="${root ? P.now : P.text}" stroke-width="${root ? 4 : 2}"/><text x="${fx(f)}" y="${y + 6}" class="fgr" style="font-size:15px" fill="${f ? P.bg : P.text}">${n === 'B' ? L('B', 'H') : n}</text>`;
+      }
+      return h + label(fx(0), 320, '0', 'middle') + label(fx(2), 320, '2', 'middle') + label(fx(3), 320, '3', 'middle') + label(290, 48, L('E minor pentatonic in the open position · blue: E', 'E-Moll-Pentatonik in der offenen Lage · blau: E'), 'middle', P.text);
+    },
+    tryIt: { say: L('Pluck the six open strings one after the other, from the low E up.', 'Zupf die sechs leeren Saiten nacheinander, von der tiefen E-Saite aufwärts.'), notes: [40, 45, 50, 55, 59, 64], count: 6 },
+  },
+  {
     id: 'ear',
     title: L('Playing by ear', 'Nach Gehör spielen'),
     points: [
@@ -824,6 +847,7 @@ function baseIntros(name: string, params: string[]): string[] {
   }
   if (name === 'change') return ['strum'];
   if (name === 'stride') return ['count', 'strum', 'patterns'];
+  if (name === 'free') return ['pluck', 'free'];
   if (name === 'piano') {
     // what this piece asks for beyond five fingers on white keys
     const piece = findPiece(params[0]);

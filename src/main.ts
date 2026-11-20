@@ -36,6 +36,7 @@ import { hearingCheck } from './screens/check';
 import { slurTrainer } from './screens/slur';
 import { stride } from './screens/stride';
 import { groove } from './screens/groove';
+import { freestyle } from './screens/freestyle';
 import { placement } from './screens/placement';
 import { weekPage } from './screens/today';
 import { holdTone, pitchMatch, singLesson, voiceRangeTest } from './screens/sing';
@@ -86,6 +87,7 @@ const routes: Record<string, Route> = {
   run: { screen: withIntro('run', nfRun), mode: 'nf', audio: true },
   night: { screen: nightRun, mode: 'nf', audio: true },
   stride: { screen: withIntro('stride', stride), mode: 'nf', audio: true },
+  free: { screen: withIntro('free', freestyle), mode: 'nf', audio: true },
   // the voice
   range: { screen: withIntro('range', voiceRangeTest), mode: 'learn', audio: true },
   match: { screen: withIntro('match', pitchMatch), mode: 'learn', audio: true },
@@ -336,6 +338,7 @@ function route(): void {
     run: L('Game', 'Spiel'),
     night: L('Tonight', 'Die Nacht'),
     stride: L('Stepping stones', 'Trittsteine'),
+    free: L('Freestyle', 'Freestyle'),
     range: L('Your range', 'Dein Stimmumfang'),
     match: L('Match the tone', 'Töne treffen'),
     hold: L('Hold a tone', 'Einen Ton halten'),
