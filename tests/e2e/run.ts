@@ -370,6 +370,107 @@ const sections: [string, () => Promise<void>][] = [
       }
     }
   }],
+  ['1e', async () => {
+    // 1e. the band: chosen in the settings, and the speaker test of the hearing check. The test needs a microphone
+    // that hears the speakers; the fake one of the browser hears only a quiet room, as under headphones, and the
+    // test must say so. With the practice instrument alone it says that it needs the microphone.
+    const quiet = new Float32Array(SR * 6);
+    addNoise(quiet, 0.0015);
+    const browser = await chromium.launch({
+      channel: 'msedge',
+      headless: true,
+      args: ['--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream', `--use-file-for-fake-audio-capture=${wav(quiet, 'quiet-room.wav')}`, '--autoplay-policy=no-user-gesture-required', '--lang=en-US'],
+    });
+    const errors: string[] = [];
+    const open = async (route: string, settings: Record<string, unknown>) => {
+      const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+      await ctx.addInitScript((st) => {
+        // only on the first load: a reload must find what the page saved
+        if (!sessionStorage.getItem('seeded')) {
+          localStorage.setItem('noise-floor/v1', JSON.stringify({ settings: { lang: 'en', ...st } }));
+          sessionStorage.setItem('seeded', '1');
+        }
+      }, settings);
+      const page = await ctx.newPage();
+      page.on('pageerror', (e) => errors.push(e.message));
+      await page.goto(base + '?autostart#/' + route);
+      return { page, ctx };
+    };
+    const saved = (page: Page): Promise<{ band?: string; bandVolume?: number }> => page.evaluate(() => JSON.parse(localStorage.getItem('noise-floor/v1') ?? '{}').settings ?? {});
+
+    // the settings: the three bands, the loudness, and the way to the speaker test
+    {
+      const { page, ctx } = await open('settings', {});
+      await page.waitForSelector('#band');
+      const options = await page.locator('#band option').allTextContents();
+      const chosen = await page.locator('#band').inputValue();
+      await page.selectOption('#band', 'phones');
+      await page.locator('#bandvol').evaluate((el: HTMLInputElement) => {
+        el.value = '0.35';
+        el.dispatchEvent(new Event('change'));
+      });
+      await page.reload();
+      await page.waitForSelector('#band');
+      const after = { band: await page.locator('#band').inputValue(), vol: await page.locator('#bandvol').inputValue(), stored: await saved(page) };
+      const link = await page.locator('#bandtest').getAttribute('href');
+      check('band: the settings offer the full band, the band for speakers and the click alone, its loudness, and the speaker test', options.join(' | ') === 'Full band (headphones) | Band for speakers | Click only' && chosen === 'speakers' && after.band === 'phones' && after.vol === '0.35' && after.stored.band === 'phones' && link === '#/check/band', `${options.join(' | ')} · ${chosen} → ${after.band}, ${after.vol}, stored ${after.stored.band} ${after.stored.bandVolume} · ${link}`);
+      await page.click('#bandtest');
+      await page.waitForSelector('#go', { timeout: 6000 }).catch(() => undefined);
+      check('band: the speaker test opens from the settings', (await text(page, '#h1')) === 'Can the band play through your speakers?' && (await text(page, '#where')).includes('Speaker test'), `${await text(page, '#h1')} | ${await text(page, '#where')}`);
+      await ctx.close();
+    }
+
+    // the hearing check leads to it
+    {
+      const { page, ctx } = await open('check', { instrument: 'guitar' });
+      await page.waitForSelector('#bandtest');
+      await page.click('#bandtest');
+      await page.waitForFunction(() => location.hash === '#/check/band', null, { timeout: 4000 }).catch(() => undefined);
+      check('band: the hearing check has the step "Band through speakers"', page.url().endsWith('#/check/band'), page.url());
+      await ctx.close();
+    }
+
+    // a microphone that hears only the room: the band was not heard, the full band for headphones is offered
+    {
+      const { page, ctx } = await open('check/band', { instrument: 'guitar', practiceInstrument: true });
+      await page.waitForSelector('#go');
+      await page.waitForTimeout(800);
+      await page.keyboard.press(' ');
+      await page.waitForFunction(() => /Keep still/.test(document.querySelector('#h1')?.textContent ?? ''), null, { timeout: 6000 }).catch(() => undefined);
+      const during = { h1: await text(page, '#h1'), eb: await text(page, '#eb'), now: await page.locator('.checklist li.now').count() };
+      const ended = await page
+        .waitForFunction(() => /did not hear the band/.test(document.querySelector('#h1')?.textContent ?? ''), null, { timeout: 32000 })
+        .then(() => true)
+        .catch(() => false);
+      const shown = { h1: await text(page, '#h1'), phones: await page.locator('#tophones').isVisible(), click: await page.locator('#toclick').isVisible(), steps: await page.locator('.checklist li').allTextContents() };
+      await page.screenshot({ path: resolve(out, 'band-test.png') });
+      await page.click('#tophones');
+      const stored = await saved(page);
+      check('band: the speaker test plays the band while the player keeps still, counting down', /^Keep still/.test(during.h1) && /Speaker test · \d+ s/.test(during.eb) && during.now === 1, JSON.stringify(during));
+      check('band: with a microphone that hears only the room it says in one sentence that the band was not heard, and offers the full band for headphones', ended && shown.h1 === 'The microphone did not hear the band: with headphones on, the full band is for you.' && shown.phones && !shown.click && stored.band === 'phones', `${JSON.stringify(shown)} · stored ${stored.band}`);
+      await ctx.close();
+    }
+
+    // the practice instrument alone: the test needs the microphone
+    {
+      const { page, ctx } = await open('check/band', { instrument: 'guitar', mic: false, practiceInstrument: true });
+      await page.waitForSelector('#go');
+      await page.waitForTimeout(500);
+      await page.keyboard.press(' ');
+      await page.waitForFunction(() => /needs the microphone/.test(document.querySelector('#h1')?.textContent ?? ''), null, { timeout: 4000 }).catch(() => undefined);
+      check('band: with the practice instrument alone the speaker test says it needs the microphone', (await text(page, '#h1')) === 'The speaker test needs the microphone: switch it on in the settings.', await text(page, '#h1'));
+      // in German
+      await ctx.close();
+    }
+    {
+      const { page, ctx } = await open('check/band', { instrument: 'guitar', lang: 'de' });
+      await page.waitForSelector('#go');
+      check('band: the speaker test speaks German', (await text(page, '#h1')) === 'Kann die Band über deine Lautsprecher spielen?' && (await text(page, '#go')).includes('Test starten'), await text(page, '#h1'));
+      await ctx.close();
+    }
+    check('band: no script errors', errors.length === 0, errors.join(' | '));
+    await browser.close();
+  }],
   ['2', async () => {
     // 2. practice instrument path
     {
