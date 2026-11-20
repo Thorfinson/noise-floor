@@ -21,7 +21,7 @@ import { askAgain, chooseFile, fileState, forgetFile, takeNewer } from '../core/
 import { clearTakes } from '../core/takes';
 import { TUNINGS } from '../music/tuning';
 import { dayStart } from '../core/days';
-import { weekHome } from './today';
+import { barreCard, weekHome } from './today';
 
 export { skillLabel };
 
@@ -358,6 +358,9 @@ export const progress: Screen = (root) => {
   const inst = store.settings.instrument;
   // over the weeks first, then everything measured: the rank, the days, and every skill in its table
   const stop = trendsPage(root, []);
+  // the plan of when to play, and the barre project's course, beside what was measured
+  root.querySelector('.page')?.insertAdjacentHTML('beforeend', `<div class="progress-habit">${planCard()}${inst === 'guitar' ? barreCard() : ''}</div>`);
+  bindPlan(root, refresh);
   root.querySelector('.page')?.insertAdjacentHTML(
     'beforeend',
     `<section class="measured" id="measured">

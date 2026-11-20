@@ -14,13 +14,15 @@ import { arcOf, chooseWeek, needsChoice, type Arc } from '../music/week';
 import { dayOf } from '../core/days';
 import { $, $$, esc, go, icon, keys } from '../ui/dom';
 import type { SkillRecord } from '../core/skills';
-import { weekLine } from './habit';
-import { doneToday, plan, resumeAt, songChoices, type Step } from './session';
+import { bindPlan, planCard, weekLine } from './habit';
+import { doneToday, fullPlan, plan, resumeAt, setPlanned, songChoices, type Step } from './session';
 import { stepPicture } from './home';
 import { bindThenNow, stopKept, thenNowPair, thenNowRows } from './thennow';
 
 /** Shows the page again after something it depends on has changed. */
 const refresh = (): void => void dispatchEvent(new HashChangeEvent('hashchange'));
+/** The set on show as a list to change: which steps the player keeps. Kept while the app is open. */
+let editing = false;
 
 /** What a band choice is called on the switch. */
 const BANDS = (): ['phones' | 'speakers' | 'click', string, string][] => [
@@ -168,13 +170,44 @@ export function weekHome(root: HTMLElement, inst: Instrument, now = Date.now()):
       </section>
     </div>
     <section class="paper routesheet" aria-labelledby="seth">
-      <div class="sectitle"><h2 id="seth">${done ? L('Today', 'Heute') : L(`Today · ${minutes} minutes`, `Heute · ${minutes} Minuten`)}</h2><a href="#/week">${L('Another song', 'Anderer Song')}</a></div>
-      <ol class="plan route" aria-label="${L("Today's steps", 'Heutige Schritte')}">${steps.map((st, i) => `<li class="${done || i < at ? 'done' : i === at ? 'cur' : ''}"><span class="n">${done || i < at ? icon('check') : i + 1}</span><span class="pic" aria-hidden="true">${stepPicture(st)}</span><div><b>${esc(st.title)}</b><small>${esc(st.detail)}</small></div><span class="t">${st.minutes} min</span></li>`).join('')}</ol>
+      <div class="sectitle"><h2 id="seth">${done ? L('Today', 'Heute') : L(`Today · ${minutes} minutes`, `Heute · ${minutes} Minuten`)}</h2><span class="row">${editing || at ? '' : `<button class="btn quiet" id="editplan">${L('Change the plan', 'Plan ändern')}</button>`}<a href="#/week">${L('Another song', 'Anderer Song')}</a></span></div>
+      ${
+        editing && !at
+          ? `<ol class="plan editing" aria-label="${L('The steps of your plan', 'Die Schritte deines Plans')}">${fullPlan(now)
+              .map((st) => {
+                const on = !(store.planOff[inst] ?? []).includes(st.kind);
+                return `<li class="${on ? '' : 'off'}"><label class="pl"><input type="checkbox" data-kind="${esc(st.kind)}"${on ? ' checked' : ''}><div><b>${esc(st.title)}</b><small>${esc(st.detail)}</small></div></label><span class="t">${st.minutes} min</span></li>`;
+              })
+              .join('')}</ol>
+            <p class="note">${L('Leave out what you do not need: the plan stays so every day until you bring a step back.', 'Lass weg, was du nicht brauchst: Der Plan bleibt jeden Tag so, bis du einen Schritt zurückholst.')}</p>
+            <div class="row"><button class="btn" id="plandone">${L('Done', 'Fertig')}</button></div>`
+          : `<ol class="plan route" aria-label="${L("Today's steps", 'Heutige Schritte')}">${steps.map((st, i) => `<li class="${done || i < at ? 'done' : i === at ? 'cur' : ''}"><span class="n">${done || i < at ? icon('check') : i + 1}</span><span class="pic" aria-hidden="true">${stepPicture(st)}</span><div><b>${esc(st.title)}</b><small>${esc(st.detail)}</small></div><span class="t">${st.minutes} min</span></li>`).join('')}</ol>${!at && (store.planOff[inst] ?? []).length ? `<p class="note planrow">${L(`${(store.planOff[inst] ?? []).length} left out by you`, `${(store.planOff[inst] ?? []).length} von dir weggelassen`)}</p>` : ''}`
+      }
       <p class="note wsong-after">${L('Then:', 'Danach:')} <a href="${free}">${L('play on freely, with the band', 'frei weiterspielen, mit Band')}</a>${!store.barre && inst === 'guitar' ? ` · <button class="linkbtn" id="barrego">${L('Start the barre project (30 days, 2 minutes)', 'Barré-Projekt starten (30 Tage, 2 Minuten)')}</button>` : ''}</p>
     </section>
   </div>`;
   bindBandSwitch(root);
   bindThenNow(root);
+  // the player's own plan: steps left out or brought back
+  const edit = root.querySelector<HTMLButtonElement>('#editplan');
+  if (edit)
+    edit.onclick = () => {
+      editing = true;
+      refresh();
+    };
+  const pd = root.querySelector<HTMLButtonElement>('#plandone');
+  if (pd)
+    pd.onclick = () => {
+      editing = false;
+      refresh();
+    };
+  $$<HTMLInputElement>('.plan.editing input[data-kind]', root).forEach(
+    (b) =>
+      (b.onchange = () => {
+        setPlanned(b.dataset.kind!, b.checked);
+        refresh();
+      }),
+  );
   const bg = root.querySelector<HTMLButtonElement>('#barrego');
   if (bg)
     bg.onclick = () => {
@@ -253,13 +286,28 @@ export function weekSummary(root: HTMLElement, o: { inst: Instrument; before: Ar
       <h1 id="endh1">${esc(head)}</h1>
       ${pair ? `<p class="lede">${L('Listen to where you started.', 'Hör dir an, wo du angefangen hast.')}</p>${thenNowRows(o.inst, pair, o.now)}` : ''}
       ${gains.length ? `<div class="wsong-gains">${gains.slice(0, 3).map((g) => `<div><b>${esc(g.big)}</b><span>${esc(g.say)}</span></div>`).join('')}</div>` : `<p class="note">${L('Nothing new was measured today. Playing counts all the same: the week goes on tomorrow.', 'Heute wurde nichts Neues gemessen. Gespielt ist trotzdem gespielt: Die Woche geht morgen weiter.')}</p>`}
+      ${store.plan ? '' : planCard()}
       <div class="wsong-tomorrow"><p><b>${L('Tomorrow:', 'Morgen:')}</b> ${esc(tomorrow)}</p><div class="row"><a class="btn primary" id="free" href="${o.inst === 'guitar' ? free : '#/songs'}">${L('Play on freely, with the band', 'Weiterspielen, frei mit Band')} <kbd>${L('Space', 'Leertaste')}</kbd></a><a class="btn" id="finish" href="#/">${L('Finish', 'Fertig')}</a></div></div>
     </section></div>`;
   bindThenNow(root);
+  bindPlan(root, () => {
+    const card = root.querySelector('#plancard');
+    if (card) card.outerHTML = planCard();
+  });
   const stopKeys = keys({ ' ': () => go(free.slice(1)), Escape: () => go('/') });
   $('#free', root).focus();
   return () => {
     stopKeys();
     stopKept();
   };
+}
+
+/** The barre project's course: the most strings that rang on each of its days, as a row of small bars. */
+export function barreCard(now = Date.now()): string {
+  const b = store.barre;
+  if (!b || !CHORDS[b.chord]) return '';
+  const day = Math.max(1, dayOf(now) - b.start + 1);
+  const days = Array.from({ length: Math.min(30, Math.max(day, 7)) }, (_, i) => b.rings[String(b.start + i)] ?? 0);
+  const best = Math.max(0, ...days);
+  return `<div class="plancard barrecard"><p class="k">${L(`Barre project · day ${Math.min(day, 30)} of 30`, `Barré-Projekt · Tag ${Math.min(day, 30)} von 30`)}</p><p class="said">${esc(CHORDS[b.chord].name)}: ${best ? L(`up to ${best} of 6 strings ring`, `bis zu ${best} von 6 Saiten klingen`) : L('not played yet', 'noch nicht gespielt')}</p><div class="barre-days" aria-hidden="true">${days.map((r, i) => `<i style="--r:${r}" class="${i + 1 === day ? 'today' : ''}"></i>`).join('')}</div></div>`;
 }

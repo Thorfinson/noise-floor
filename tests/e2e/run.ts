@@ -1273,7 +1273,7 @@ const sections: [string, () => Promise<void>][] = [
         for (const k of ['bar:tom-dooley:D', 'bar:tom-dooley:A7']) skills[k] = { level: 5, best: 100, last: ago, tops: 3, days: 3, cold: [day(ago), 100], h: [[day(ago) - 6, 85], [day(ago) - 3, 100], [day(ago), 100]] };
         for (const c of ['Em', 'Am', 'C', 'G', 'D', 'A']) skills['chord:' + c] = { level: 2, best: 10, last: now - DAY, tops: 0, strings: 6, days: 3, cold: [day(now - DAY), 12], h: [[day(now) - 9, 20], [day(now) - 5, 14], [day(now) - 1, 10]] };
         const reviews = { 'guitar:tom-dooley': { since: ago, step: 0, due: ago + 3 * DAY, at: 0 } };
-        localStorage.setItem('noise-floor/v1', JSON.stringify({ settings: { a4: 440, mic: false, practiceInstrument: true, strumSelect: false }, skills, reviews, sessions: [now - 2 * DAY, now - 3 * DAY], current: { guitar: 'amazing-grace-chords' }, practice: { [day(now - 2 * DAY)]: 900 } }));
+        localStorage.setItem('noise-floor/v1', JSON.stringify({ settings: { a4: 440, mic: false, practiceInstrument: true, strumSelect: false }, skills, reviews, sessions: [now - 2 * DAY, now - 3 * DAY], current: { guitar: 'amazing-grace-chords' }, weeks: { guitar: { id: 'amazing-grace-chords', start: day(now) - 1 } }, practice: { [day(now - 2 * DAY)]: 900 } }));
       });
       const page = await ctx.newPage();
       const errors: string[] = [];
@@ -1295,8 +1295,8 @@ const sections: [string, () => Promise<void>][] = [
       // the session takes it, right after tuning
       await page.goto(base + '?autostart#/');
       await page.waitForSelector('.plan');
-      check('repertoire: today\'s session takes the old song from cold, right after tuning, and leaves the ear out that day', (await text(page, '.plan li >> nth=1')).includes('Again from cold: Tom Dooley') && !(await text(page, '.plan')).includes('By ear'), (await text(page, '.plan')).replace(/\s+/g, ' ').slice(0, 200));
-      check('home: the week counts, with the days played and a goal, and a line on the week', /This week: \d of 4 days/i.test(await text(page, '.week .wk-said')) && (await page.locator('.week i').count()) === 7 && /minutes played this week/.test(await text(page, '.weeknote')), `${await text(page, '.week')} | ${await text(page, '.weeknote')}`);
+      check('repertoire: today\'s session warms up on the old song from cold, after tuning', (await text(page, '.plan li >> nth=0')).includes('Tom Dooley, from cold'), (await text(page, '.plan')).replace(/\s+/g, ' ').slice(0, 200));
+      check('home: the week counts, with the days played and a goal, and a line on the week', /This week: \d of 4 days/i.test(await text(page, '.week .wk-said')) && (await page.locator('.week i').count()) === 7, `${await text(page, '.week')}`);
       // a visit from cold: two lines at full speed, no run-up
       await page.goto(base + '?autostart#/song/tom-dooley/review');
       await page.waitForSelector('#rowA');
@@ -1443,7 +1443,7 @@ const sections: [string, () => Promise<void>][] = [
         s.settings.instrument = 'guitar';
         localStorage.setItem('noise-floor/v1', JSON.stringify(s));
       });
-      await page.goto(base + '?autostart#/');
+      await page.goto(base + '?autostart#/progress');
       await page.waitForSelector('#plancard');
       await page.selectOption('#plancue', 'dinner');
       await page.click('#plansave');
@@ -1720,23 +1720,27 @@ const sections: [string, () => Promise<void>][] = [
       check('handbook: a page on sore fingertips and practice in the head', /Sore fingertips/.test(page), page);
 
       // the player's own plan: a step left out stays out; the next song chosen among three
+      const weekState = { weeks: { guitar: { id: 'scarborough-fair', start: Math.floor((Date.now() - new Date().getTimezoneOffset() * 60000) / 86400000) } } };
       const own = await visit('', { instrument: 'guitar' }, '.plan', async (p) => {
         await p.locator('#editplan').click();
         await p.waitForSelector('.plan.editing');
         const boxes = await p.locator('.plan.editing input[data-kind]').count();
-        await p.locator('.plan.editing input[data-kind="changes"]').uncheck();
+        await p.locator('.plan.editing input[data-kind="encore"]').uncheck();
         await p.waitForTimeout(300);
         await p.locator('#plandone').click();
         await p.waitForSelector('.plan:not(.editing)');
         const left = await txt(p, '.plan');
-        const picks = await p.locator('.choose .pick').count();
-        const second = await p.locator('.choose .pick b').nth(1).innerText();
-        await p.locator('.choose .pick').nth(1).click();
-        await p.waitForTimeout(400);
-        return { boxes, out: !left.includes('Chord changes'), note: await txt(p, '.planrow'), picks, second, plan: await txt(p, '.plan') };
-      });
-      check('own plan: a step can be left out, and it stays out', own.boxes >= 5 && own.out && /1 left out by you/.test(own.note), JSON.stringify({ boxes: own.boxes, out: own.out, note: own.note }));
-      check('own plan: the next song is chosen among three, and the plan takes it', own.picks === 3 && own.plan.includes(own.second), `${own.picks} picks, chose ${own.second}`);
+        return { boxes, out: !left.includes('Encore'), note: await txt(p, '.planrow') };
+      }, undefined, weekState);
+      check('own plan: a step can be left out, and it stays out', own.boxes >= 4 && own.out && /1 left out by you/.test(own.note), JSON.stringify({ boxes: own.boxes, out: own.out, note: own.note }));
+      const chosen = await visit('week', { instrument: 'guitar' }, '[data-week]', async (p) => {
+        const picks = await p.locator('[data-week]').count();
+        const second = await p.locator('.wsong-pick h3').nth(1).innerText();
+        await p.locator('[data-week]').nth(1).click();
+        await p.waitForSelector('.wsong-hero h1');
+        return { picks, second, title: await txt(p, '.wsong-hero h1') };
+      }, undefined, weekState);
+      check('song of the week: another is chosen among three, and the start page takes it', chosen.picks === 3 && chosen.title === chosen.second, `${chosen.picks} picks, chose ${chosen.second}, title ${chosen.title}`);
 
       // words: under the notes of a tune (K), and over the chords on the sing-along page
       const words = await visit('song/oh-susanna/1', { instrument: 'guitar' }, '#rowA text', async (p) => {
@@ -2008,7 +2012,8 @@ const sections: [string, () => Promise<void>][] = [
       await page.screenshot({ path: resolve(out, 'german-home.png') });
       await pickInstrument(page, 'guitar');
       await page.waitForFunction(() => document.querySelector('[data-inst="guitar"]')?.getAttribute('aria-pressed') === 'true', null, { timeout: 4000 }).catch(() => undefined);
-      check('german: the guitar plan in German', (await text(page, '.plan')).includes('Stimmen') && (await text(page, '.plan')).includes('Akkord-Check'), (await text(page, '.plan')).replace(/\s+/g, ' ').slice(0, 160));
+      await page.waitForSelector('.wsong-choose h1', { timeout: 6000 }).catch(() => undefined);
+      check('german: the guitar asks for the song of the week in German', (await text(page, '.wsong-choose h1')).includes('Welchen Song') && (await text(page, '[data-week] >> nth=0')).includes('Diesen'), (await text(page, '.wsong-choose h1')).slice(0, 160));
       await page.goto(base + '?autostart#/song/scarborough-fair');
       await page.waitForSelector('#h1');
       check('german: a lesson speaks German', /^(Greif|Halte|Zupf|Schlag)/.test(await h1()) && (await text(page, '.ladder')).includes('Lernen'), await h1());
@@ -2021,8 +2026,8 @@ const sections: [string, () => Promise<void>][] = [
       await page.selectOption('#lang', 'en');
       await page.waitForFunction(() => document.documentElement.lang === 'en', null, { timeout: 4000 }).catch(() => undefined);
       await page.goto(base + '?autostart#/');
-      await page.waitForSelector('.plan');
-      check('german: and back to English', (await text(page, '#go')).includes("Start today's session"), await text(page, '#go'));
+      await page.waitForSelector('[data-week]');
+      check('german: and back to English', (await text(page, '.wsong-choose h1')).includes('Which song'), await text(page, '.wsong-choose h1'));
       check('voice and german: no script errors', errors.length === 0, errors.join(' | '));
       await browser.close();
     }

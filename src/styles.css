@@ -1274,6 +1274,14 @@ canvas.world ~ .page .sectitle h2 { text-shadow: 0 1px 12px rgba(252, 248, 242, 
 .place-chord.known b::after { content: ' ✓'; color: var(--good); }
 @media (max-height: 700px) { .place-chord svg { max-width: 84px; } }
 
+/* on Progress: the plan of when to play and the barre project, side by side */
+.progress-habit { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; margin: 20px 0; }
+.progress-habit .plancard { display: grid; gap: 10px; align-content: start; padding: 20px 22px; border: 1px solid var(--line); border-radius: 16px; background: rgba(252, 248, 242, 0.7); }
+.barre-days { display: flex; align-items: flex-end; gap: 3px; height: 48px; }
+.barre-days i { flex: 1; min-width: 4px; height: calc(4px + var(--r) * 7px); border-radius: 2px; background: var(--good); opacity: calc(0.25 + var(--r) * 0.125); }
+.barre-days i.today { box-shadow: 0 0 0 1.5px var(--text); }
+.wsong-end .plancard { display: grid; gap: 8px; padding: 16px 18px; border: 1px solid var(--line); border-radius: 14px; }
+
 /* then and now: two recordings of the same music, the first one faint */
 .thn { display: grid; gap: 0; }
 .thn-row { display: grid; grid-template-columns: 44px minmax(0, 1fr); gap: 12px; align-items: center; padding: 10px 0; border-top: 1px solid var(--line); }
