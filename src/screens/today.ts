@@ -55,7 +55,7 @@ export function arcSentence(a: Arc): string {
   const p = a.parts[n.part];
   const before = n.part > 0 ? a.parts[n.part - 1] : null;
   if (n.kind === 'click') return L(`${p.label}: learned. Today in time, with the band.`, `${p.label}: gelernt. Heute im Takt, mit Band.`);
-  if (p.learned > 0) return L(`${p.label}: ${p.learned} of ${p.lines.length} lines sit. Today the next.`, `${p.label}: ${p.learned} von ${p.lines.length} Zeilen sitzen. Heute die nächste.`);
+  if (p.learned > 0) return L(`${p.label}: ${p.learned} of ${p.lines.length} lines ${p.learned === 1 ? 'sits' : 'sit'}. Today the next.`, `${p.label}: ${p.learned} von ${p.lines.length} Zeilen ${p.learned === 1 ? 'sitzt' : 'sitzen'}. Heute die nächste.`);
   if (before) return L(`The ${before.label.toLowerCase()} runs with the band. Today: the ${p.label.toLowerCase()}.`, `${before.label} läuft mit Band. Heute: ${p.label}.`);
   return L(`Today: ${p.label.toLowerCase() === 'the song' ? 'the first lines' : 'the ' + p.label.toLowerCase()}, line by line.`, `Heute: ${p.label === 'Der Song' ? 'die ersten Zeilen' : p.label}, Zeile für Zeile.`);
 }
@@ -164,7 +164,7 @@ export function weekHome(root: HTMLElement, inst: Instrument, now = Date.now()):
         ${pair ? `<h2>${L('Then and now', 'Damals und jetzt')}</h2>${thenNowRows(inst, pair, now)}` : `<h2>${L('Your sound', 'Dein Klang')}</h2><p class="note">${L('From your first line with the click on, the app keeps your first take and your latest. Here you hear them side by side.', 'Ab deiner ersten Zeile mit Klick behält die App deine erste und deine letzte Aufnahme. Hier hörst du sie nebeneinander.')}</p>`}
         <p class="note wsong-shelfsaid">${(() => {
           const n = repertoire(inst).length;
-          return n ? L(`Your shelf: ${n} ${n === 1 ? 'song' : 'songs'} you can play whole.`, `Dein Regal: ${n} ${n === 1 ? 'Song' : 'Songs'}, die du ganz spielen kannst.`) : L('Your shelf: the songs you can play whole will stand here.', 'Dein Regal: Hier stehen die Songs, die du ganz spielen kannst.');
+          return n ? L(`Your shelf: ${n} ${n === 1 ? 'song' : 'songs'} you can play whole.`, `Dein Regal: ${n} ${n === 1 ? 'Song, den' : 'Songs, die'} du ganz spielen kannst.`) : L('Your shelf: the songs you can play whole will stand here.', 'Dein Regal: Hier stehen die Songs, die du ganz spielen kannst.');
         })()}</p>
         ${shelf(inst, a.title)}
       </section>
