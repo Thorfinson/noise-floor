@@ -35,6 +35,8 @@ import { rhythmReading } from './screens/rhythm';
 import { hearingCheck } from './screens/check';
 import { slurTrainer } from './screens/slur';
 import { stride } from './screens/stride';
+import { dares } from './screens/dares';
+import { fivenotes } from './screens/fivenotes';
 import { groove } from './screens/groove';
 import { placement } from './screens/placement';
 import { weekPage } from './screens/today';
@@ -86,6 +88,8 @@ const routes: Record<string, Route> = {
   run: { screen: withIntro('run', nfRun), mode: 'nf', audio: true },
   night: { screen: nightRun, mode: 'nf', audio: true },
   stride: { screen: withIntro('stride', stride), mode: 'nf', audio: true },
+  dares: { screen: dares, mode: 'learn', audio: true },
+  five: { screen: fivenotes, mode: 'learn', audio: true },
   // the voice
   range: { screen: withIntro('range', voiceRangeTest), mode: 'learn', audio: true },
   match: { screen: withIntro('match', pitchMatch), mode: 'learn', audio: true },

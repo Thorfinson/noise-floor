@@ -21,6 +21,11 @@ import { practiceBar, setSimTarget } from '../ui/practice';
 import { PATTERNS } from '../game/stride';
 import { pips, skillLabel } from './home';
 import { stringTip } from './chordcheck';
+import { daresKey } from './dares';
+import { fiveToday } from './fivenotes';
+import { describe as describeDares } from '../game/dares';
+import { judge, solved, TRIES } from '../game/fivenotes';
+import { weekOf } from '../music/week';
 
 // getters: the names are read when they are shown, in the language of that moment
 const NAMES: Record<RunType, string> = {
@@ -128,6 +133,22 @@ export const nfStart: Screen = (root) => {
         return `<a class="card night-card" href="#/night" id="nightcard"><div class="night-card-text"><span class="k">${L('Tonight', 'Heute Nacht')} · ${esc(plan.rule!.name)}</span><h2>${L(`The night of ${date}`, `Die Nacht vom ${date}`)}</h2><p>${esc(plan.rule!.text)} ${esc(L(`Three waves ${groove}, about four minutes.`, `Drei Wellen ${groove}, etwa vier Minuten.`))}</p><span class="meta">${tonight ? L(`Best tonight: ${num(tonight.best)}`, `Bestwert heute: ${num(tonight.best)}`) : L('Not played yet tonight', 'Heute noch nicht gespielt')}${before.map((e) => ` · ${esc(nightDate(e.day, lang()))}: ${num(e.best)}`).join('')}</span></div><div class="night-card-go"><div class="night-card-chords" aria-label="${L('Its chords', 'Ihre Akkorde')}">${plan.chords.map((c) => `<b>${esc(chordName(c))}</b>`).join('')}</div><span class="night-card-key">${L('Play', 'Spielen')} <kbd>${L('Space', 'Leertaste')}</kbd></span></div></a>`;
       })()
     : '';
+  // added beside the runs: Dares (your song under pressure, guitar) and Five notes (one tune a day by ear)
+  const extra: { href: string; html: string }[] = [];
+  if (!piano && !voice) {
+    const songId = weekOf('guitar')?.id ?? store.current.guitar ?? currentSong().id;
+    const rec = store.dares[daresKey(songId)];
+    extra.push({ href: '#/dares', html: `<span class="k">${L('Your song', 'Dein Song')}</span><h2>${L('Dares', 'Mutproben')}</h2><p>${esc(L(`${currentSong().title} with the band, under pressure you choose.`, `${currentSong().title} mit der Band, unter dem Druck, den du wählst.`))}</p><span class="meta">${rec ? esc(L(`Record: ${describeDares(rec)}`, `Rekord: ${describeDares(rec)}`)) : L('No record yet', 'Noch kein Rekord')}</span>` });
+  }
+  if (!voice) {
+    const f = fiveToday(now);
+    const st = f.state;
+    const won = !!st && st.rows.some((r) => f.tune && solved(judge(r, f.tune.midis)));
+    const meta = !st || !st.hears ? L('Not played yet today', 'Heute noch nicht gespielt') : st.done ? (won ? L(`Found in ${st.rows.length} today`, `Heute gefunden in ${st.rows.length}`) : L('Not found today', 'Heute nicht gefunden')) : L(`Try ${st.rows.length + 1} of ${TRIES}`, `Versuch ${st.rows.length + 1} von ${TRIES}`);
+    extra.push({ href: '#/five', html: `<span class="k">${L('By ear · today', 'Nach Gehör · heute')}</span><h2>${L('Five notes', 'Fünf Töne')}</h2><p>${L('One tune a day, found by ear.', 'Eine Melodie am Tag, nach Gehör.')}</p><span class="meta">${meta}</span>` });
+  }
+  // beside tonight's night they share its row; without it (the piano) the one card lies across the row as a band
+  const extraCards = extra.map((c, i) => `<a class="card extra${nightCard ? '' : ' band'}" href="${c.href}">${c.html}<span class="pick"><span>${L(`Press ${types.length + 2 + i}`, `Drück ${types.length + 2 + i}`)}</span></span></a>`).join('');
   const grooveBpm = Number(store.speeds.groove) > 0 ? Math.round(Number(store.speeds.groove)) : 66;
   root.innerHTML = `<div class="page mid">
     <div>
@@ -135,7 +156,7 @@ export const nfStart: Screen = (root) => {
       <h1>${L('Choose a game.', 'Wähl ein Spiel.')}</h1>
       <p class="lede">${menuOn() ? L(`${piano ? 'Play the key' : 'Strum the chord'} on a card, or press its number.`, piano ? 'Spiel die Taste einer Karte, oder drück ihre Nummer.' : 'Schlag den Akkord einer Karte an, oder drück ihre Nummer.') : L(`Press ${types.map((_, i) => i + 1).join(', ')}, or click a card.`, `Drück ${types.map((_, i) => i + 1).join(', ')} oder klick eine Karte an.`)}${voice ? L(' Sing on “la”; any octave counts.', ' Sing auf „la“; jede Oktave zählt.') : ''}</p>${pickState()}
     </div>
-    <div class="cards${types.length >= 3 ? ' four' : ''}">${nightCard}${types
+    <div class="cards${types.length >= 3 ? ' four' : ''}${extra.length ? ' with-extra' : ''}">${nightCard}${extraCards}${types
       .map(
         (t, i) => `<a class="card${t.type === suggested ? ' sug' : ''}" href="#/run/${t.type}"><span class="k">${t.tag}${t.type === suggested ? L(' · suggested', ' · empfohlen') : ''}</span><h2>${t.name}</h2><p>${esc(t.text)}</p>
         <span class="meta">${t.type === 'changes' ? L(`Starts at ${grooveBpm} bpm`, `Beginnt bei ${grooveBpm} bpm`) : L(`Starts at ${storedSpeed(t.type)}% speed`, `Beginnt bei ${storedSpeed(t.type)} % Tempo`)} · ${L(`weakest: ${esc(weakest(t.type))}`, `am schwächsten: ${esc(weakest(t.type))}`)}</span><span class="pick">${pickHint(i, piano)}</span></a>`,
@@ -161,7 +182,7 @@ export const nfStart: Screen = (root) => {
     scene.draw(null, ts / 1000, false);
   });
   const stopMenu = pickMenu(root, pick, piano);
-  const stopKeys = keys({ ' ': () => plan && go('/night'), '1': () => pick(0), '2': () => pick(1), '3': () => (types[2] ? pick(2) : go('/stride')), '4': () => types.length >= 3 && go('/stride') });
+  const stopKeys = keys({ ' ': () => plan && go('/night'), '1': () => pick(0), '2': () => pick(1), '3': () => (types[2] ? pick(2) : go('/stride')), '4': () => types.length >= 3 && go('/stride'), ...Object.fromEntries(extra.map((c, i) => [String(types.length + 2 + i), () => go(c.href.slice(1))])) });
   return () => {
     cancelAnimationFrame(raf);
     stopMenu();

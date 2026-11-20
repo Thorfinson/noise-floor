@@ -57,7 +57,10 @@ export const takesPage: Screen = (root, [id]) => {
     return repertoirePage(root, []);
   }
   const inst = store.settings.instrument;
-  const title = everything(inst).find((x) => x.id === id)?.title ?? id;
+  // a run of Dares keeps its take beside the song's own, under the song's id with "~dares" (screens/dares.ts)
+  const dared = id.endsWith('~dares');
+  const base = dared ? id.slice(0, -'~dares'.length) : id;
+  const title = (everything(inst).find((x) => x.id === base)?.title ?? base) + (dared ? L(' · Dares', ' · Mutproben') : '');
   const both = (['first', 'last'] as const).map((w) => ({ w, meta: takeMeta(inst, id, w) })).filter((x) => x.meta);
   // one recording only (the first is the latest): shown once
   const shown = both.length === 2 && both[0].meta!.t === both[1].meta!.t ? both.slice(1) : both;

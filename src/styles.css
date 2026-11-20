@@ -1636,3 +1636,73 @@ body[data-mode='nf'] .night-hud { background: none; border-bottom: 0; }
 .night-card-key kbd { border-color: rgba(255, 255, 255, 0.5); color: #fdf6e8; background: none; }
 a.night-card:hover { border-color: transparent; box-shadow: 0 0 0 2px #f2c25c; }
 @media (max-width: 640px) { .cards .night-card { grid-template-columns: minmax(0, 1fr); } .night-card-go { justify-items: start; } .night-card-chords { font-size: 1.75rem; } }
+/* Dares and Five notes, added beside tonight's night: it takes half the row, they a quarter each; on the piano Five notes lies across */
+.cards.with-extra .night-card { grid-column: span 2; }
+.cards .card.extra { align-content: start; gap: 4px; }
+.cards .card.extra .pick { margin-top: auto; }
+.cards .card.extra.band { grid-column: 1 / -1; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 4px 24px; }
+.cards .card.extra.band .pick { grid-column: 2; grid-row: 1 / span 4; margin: 0; }
+@media (max-width: 900px) { .cards.with-extra .night-card { grid-column: 1 / -1; } }
+
+/* Five notes (src/screens/fivenotes.ts): the grid of tries, the light of the notes being played, what is known */
+.fn-wrap { display: grid; grid-template-columns: minmax(0, 1fr) minmax(220px, 340px); gap: clamp(18px, 3vw, 40px); align-items: start; }
+.fn-main { display: grid; gap: 14px; justify-items: start; }
+.fn-listen { display: flex; gap: 14px; height: 18px; }
+.fn-listen i { width: 46px; height: 12px; border-radius: 6px; background: var(--raised); transition: background 0.15s, box-shadow 0.15s; }
+.fn-listen i.on { background: var(--now); box-shadow: 0 0 14px rgba(30, 106, 168, 0.6); }
+.fn-grid { display: grid; gap: clamp(5px, 0.9vh, 8px); }
+.fn-row { display: grid; grid-template-columns: 24px repeat(5, clamp(54px, min(7vw, 8.4vh), 80px)); gap: clamp(5px, 0.9vh, 8px); align-items: center; }
+.fn-row > span { font: 500 var(--t-meta) var(--mono); color: var(--faint); }
+.fn-cell { aspect-ratio: 1; border-radius: 12px; border: 2px solid var(--line); background: #fcf8f2; display: grid; place-items: center; align-content: center; gap: 0; }
+.fn-cell b { font: 700 clamp(1.25rem, min(2.6vw, 3.4vh), 1.875rem)/1 var(--font); }
+.fn-cell small { font: 500 0.6875rem var(--mono); color: var(--muted); }
+.fn-cell.gold { background: #e9b54a; border-color: #e9b54a; color: #2a1d05; }
+.fn-cell.gold small { color: #5a4210; }
+.fn-cell.in { border: 3px solid #e9b54a; background: #fff6e2; }
+.fn-cell.no { background: var(--raised); border-color: var(--raised); color: var(--muted); }
+.fn-cell.now { border-color: var(--now); box-shadow: 0 0 0 4px rgba(30, 106, 168, 0.18); color: var(--now); }
+.fn-cell.empty { background: none; border-style: dashed; }
+.fn-side { display: grid; gap: 14px; font-size: var(--t-small); color: var(--muted); }
+.fn-legend { display: grid; gap: 8px; }
+.fn-legend div { display: flex; align-items: center; gap: 10px; }
+.fn-legend i, .fn-grid-sum i { display: inline-block; width: 20px; height: 20px; border-radius: 5px; vertical-align: middle; }
+.fn-legend i.gold, .fn-grid-sum i.gold { background: #e9b54a; }
+.fn-legend i.in, .fn-grid-sum i.in { box-shadow: inset 0 0 0 3px #e9b54a; background: #fff6e2; }
+.fn-legend i.no, .fn-grid-sum i.no { background: var(--raised); }
+.fn-grid-sum { line-height: 1.6; margin: 0; }
+.fn-grid-sum i { margin-right: 4px; }
+.fn-known { margin: 0; line-height: 1.5; }
+.fn-known b { color: var(--text); }
+.fn-names { margin: 0; font: 700 var(--t-h3) var(--font); color: var(--text); }
+.fn-tab { width: 100%; height: auto; }
+@media (max-width: 760px) { .fn-wrap { grid-template-columns: 1fr; } }
+
+/* Dares (src/screens/dares.ts): the dares to pick, the chart that goes dark layer by layer, the end */
+.dares { display: grid; gap: 14px; }
+.dares-big { flex: none; display: grid; justify-items: center; gap: 4px; min-width: 120px; }
+.dares-big svg { height: clamp(80px, 15vh, 150px); width: auto; }
+.dares-chart svg.fit { max-height: 30vh; }
+.dares-chart svg.dares-next { max-height: 18vh; }
+.dares-call { font: 700 clamp(3rem, 8vw, 6rem)/1 var(--font); color: var(--now); }
+.dares-soon { font-size: var(--t-body); color: var(--muted); }
+.dares-soon b { font-size: var(--t-h2); color: var(--text); }
+.dares-list { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; }
+.dares-dare { display: grid; gap: 4px; align-content: start; text-align: left; padding: 12px 14px; border-radius: 12px; border: 2px solid var(--line); background: #fcf8f2; font: inherit; color: var(--text); cursor: pointer; }
+.dares-dare span { font: 500 var(--t-meta) var(--mono); color: var(--faint); }
+.dares-dare b { font: 700 var(--t-body) var(--font); }
+.dares-dare small { font-size: var(--t-small); color: var(--muted); line-height: 1.35; }
+.dares-dare[aria-pressed='true'] { border-color: #e9b54a; background: #fff4dc; }
+.dares-dare:disabled { opacity: 0.45; cursor: default; }
+.dares-chart { border-radius: 16px; padding: 10px 14px; transition: background 1.2s, filter 1.2s; }
+.dares-chart.dark1 { background: rgba(38, 38, 46, 0.05); }
+.dares-chart.dark2 { background: rgba(38, 38, 46, 0.14); }
+.dares-chart.dark3 { background: #23232c; }
+.dares-chart.dark3 svg { filter: invert(0.85) hue-rotate(180deg); }
+.dares-next { opacity: 0.55; }
+.dares-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.dares-chip { padding: 4px 10px; border-radius: 999px; background: #fff4dc; border: 1px solid #e9b54a; font-size: var(--t-small); font-weight: 600; }
+.dares-chip.off { background: none; border-color: var(--line); color: var(--muted); font-weight: 400; }
+.dares-end p { margin: 0 0 8px; font-size: var(--t-body); color: var(--muted); }
+.dares-end a { color: var(--now); text-decoration: underline; }
+.dares-new { display: inline-block; padding: 3px 10px; border-radius: 999px; background: #e9b54a; color: #2a1d05; font-weight: 700; font-size: var(--t-small); margin-right: 6px; }
+@media (max-width: 900px) { .dares-list { grid-template-columns: 1fr 1fr; } }
