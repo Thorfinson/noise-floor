@@ -1264,6 +1264,16 @@ canvas.world ~ .page .sectitle h2 { text-shadow: 0 1px 12px rgba(252, 248, 242, 
 .wsong-tomorrow p { margin: 0; }
 @media (max-width: 700px) { .wsong-gains { grid-template-columns: minmax(0, 1fr); } }
 
+/* what a returning player can play: the open chords, lit as they are heard ringing */
+.place-say { text-align: center; }
+.place-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; width: min(900px, 100%); margin: 18px auto 0; }
+.place-chord { display: grid; justify-items: center; gap: 2px; padding: 10px; border-radius: 14px; background: rgba(229, 218, 203, 0.55); transition: background 0.3s; }
+.place-chord svg { width: 100%; max-width: 120px; height: auto; }
+.place-chord b { font: 700 1.375rem var(--font); }
+.place-chord.known { background: #d6eadf; box-shadow: inset 0 0 0 2px var(--good); }
+.place-chord.known b::after { content: ' ✓'; color: var(--good); }
+@media (max-height: 700px) { .place-chord svg { max-width: 84px; } }
+
 /* then and now: two recordings of the same music, the first one faint */
 .thn { display: grid; gap: 0; }
 .thn-row { display: grid; grid-template-columns: 44px minmax(0, 1fr); gap: 12px; align-items: center; padding: 10px 0; border-top: 1px solid var(--line); }

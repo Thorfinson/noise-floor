@@ -32,7 +32,7 @@ export const tuner: Screen = (root, [mode], ctx) => {
   const head = `<header class="top"><div><a class="btn quiet" href="#/">${icon(ctx ? 'x' : 'left')}${ctx ? L('End session', 'Session beenden') : L('Home', 'Start')}</a></div>
     <div class="c">${ctx ? ctx.rail : `<b>${L('Tuner', 'Stimmgerät')}</b> · ${which === 'piano' ? L('Piano', 'Klavier') : which === 'any' ? L('Any note', 'Beliebiger Ton') : L('Guitar', 'Gitarre')}`}</div>
     <div class="r">${micMeter()}${toolsButton()}</div></header>`;
-  const stop = which === 'any' ? anyNote(root, head) : which === 'piano' ? piano(root, head, ctx) : guitar(root, head, ctx);
+  const stop = which === 'any' ? anyNote(root, head) : which === 'piano' ? piano(root, head, ctx) : guitar(root, head, ctx, mode === 'quick');
   // the grammar of every play screen: what it does by itself under the music, what is tuned at the right end of the dock
   const hint = root.querySelector('footer.bar > p.auto');
   if (hint) root.querySelector('.stage')?.append(hint);
@@ -154,7 +154,9 @@ function piano(root: HTMLElement, head: string, ctx: Parameters<Screen>[2]): () 
  * off when it is in tune. Nothing is final: a string that was ticked is measured again whenever it is
  * plucked, and loses its tick when it has gone off, as it does when the wrong peg was turned.
  */
-function guitar(root: HTMLElement, head: string, ctx: Parameters<Screen>[2]): () => void {
+function guitar(root: HTMLElement, head: string, ctx: Parameters<Screen>[2], quick = false): () => void {
+  // the tuning of every day, at the start of a warm-up: after the first two times it needs no explaining
+  const seasoned = quick && (store.progress['tuner:times'] ?? 0) >= 2;
   /** the string on show */
   let at = 0;
   /** chosen by hand: measured against this string whatever is heard, for a string so far off that it sounds like its neighbour */
@@ -182,13 +184,13 @@ function guitar(root: HTMLElement, head: string, ctx: Parameters<Screen>[2]): ()
       ${NEEDLE()}
       <p class="sub" id="msg" aria-live="polite"></p>
       <div class="strings" id="strings" role="group" aria-label="${L('Strings', 'Saiten')}"></div>
-      <div class="row tuning"><label for="tuning">${L('Tuning', 'Stimmung')}</label><select id="tuning">${TUNINGS()
+      <div class="row tuning"${seasoned && store.settings.tuning === 'standard' ? ' hidden' : ''}><label for="tuning">${L('Tuning', 'Stimmung')}</label><select id="tuning">${TUNINGS()
         .map((t) => `<option value="${t.id}"${t.id === tuning.id ? ' selected' : ''}>${t.name}</option>`)
         .join('')}</select><span class="note" id="tunnote"></span></div>
-      <p class="legend" id="how">${L('Pluck any string: the app sees which one it is. To pick one yourself, click it or use <kbd>←</kbd> <kbd>→</kbd>.', 'Zupf irgendeine Saite: Die App erkennt, welche es ist. Um selbst eine zu wählen, klick sie an oder nimm <kbd>←</kbd> <kbd>→</kbd>.')}</p>
+      <p class="legend" id="how"${seasoned ? ' hidden' : ''}>${L('Pluck any string: the app sees which one it is. To pick one yourself, click it or use <kbd>←</kbd> <kbd>→</kbd>.', 'Zupf irgendeine Saite: Die App erkennt, welche es ist. Um selbst eine zu wählen, klick sie an oder nimm <kbd>←</kbd> <kbd>→</kbd>.')}</p>
     </div></div>${practiceBar()}
     <footer class="bar"><div class="grp"><button class="btn" id="again">${L('Start over', 'Von vorn')} <kbd>R</kbd></button>${ctx ? `<button class="btn" id="skip">${icon('right')}<span id="skipl">${L('Skip tuning', 'Stimmen überspringen')}</span></button>` : ''}</div>
-    <p class="auto">${L('Follow the string to its peg before you turn. If the dot does not move while you turn, it is the wrong peg.', 'Folge der Saite bis zu ihrem Wirbel, bevor du drehst. Wenn sich der Punkt beim Drehen nicht bewegt, ist es der falsche Wirbel.')}</p></footer>`;
+    <p class="auto"${seasoned ? ' hidden' : ''}>${L('Follow the string to its peg before you turn. If the dot does not move while you turn, it is the wrong peg.', 'Folge der Saite bis zu ihrem Wirbel, bevor du drehst. Wenn sich der Punkt beim Drehen nicht bewegt, ist es der falsche Wirbel.')}</p></footer>`;
 
   const tuned = (): number => done.filter(Boolean).length;
   const target = (i: number): number => midiToFreq(open(i), store.settings.a4);
@@ -255,6 +257,8 @@ function guitar(root: HTMLElement, head: string, ctx: Parameters<Screen>[2]): ()
     const next = [1, 2, 3, 4, 5].map((d) => (at + d) % 6).find((i) => !done[i]);
     if (next === undefined) {
       finished = true;
+      store.progress['tuner:times'] = (store.progress['tuner:times'] ?? 0) + 1;
+      store.save();
       $('#msg', root).textContent = ctx ? L(`Next: ${ctx.after}, in a moment. Pluck a string to check it once more.`, `Gleich als Nächstes: ${ctx.after}. Zupf eine Saite, um sie noch einmal zu prüfen.`) : L('Pluck any string to check it once more.', 'Zupf irgendeine Saite, um sie noch einmal zu prüfen.');
       draw();
       if (ctx) timer = later(3000, ctx.next, ctx.after);

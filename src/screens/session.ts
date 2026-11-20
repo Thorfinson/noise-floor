@@ -350,7 +350,9 @@ const warmUp: Screen = (root, [kind, id, part], ctx) => {
     tuned = true;
     stop?.();
     document.body.dataset.mode = 'learn';
-    stop = kind === 'visit' ? withIntro('song', songLesson)(root, [id, 'review'], ctx) : kind === 'shelf' ? songLesson(root, [id, '3'], ctx) : groove(root, [id, 'warm', part ?? '0'], ctx);
+    // a visit is measured (what has stayed is the point of it); a song from the shelf or this week's song is
+    // played in the groove, unscored: the warm-up is music, not a test
+    stop = kind === 'visit' ? withIntro('song', songLesson)(root, [id, 'review'], ctx) : groove(root, [id, 'warm', part ?? '0'], ctx);
   };
   stop = tuner(root, ['quick'], { ...ctx, after: kind === 'groove' ? L('the warm-up with the band', 'das Einspielen mit Band') : L('a song you know', 'ein Song, den du kannst'), next: then });
   return () => stop?.();
@@ -424,8 +426,8 @@ export function weekPlan(now = Date.now()): Step[] {
   steps.push({
     kind: 'warm', short: L('Warm up', 'Einspielen'),
     as: L('the warm-up', 'das Einspielen'),
-    title: warmKind === 'groove' ? L(`Warm up: ${warmTitle} in the groove`, `Einspielen: ${warmTitle} im Groove`) : L(`Warm up: ${warmTitle}`, `Einspielen: ${warmTitle}`),
-    detail: warmKind === 'visit' ? L('Tune, then two lines you know, from cold, with the band', 'Stimmen, dann zwei Zeilen, die du kannst, aus dem Stand, mit Band') : warmKind === 'shelf' ? L('Tune, then a song you know, with the band', 'Stimmen, dann ein Song, den du kannst, mit Band') : L('Tune, then three rounds with the band, nothing measured', 'Stimmen, dann drei Runden mit Band, nichts gemessen'),
+    title: warmKind === 'visit' ? L(`Warm up: ${warmTitle}, from cold`, `Einspielen: ${warmTitle}, aus dem Stand`) : L(`Warm up: ${warmTitle} in the groove`, `Einspielen: ${warmTitle} im Groove`),
+    detail: warmKind === 'visit' ? L('Tune, then two lines you know, from cold, with the band', 'Stimmen, dann zwei Zeilen, die du kannst, aus dem Stand, mit Band') : warmKind === 'shelf' ? L('Tune, then a song you know, with the band, nothing measured', 'Stimmen, dann ein Song, den du kannst, mit Band, nichts gemessen') : L('Tune, then three rounds with the band, nothing measured', 'Stimmen, dann drei Runden mit Band, nichts gemessen'),
     minutes: warmKind === 'groove' ? 2 : 3, mode: 'learn', screen: warmUp,
     params: [warmKind, due ? due.id : shelf ? shelf.id : id, '0'],
   });

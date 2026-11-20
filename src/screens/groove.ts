@@ -23,8 +23,8 @@ import { chordBox, LEARN, playhead, tabLine, type Drawn } from '../ui/draw';
 import { setSimTarget } from '../ui/practice';
 import { frame, nextStep } from './frame';
 
-/** How many rounds a warm-up plays before it moves on: enough to settle in, short enough to stay a warm-up. */
-const WARM_ROUNDS = 3;
+/** About how long a warm-up plays before it moves on, in seconds: enough to settle in, short enough to stay a warm-up. */
+const WARM_SECONDS = 70;
 
 /** A chord picture for the cue. */
 const bigChord = (id: string | undefined, w: number): string => {
@@ -63,6 +63,8 @@ export const groove: Screen = (root, [id, how = 'free', partParam = '0'], ctx?: 
   let lines = loopLines(m, part);
   const units = (): number => lines.reduce((s, l) => s + l.units, 0);
   const unit = (): number => (m.noteDur * 100) / tempo;
+  /** rounds of the loop in a warm-up: as many as fit about seventy seconds, one to four */
+  const WARM_ROUNDS = Math.max(1, Math.min(4, Math.round(WARM_SECONDS / (units() * unit()))));
   /** where each line begins in the loop, in note units */
   const starts = (): number[] => lines.map((_, i) => lines.slice(0, i).reduce((s, x) => s + x.units, 0));
   /** the chord of the loop at a moment (note units into the loop) */

@@ -35,6 +35,7 @@ import { hearingCheck } from './screens/check';
 import { slurTrainer } from './screens/slur';
 import { stride } from './screens/stride';
 import { groove } from './screens/groove';
+import { placement } from './screens/placement';
 import { weekPage } from './screens/today';
 import { holdTone, pitchMatch, singLesson, voiceRangeTest } from './screens/sing';
 
@@ -60,6 +61,7 @@ const routes: Record<string, Route> = {
   compose: { screen: compose, nav: true, mode: 'learn', audio: false },
   jam: { screen: jam, mode: 'learn', audio: true },
   groove: { screen: groove, mode: 'learn', audio: true },
+  placement: { screen: placement, mode: 'learn', audio: true },
   week: { screen: weekPage, nav: true, mode: 'learn', audio: false },
   ear: { screen: withIntro('ear', earTraining), mode: 'learn', audio: true },
   strum: { screen: withIntro('strumming', strumTrainer), mode: 'learn', audio: true },
@@ -308,6 +310,7 @@ function route(): void {
     compose: L('Your own song', 'Dein eigener Song'),
     jam: L('Play freely', 'Frei spielen'),
     groove: L('In the groove', 'Im Groove'),
+    placement: L('What you can play', 'Was du schon kannst'),
     week: L('Song of the week', 'Song der Woche'),
     ear: L('By ear', 'Nach Gehör'),
     strum: L('Strumming', 'Anschlagen'),

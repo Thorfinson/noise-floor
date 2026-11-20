@@ -105,6 +105,7 @@ export function chooseView(inst: Instrument, opts: { first?: boolean; done?: str
       <p class="lede">${opts.done ? esc(opts.done) + ' ' : ''}${L('One song a week. Everything you practise serves it, and on the last day you record it with the band.', 'Ein Song pro Woche. Alles, was du übst, dient ihm, und am letzten Tag nimmst du ihn mit Band auf.')}</p>
     </section>
     <div class="wsong-picks">${choices.map(card).join('')}</div>
+    ${opts.first && !Object.keys(store.skills.data).some((k) => k.startsWith('chord:') && !k.startsWith('chord:p.')) ? `<section class="paper wsong-own"><div><h2>${L('Played before?', 'Schon mal gespielt?')}</h2><p class="note">${L('Strum the chords you know: what rings is skipped from then on.', 'Schlag die Akkorde an, die du kannst: Was klingt, wird ab dann übersprungen.')}</p></div><div class="row"><a class="btn" href="#/placement">${L('Play what you know', 'Vorspielen, was du kannst')}</a></div></section>` : ''}
     <section class="paper wsong-own"><div><h2>${L('Or your own song', 'Oder dein eigener Song')}</h2><p class="note">${L('Paste the chords over the words, as song sites show them. It stays on this computer.', 'Füg die Akkorde über dem Text ein, so wie Songseiten sie zeigen. Er bleibt auf diesem Computer.')}</p></div><div class="row"><a class="btn" href="#/import">${L('Paste a chord sheet', 'Akkordblatt einfügen')}</a><a class="btn quiet" href="#/songs">${L('All songs', 'Alle Songs')}</a></div></section>`;
 }
 
