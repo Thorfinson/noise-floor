@@ -207,6 +207,7 @@ ${over('And bring back my Bonnie to me', ['Ab', 'And'], ['Bb7', 'Bonnie'], ['Eb'
     expect(chordId('G#').simplified).toBe(false);
     expect(chordId('Asus').simplified).toBe(false);
     expect(chordId('C9').simplified).toBe(true);
+    expect([chordId('Cmaj9').simplified, chordId('Cmaj7').simplified, chordId('Am9').simplified]).toEqual([true, false, true]);
     expect(chordId('G/B')).toEqual({ id: 'G', simplified: true });
     expect([play('Eb'), play('Ebm'), play('Bbm')]).toEqual([null, null, null]);
     // German: H is B, B is B flat

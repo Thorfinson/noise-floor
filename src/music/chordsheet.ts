@@ -67,7 +67,7 @@ export function chordId(symbol: string, transpose = 0, germanB = false): { id: s
   const want = halfDim || dim ? on('m7b5', 'm') : power ? on('5', '') : minor ? (seventh ? on('m7', 'm') : on('m')) : sus2 ? on('sus2', '') : sus4 ? (seventh ? on('7sus4', 'sus4', '7', '') : on('sus4', '')) : add9 ? on('add9', '') : sixNine ? on('69', '') : majSeven ? on('maj7', '') : seventh ? on('7', '') : on('');
   const id = want.find((x) => CHORDS[x]) ?? null;
   if (!id) return { id: null, simplified: false };
-  const written = halfDim ? 'm7b5' : dim ? 'dim' : power ? '5' : (minor ? 'm' : '') + (sus2 ? 'sus2' : sus4 ? (seventh ? '7sus4' : 'sus4') : add9 ? 'add9' : sixNine ? '69' : majSeven ? 'maj7' : rest);
+  const written = halfDim ? 'm7b5' : dim ? 'dim' : power ? '5' : (minor ? 'm' : '') + (sus2 ? 'sus2' : sus4 ? (seventh ? '7sus4' : 'sus4') : add9 ? 'add9' : sixNine ? '69' : majSeven ? `maj${rest || '7'}` : rest);
   return { id, simplified: id.replace(/^[A-G][#b]?/, '') !== written || !!m[4] };
 }
 

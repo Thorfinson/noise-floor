@@ -2,7 +2,9 @@
 import { L } from '../core/i18n';
 import { store } from '../core/store';
 import { deleteTakes } from '../core/takes';
-import { songLines, type PianoPiece, type Song } from '../music/content';
+import { formParts, partsOf, songLines, wholeSeconds, wholeSong, type PianoPiece, type Song } from '../music/content';
+import { parseChordSheet } from '../music/chordsheet';
+import { STRUMS } from '../music/songwriting';
 import { notesHelp, parseNotes, parseTab } from '../music/import';
 import { $, $$, cap, esc, go, icon, type Screen } from '../ui/dom';
 import { LEARN, noteStrip, tabLine } from '../ui/draw';
@@ -134,7 +136,7 @@ export const library: Screen = (root, params, ctx) => {
         <div class="seg" role="group" aria-label="${L('Level', 'Stufe')}">${[0, 1, 2, 3, 4].map((lv) => `<button data-level="${lv}" aria-pressed="${view.level === lv}">${lv ? LEVELS[lv] : L('All', 'Alle')} <small>${lv ? count(lv) : items.length}</small></button>`).join('')}</div>
         <label class="drop">${L('Kind', 'Art')} <select id="kindsel">${KINDS.map(([k, nm]) => `<option value="${k}"${view.kind === k ? ' selected' : ''}>${nm}</option>`).join('')}</select></label>
         <label class="drop">${L('Show', 'Zeigen')} <select id="picksel">${PICKS.map(([k, nm, f]) => `<option value="${k}"${view.pick === k ? ' selected' : ''}>${nm}${k ? ` (${items.filter(f).length})` : ''}</option>`).join('')}</select></label>
-        <span class="ownlinks"><a class="btn quiet" href="#/compose">${icon('right')}${L('Your own song', 'Dein eigener Song')}</a><a class="btn quiet" href="#/import">${icon('right')}${piano ? L('A melody of your own', 'Eigene Melodie') : L('Paste a tab', 'Tabulatur einfügen')}</a>${piano ? '' : `<a class="btn quiet" href="#/singalongs">${icon('right')}${L('Sing and play', 'Singen und spielen')}</a>`}</span>
+        <span class="ownlinks"><a class="btn quiet" href="#/compose">${icon('right')}${L('Your own song', 'Dein eigener Song')}</a>${piano ? '' : `<a class="btn quiet" href="#/import/sheet">${icon('right')}${L('Paste a chord sheet', 'Akkordblatt einfügen')}</a>`}<a class="btn quiet" href="#/import">${icon('right')}${piano ? L('A melody of your own', 'Eigene Melodie') : L('Paste a tab', 'Tabulatur einfügen')}</a>${piano ? '' : `<a class="btn quiet" href="#/singalongs">${icon('right')}${L('Sing and play', 'Singen und spielen')}</a>`}</span>
       </div>`
           : ''
       }
@@ -144,7 +146,7 @@ export const library: Screen = (root, params, ctx) => {
       <p class="note" id="shown" aria-live="polite"></p>
       <ul class="lib" id="list"></ul>
       <p class="note libkey"><b class="chipn">G</b> ${L('rings clean for you', 'klingt bei dir sauber')} <b class="chipn new">A7</b> ${L('new for you', 'neu für dich')}</p>
-      <div class="row"><a class="btn" href="#/compose">${L('Make a chord progression of your own', 'Eine eigene Akkordfolge machen')}</a><a class="btn" href="#/import">${piano ? L('Add a melody of your own', 'Eigene Melodie hinzufügen') : L('Add a song from a tab', 'Song aus einer Tabulatur hinzufügen')}</a><span class="note" id="msg"></span></div>
+      <div class="row">${piano ? '' : `<a class="btn" href="#/import/sheet">${L('Add any song from its chord sheet', 'Jeden Song aus seinem Akkordblatt hinzufügen')}</a>`}<a class="btn" href="#/compose">${L('Make a chord progression of your own', 'Eine eigene Akkordfolge machen')}</a><a class="btn" href="#/import">${piano ? L('Add a melody of your own', 'Eigene Melodie hinzufügen') : L('Add a song from a tab', 'Song aus einer Tabulatur hinzufügen')}</a><span class="note" id="msg"></span></div>
     </section>
   </div>`;
 
@@ -263,6 +265,177 @@ export const library: Screen = (root, params, ctx) => {
   list();
 };
 
+/** The ways of adding a song of your own on the guitar, as a switch at the top of the page that adds one. */
+const ownWays = (on: 'sheet' | 'tab'): string =>
+  `<nav class="seg" aria-label="${L('How to add it', 'Wie du ihn hinzufügst')}"><a href="#/import/sheet"${on === 'sheet' ? ' aria-current="true"' : ''}>${L('Chord sheet', 'Akkordblatt')}</a><a href="#/import"${on === 'tab' ? ' aria-current="true"' : ''}>${L('Tab', 'Tabulatur')}</a><a href="#/compose">${L('Chord progression', 'Akkordfolge')}</a></nav>`;
+
+/** The strumming patterns a song from a chord sheet can be played in, with what the trainer calls them. */
+const SHEET_STRUMS = (): [keyof typeof STRUMS, string][] => [
+  ['folk', L('Down, down-up · 4/4', 'Ab, ab-auf · 4/4')],
+  ['beat', L('Every beat · 4/4', 'Jeder Schlag · 4/4')],
+  ['half', L('On one and three · 4/4', 'Auf eins und drei · 4/4')],
+  ['pop', L('Down, down-up, up-down-up · 4/4', 'Ab, ab-auf, auf-ab-auf · 4/4')],
+  ['waltz', L('Three-four', 'Dreivierteltakt')],
+  ['lilt', L('Three-four with upstrokes', 'Dreivierteltakt mit Aufschlägen')],
+  ['roll', L('Six-eight', 'Sechsachteltakt')],
+];
+
+/** A sheet to try it with: the broadside words of Whiskey in the Jar (1871), as a song site would print them. */
+const SHEET_EXAMPLE = (): string =>
+  [
+    'Whiskey in the Jar',
+    'Traditional',
+    '',
+    '[Verse 1]',
+    'G'.padEnd(32) + 'Em',
+    'As I was a walking over Wicklow mountain,',
+    'C'.padEnd(48) + 'G',
+    'I met with Colonel Powers, and his money he was counting,',
+    'G'.padEnd(27) + 'Em',
+    'I pulled out my sword, and likewise my rapier,',
+    'C'.padEnd(35) + 'G'.padEnd(9) + 'Em',
+    "Saying, stand and deliver, for I'm a bold deceiver.",
+    '',
+    '[Chorus]',
+    'D',
+    'Mush a ring a do a da,',
+    'G',
+    'Whack fol the daddy O,',
+    'C',
+    'Whack fol the daddy O,',
+    'G'.padEnd(27) + 'D'.padEnd(5) + 'G',
+    "There's whiskey in the jar.",
+    '',
+    '[Verse 2]',
+    "It's when I got the money it was a pretty penny,",
+    'I put it in my pocket, and I took it home to Molly;',
+    'She said, my dearest Pat, I never will deceive you,',
+    "But the devil's in the women, they never can be easy.",
+    '',
+    '[Chorus]',
+  ].join('\n');
+
+/**
+ * #/import/sheet: a song from a chord sheet, chords over words as song sites print them. What it makes of the sheet
+ * shows as it is typed: the parts in the order they are sung, each line with its chords over its words, and what
+ * was simplified or could not be played. Saved, it is one of the player's own songs and its page opens.
+ */
+export const sheetImporter: Screen = (root) => {
+  root.innerHTML = `<div class="page">
+    <div><a class="btn quiet" href="#/songs">${icon('left')}${L('Songs', 'Songs')}</a></div>
+    <div class="cs-head"><p class="kick">${L('Guitar · your own song', 'Gitarre · dein eigener Song')}</p><h1>${L('Paste a chord sheet.', 'Füg ein Akkordblatt ein.')}</h1>
+      <p class="lede">${L('The chords above the words, as song sites print them, with <b>[Verse]</b>, <b>[Chorus]</b> and the like over the parts. The app makes parts, lines and the whole song of it.', 'Die Akkorde über dem Text, so wie Songseiten sie zeigen, mit <b>[Verse]</b>, <b>[Chorus]</b> und Ähnlichem über den Teilen. Die App macht daraus Teile, Zeilen und den ganzen Song.')}</p>
+      <p class="note">${L('It stays on this computer: nothing is sent anywhere.', 'Er bleibt auf diesem Rechner: Nichts wird irgendwohin geschickt.')}</p>
+      ${ownWays('sheet')}</div>
+    <div class="cs-two">
+      <div class="cs-in">
+        <textarea id="sheet" rows="18" spellcheck="false" aria-label="${L('The chord sheet', 'Das Akkordblatt')}" placeholder="${esc('[Verse]\nG                  Em\nAs I was a walking over Wicklow mountain\n\n[Chorus]\nD\nMush a ring a do a da')}"></textarea>
+        <div class="row"><button class="btn quiet" id="example">${L('Fill in an example', 'Beispiel einfügen')}</button></div>
+        <div class="field"><label for="title">${L('Title', 'Titel')}</label><input id="title" type="text" maxlength="60" placeholder="${L('My song', 'Mein Song')}"></div>
+        <div class="field"><label for="artist">${L('Artist', 'Künstler')}</label><input id="artist" type="text" maxlength="60"></div>
+        <div class="field"><label for="bpm">${L('Tempo', 'Tempo')}<small>${L('Beats a minute at full speed: 70 is slow, 120 brisk.', 'Schläge pro Minute im vollen Tempo: 70 ist langsam, 120 flott.')}</small></label><input id="bpm" type="number" min="40" max="200" step="1" value="90"></div>
+        <div class="field"><label for="pattern">${L('Strumming', 'Schlagmuster')}</label><select id="pattern">${SHEET_STRUMS().map(([k, name]) => `<option value="${k}">${esc(name)}</option>`).join('')}</select></div>
+        <div class="field"><label for="per">${L('Bars per chord', 'Takte pro Akkord')}<small>${L('How long each chord is held. A line with a single chord holds it twice as long.', 'Wie lange jeder Akkord gehalten wird. Eine Zeile mit nur einem Akkord hält ihn doppelt so lang.')}</small></label><select id="per"><option value="1">1</option><option value="2">2</option><option value="4">4</option></select></div>
+        <div class="field"><label for="transpose">${L('Transpose', 'Transponieren')}<small>${L('Moves every chord up or down, for a key with chords the app has.', 'Verschiebt jeden Akkord nach oben oder unten, in eine Tonart mit Akkorden, die die App kennt.')}</small></label><select id="transpose">${[-5, -4, -3, -2, -1, 0, 1, 2, 3, 4, 5, 6].map((t) => `<option value="${t}"${t === 0 ? ' selected' : ''}>${t === 0 ? L('As written', 'Wie notiert') : L(`${t > 0 ? '+' : '−'}${Math.abs(t)} ${Math.abs(t) === 1 ? 'semitone' : 'semitones'}`, `${t > 0 ? '+' : '−'}${Math.abs(t)} ${Math.abs(t) === 1 ? 'Halbton' : 'Halbtöne'}`)}</option>`).join('')}</select></div>
+      </div>
+      <div class="cs-out">
+        <div id="found" class="cs-found" aria-live="polite"></div>
+        <div id="sheetprev" class="cs-prev" aria-label="${L('How the song will be played', 'So wird der Song gespielt')}"></div>
+        <div class="row"><button class="btn primary" id="save" disabled>${L('Save and open', 'Speichern und öffnen')}</button></div>
+      </div>
+    </div>
+  </div>`;
+  const src = $<HTMLTextAreaElement>('#sheet', root);
+  const save = $<HTMLButtonElement>('#save', root);
+  const value = (sel: string): string => $<HTMLInputElement>(sel, root).value;
+  let made: Song | null = null;
+  let tempoTyped = false;
+
+  function read(): void {
+    const r = parseChordSheet(src.value, {
+      id: 'my-' + Date.now().toString(36),
+      title: value('#title'),
+      by: value('#artist'),
+      bpm: Math.min(200, Math.max(40, Number(value('#bpm')) || 90)),
+      pattern: value('#pattern') as keyof typeof STRUMS,
+      perChord: Number(value('#per')) || 1,
+      transpose: Number(value('#transpose')) || 0,
+    });
+    // a ChordPro sheet that names its title, artist or tempo fills them in, as long as nothing was typed there
+    if (r.title && !value('#title')) $<HTMLInputElement>('#title', root).placeholder = r.title;
+    if (r.by && !value('#artist')) $<HTMLInputElement>('#artist', root).placeholder = r.by;
+    if (r.bpm && !tempoTyped) $<HTMLInputElement>('#bpm', root).value = String(r.bpm);
+    made = r.song;
+    save.disabled = !made;
+    const notes: string[] = [];
+    if (made) {
+      const parts = formParts(made);
+      const secs = wholeSeconds(made);
+      notes.push(`<p><b>${L(`${partsOf(made).length} ${partsOf(made).length === 1 ? 'part' : 'parts'}, sung ${parts.length} ${parts.length === 1 ? 'time' : 'times'} round: about ${Math.max(1, Math.round(secs / 60))} min.`, `${partsOf(made).length} ${partsOf(made).length === 1 ? 'Teil' : 'Teile'}, ${parts.length}-mal gesungen: etwa ${Math.max(1, Math.round(secs / 60))} Min.`)}</b> ${L('This is how it will be played:', 'So wird er gespielt:')}</p>`);
+    }
+    if (r.capo) notes.push(`<p>${L(`The sheet asks for a capo on fret ${r.capo}: the chords are the shapes you play with it.`, `Das Blatt will einen Kapodaster im ${r.capo}. Bund: Die Akkorde sind die Griffe, die du damit spielst.`)} ${store.settings.capo === r.capo ? L('Your capo is set to that fret.', 'Dein Kapodaster ist auf diesen Bund eingestellt.') : `<button class="btn quiet" id="capoit">${L(`Set the capo to fret ${r.capo}`, `Kapodaster auf den ${r.capo}. Bund stellen`)}</button>`}</p>`);
+    if (r.simplified.length) notes.push(`<p>${L('Simplified', 'Vereinfacht')}: ${r.simplified.map((x) => `${esc(x.from)} → ${esc(chordName(x.to))}`).join(', ')}</p>`);
+    if (r.unknown.length)
+      notes.push(
+        `<p class="cs-warn">${L(`The app has no shape for ${r.unknown.map(esc).join(', ')}: those bars keep the chord before.`, `Für ${r.unknown.map(esc).join(', ')} kennt die App keinen Griff: Diese Takte behalten den Akkord davor.`)}${r.suggest !== null ? ` <button class="btn quiet" id="moveit" data-t="${r.suggest}">${L(`Transpose ${r.suggest > 0 ? '+' : '−'}${Math.abs(r.suggest)}: every chord playable`, `Um ${r.suggest > 0 ? '+' : '−'}${Math.abs(r.suggest)} transponieren: alle Akkorde spielbar`)}</button>` : ''}</p>`,
+      );
+    for (const p of r.problems) notes.push(`<p>${esc(p)}</p>`);
+    if (r.skipped) notes.push(`<p class="note">${L(`${r.skipped} ${r.skipped === 1 ? 'line' : 'lines'} left out: tab, notes about the song and the like.`, `${r.skipped} ${r.skipped === 1 ? 'Zeile' : 'Zeilen'} weggelassen: Tabulatur, Angaben zum Song und Ähnliches.`)}</p>`);
+    $('#found', root).innerHTML = src.value.trim() ? notes.join('') : '';
+    $('#sheetprev', root).innerHTML = made ? preview(made, r.lines) : '';
+    root.querySelector<HTMLButtonElement>('#capoit')?.addEventListener('click', () => {
+      store.settings.capo = r.capo;
+      store.save();
+      read();
+    });
+    root.querySelector<HTMLButtonElement>('#moveit')?.addEventListener('click', (e) => {
+      $<HTMLSelectElement>('#transpose', root).value = (e.currentTarget as HTMLElement).dataset.t!;
+      read();
+    });
+  }
+
+  /** The whole song as it will be played: each time round of a part under its name, each line its chords over its words. */
+  function preview(song: Song, lines: Record<string, number[][]>): string {
+    const whole = wholeSong(song);
+    return formParts(song)
+      .map((p) => {
+        const start = partsOf(song).find((x) => x.name === p.part)!.from;
+        const rows = (lines[p.part] ?? [whole.slice(p.from, p.to).map((f) => f.index)])
+          .map((ln) => `<div class="cs-line">${ln.map((b, i) => {
+            const f = whole[p.from + b - start];
+            const c = song.bars[b].notes.map((n) => n.strum).filter((x, k, a): x is string => !!x && a.indexOf(x) === k);
+            const prev = i > 0 ? song.bars[ln[i - 1]].notes.map((n) => n.strum).pop() : undefined;
+            return `<span class="cs-bar"><b>${c.length > 1 || c[0] !== prev ? esc(c.map((x) => chordName(x)).join(' ')) : ''}</b><span>${esc((f?.words ?? '').replace(/-$/, '‑'))}</span></span>`;
+          }).join('')}</div>`)
+          .join('');
+        return `<section class="cs-part"><h3>${esc(p.label)}</h3>${rows}</section>`;
+      })
+      .join('');
+  }
+
+  src.oninput = read;
+  $$('#title, #artist, #pattern, #per, #transpose', root).forEach((el) => (el.oninput = read));
+  $('#bpm', root).oninput = () => {
+    tempoTyped = true;
+    read();
+  };
+  $('#example', root).onclick = () => {
+    src.value = SHEET_EXAMPLE();
+    if (!value('#title')) $<HTMLInputElement>('#title', root).value = 'Whiskey in the Jar';
+    if (!value('#artist')) $<HTMLInputElement>('#artist', root).value = 'Traditional';
+    read();
+  };
+  save.onclick = () => {
+    read();
+    if (!made) return;
+    store.songs.push(made);
+    store.current.guitar = made.id;
+    store.save();
+    go(`/songs/${made.id}`);
+  };
+  read();
+};
+
 const TAB_EXAMPLE = `e|-----0-----0---|-----0-----0---|
 B|---1---1-----1-|---1---1-----1-|
 G|-2-------2-----|-0-------0-----|
@@ -270,10 +443,12 @@ D|---------------|---------------|
 A|-0-------------|-3-------------|
 E|---------------|---------------|`;
 
-export const importer: Screen = (root) => {
+export const importer: Screen = (root, params, ctx) => {
   const voice = store.settings.instrument === 'voice';
   // a voice types a melody by its note names, as the piano does
   const piano = store.settings.instrument === 'piano' || voice;
+  // #/import/sheet: a song from a chord sheet (the guitar's way in for any song)
+  if (params[0] === 'sheet' && !piano) return sheetImporter(root, params, ctx);
   root.innerHTML = `<div class="page">
     <div><a class="btn quiet" href="#/songs">${icon('left')}${piano && !voice ? L('Pieces', 'Stücke') : L('Songs', 'Songs')}</a></div>
     <div><p class="kick">${voice ? L('Voice · your own melody', 'Stimme · deine eigene Melodie') : piano ? L('Piano · your own melody', 'Klavier · deine eigene Melodie') : L('Guitar · your own song', 'Gitarre · dein eigener Song')}</p><h1>${piano ? L('Type a melody.', 'Tipp eine Melodie ein.') : L('Paste a tab.', 'Füg eine Tabulatur ein.')}</h1>
@@ -284,7 +459,7 @@ export const importer: Screen = (root) => {
               'A text tab as you find them everywhere: six lines, the high e string on top, fret numbers on dashes, bars split by <b>|</b>. Numbers in the same column are played together.',
               'Eine Tabulatur als Text, wie man sie überall findet: sechs Zeilen, die hohe e-Saite oben, Bundnummern auf Strichen, Takte getrennt durch <b>|</b>. Zahlen in derselben Spalte werden zusammen gespielt.',
             )
-      }</p></div>
+      }</p>${piano ? '' : ownWays('tab')}</div>
     <div class="field"><label for="title">${L('Title', 'Titel')}</label><input id="title" type="text" maxlength="60" placeholder="${piano ? L('My melody', 'Meine Melodie') : L('My song', 'Mein Song')}"></div>
     <textarea id="src" rows="${piano ? 6 : 9}" spellcheck="false" aria-label="${piano ? L('The notes', 'Die Noten') : L('The tab', 'Die Tabulatur')}" placeholder="${piano ? 'E4 E4 F4 G4 | G4 F4 E4 D4' : esc(TAB_EXAMPLE)}"></textarea>
     <div>

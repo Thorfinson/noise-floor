@@ -8,7 +8,7 @@ Noise Floor is MIT-licensed (see [LICENSE](LICENSE)). What it uses from others, 
 
 ## Music
 
-Every song and piece the app brings along is in the public domain: traditional songs, spirituals, carols and hymns, the songs of Stephen Foster and James Lord Pierpont, and the music of Bach, Beethoven, Mozart, Grieg, Tchaikovsky, Dvořák, Joplin and others. The app stores no lyrics, only titles, credits, chords and melodies.
+Every song and piece the app brings along is in the public domain: traditional songs, spirituals, carols and hymns, the songs of Stephen Foster and James Lord Pierpont, and the music of Bach, Beethoven, Mozart, Grieg, Tchaikovsky, Dvořák, Joplin and others. Where the app has words, they are public domain too: traditional words, and words by authors dead for more than seventy years, printed before 1930. The words of the whole songs (every verse, bar by bar) were taken from old prints, each named with its link in `src/music/songwords.ts`: broadsides, John A. Lomax's Cowboy Songs (1910), Cecil Sharp's English Folk-Chanteys (1914), Heart Songs (1909), the Olney Hymns (1779) and others on archive.org, Wikisource, Project Gutenberg and hymnary.org.
 
 The tunes were compared note for note with published notation; eighteen demanding piano pieces were taken from published scores as text:
 

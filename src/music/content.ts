@@ -285,12 +285,16 @@ export const findSong = (id: string | undefined): Song => allSongs().find((s) =>
 /** Skill a bar measures. Bars over the same chord share one; melody bars have one each. */
 export const barKey = (song: Song, bar: number): string => `bar:${song.id}:${song.bars[bar].chord ?? 'b' + (bar + 1)}`;
 
-/** Bars shown side by side as one line: more of them when the bars are short. */
+/** Bars shown side by side as one line: more of them when the bars are short. A new part always begins a new line. */
 export function songLines(song: Song): number[][] {
   const steps = song.bars.reduce((sum, b) => sum + b.notes.length, 0) / Math.max(1, song.bars.length);
   const per = steps <= 3 ? 4 : steps <= 6 ? 2 : 1;
   const lines: number[][] = [];
-  for (let i = 0; i < song.bars.length; i += per) lines.push(song.bars.slice(i, i + per).map((_, k) => i + k));
+  song.bars.forEach((b, i) => {
+    const line = lines[lines.length - 1];
+    if (!line || line.length >= per || (b.part && i > 0)) lines.push([i]);
+    else line.push(i);
+  });
   return lines;
 }
 
