@@ -160,9 +160,11 @@ const startRun = async (page: Page): Promise<void> => {
 };
 
 // node_modules may be a link to another folder (a second working copy shares the first one's): its fonts are served too
-const server = await createServer({ root: resolve(here, '../..'), logLevel: 'error', server: { port: 5199, strictPort: true, fs: { allow: [resolve(here, '../..'), realpathSync(resolve(here, '../../node_modules'))] } } });
+// another working copy on the same machine may be checking at the same time: E2E_PORT gives this one its own port
+const port = Number(process.env.E2E_PORT) || 5199;
+const server = await createServer({ root: resolve(here, '../..'), logLevel: 'error', server: { port, strictPort: true, fs: { allow: [resolve(here, '../..'), realpathSync(resolve(here, '../../node_modules'))] } } });
 await server.listen();
-const base = 'http://localhost:5199/';
+const base = `http://localhost:${port}/`;
 
 /** The sections of the checks, each with a browser of its own: they run side by side (see below). */
 const sections: [string, () => Promise<void>][] = [
@@ -376,7 +378,8 @@ const sections: [string, () => Promise<void>][] = [
       const browser = await chromium.launch({ channel: 'msedge', headless: true, args: ['--autoplay-policy=no-user-gesture-required', '--lang=en-US'] });
       const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
       await ctx.addInitScript(() => {
-        if (!localStorage.getItem('noise-floor/v1')) localStorage.setItem('noise-floor/v1', JSON.stringify({ settings: { a4: 440, buzz: 0.5, mic: false, practiceInstrument: true, strumSelect: true }, current: { guitar: 'scarborough-fair' } }));
+        // the groove at its quickest tempo, so that a wave of the changes run is over in half a minute
+        if (!localStorage.getItem('noise-floor/v1')) localStorage.setItem('noise-floor/v1', JSON.stringify({ settings: { a4: 440, buzz: 0.5, mic: false, practiceInstrument: true, strumSelect: true }, current: { guitar: 'scarborough-fair' }, speeds: { groove: 120 } }));
       });
       const page = await ctx.newPage();
       const errors: string[] = [];
@@ -457,21 +460,22 @@ const sections: [string, () => Promise<void>][] = [
       check('session: a minute cut short is not taken for a measurement', (await text(page, '#tip')).includes('Too short to measure'), (await text(page, '#tip')).replace(/\s+/g, ' '));
       await page.keyboard.press('Space');
       await page.waitForSelector('#brief', { timeout: 8000 });
-      check('session: the chord changes are introduced before anything moves: the chords with their shapes, and how it works', (await text(page, '#brief h1')).startsWith('Chord changes: ') && (await page.locator('#brief .shapes figure').count()) >= 2 && (await page.locator('#brief .how li').count()) === 3 && (await page.locator('#con').count()) === 0, `${await text(page, '#brief h1')} · ${await page.locator('#brief .shapes figure').count()} shapes`);
-      check('session: the run only asks for chords that have been met', (await page.locator('#brief .shapes figcaption').allInnerTexts()).every((c) => ['Em', 'Am', 'G', 'C', 'D'].includes(c)), (await page.locator('#brief .shapes figcaption').allInnerTexts()).join(' '));
+      check('session: the chord-change game says in one line what to do, shows its chords, and nothing moves yet', (await text(page, '#brief h1')) === 'Play the chord on a piece to strike it.' && (await page.locator('#brief .night-chords figure').count()) >= 2 && (await page.locator('.night-strip').count()) === 1 && (await page.locator('#con').count()) === 0, `${await text(page, '#brief h1')} · ${await page.locator('#brief .night-chords figure').count()} shapes`);
+      check('session: the run only asks for chords that have been met', (await page.locator('#brief .night-chords figcaption').allInnerTexts()).every((c) => ['Em', 'Am', 'G', 'C', 'D'].includes(c)), (await page.locator('#brief .night-chords figcaption').allInnerTexts()).join(' '));
       await page.screenshot({ path: resolve(out, 'session-brief.png') });
       await page.keyboard.press('Space');
       const counted = await page
-        .waitForFunction(() => document.querySelector('#banner')?.classList.contains('count') && /^[1-4]$/.test(document.querySelector('#banner')?.textContent ?? '') && !!document.querySelector('#con text'), null, { timeout: 4000 })
+        .waitForFunction(() => document.querySelector('#banner')?.classList.contains('count') && /^[1-4]$/.test(document.querySelector('#banner')?.textContent ?? '') && Number((document.querySelector('#scene') as HTMLElement | null)?.dataset.pieces ?? 0) >= 1, null, { timeout: 4000 })
         .then(() => true)
         .catch(() => false);
       // how far the first piece of noise has come toward the lamp: it must not move while the count goes on
       const near = (): Promise<string> => page.evaluate(() => (document.querySelector('#scene') as HTMLElement | null)?.dataset.near ?? '');
       const y0 = await near();
-      await page.waitForTimeout(500);
+      await page.waitForTimeout(300);
       const y1 = await near();
       await page.screenshot({ path: resolve(out, 'session-count.png') });
-      check('session: the run counts in, with the first change already on show and nothing coming nearer yet', counted && ((await page.locator('#con').textContent()) ?? '').includes('Strum') && y0 !== '' && y0 === y1, `${await text(page, '#banner')} | ${y0} then ${y1}`);
+      const wears = await page.evaluate(() => (document.querySelector('#scene') as HTMLElement | null)?.dataset.next ?? '');
+      check('session: the run counts in, with the first piece already on show, wearing its chord, and nothing coming nearer yet', counted && ['Em', 'Am', 'G', 'C', 'D'].includes(wears) && y0 !== '' && y0 === y1, `${await text(page, '#banner')} | ${wears} | ${y0} then ${y1}`);
       // the picture of the run: a canvas over the whole window, painted, with the lighthouse scene in it
       const painted = await page.evaluate(() => {
         const c = document.querySelector('#scene') as HTMLCanvasElement | null;
@@ -818,12 +822,13 @@ const sections: [string, () => Promise<void>][] = [
       // the rhythm game: stones in time with the click, the chord changing at every bar line
       await page.goto(base + '?autostart#/nf');
       await page.waitForSelector('.cards');
-      const cardTops = await page.locator('.cards .card').evaluateAll((els) => els.map((e) => Math.round(e.getBoundingClientRect().top)));
+      const cardTops = await page.locator('.cards .card:not(.night-card)').evaluateAll((els) => els.map((e) => Math.round(e.getBoundingClientRect().top)));
       const cardBottom = await page.locator('.cards .card').evaluateAll((els) => Math.max(...els.map((e) => e.getBoundingClientRect().bottom)));
+      const firstCard = (await page.locator('.cards .card').first().getAttribute('class')) ?? '';
       check(
-        'games: both games are on the chooser side by side, none of them below the fold',
-        cardTops.length === 4 && new Set(cardTops).size === 1 && cardBottom <= 900 && (await text(page, '.cards')).includes('Stepping stones') && (await page.title()) === 'Games · Noise Floor',
-        `${cardTops.length} cards at y ${[...new Set(cardTops)].join(', ')}, bottom ${Math.round(cardBottom)} · ${await page.title()}`,
+        "games: tonight's night comes first, across the row; the four games side by side below it, none of them below the fold",
+        firstCard.includes('night-card') && /^The night of [A-Z][a-z]+ \d+$/.test(await text(page, '.night-card h2')) && cardTops.length === 4 && new Set(cardTops).size === 1 && cardBottom <= 900 && (await text(page, '.cards')).includes('Stepping stones') && (await page.title()) === 'Games · Noise Floor',
+        `${firstCard} · ${await text(page, '.night-card h2')} · ${cardTops.length} cards at y ${[...new Set(cardTops)].join(', ')}, bottom ${Math.round(cardBottom)} · ${await page.title()}`,
       );
       await page.goto(base + '?autostart#/stride/four');
       await page.waitForSelector('#brief');
@@ -906,6 +911,54 @@ const sections: [string, () => Promise<void>][] = [
         return (await page.locator(selector).count()) > 0;
       };
       const points = async (): Promise<number> => Number((await text(page, '#score')).replace(/,/g, ''));
+      const scene = async (key: string): Promise<string> => page.evaluate((k) => (document.querySelector('#scene') as HTMLElement | null)?.dataset[k] ?? '', key);
+
+      // tonight's night: opened with Space from the Games page, explained in one line, played on the groove
+      await page.goto(base + '?autostart#/nf');
+      await page.waitForSelector('.night-card');
+      await page.keyboard.press('Space');
+      await page.waitForSelector('#brief', { timeout: 8000 });
+      const nightKick = await text(page, '#brief .kick');
+      check("night: Space on the Games page opens tonight's night, which says in one line what to do and names its rule", page.url().endsWith('#/night') && (await text(page, '#brief h1')) === 'Play the chord on a piece to strike it.' && /^THE NIGHT OF [A-Z]+ \d+ · \S/.test(nightKick) && (await page.locator('#brief .lede').count()) === 1, `${page.url().split('#')[1]} · ${nightKick} · ${await text(page, '#brief .lede')}`);
+      await page.keyboard.press('Space');
+      await page.waitForFunction(() => Number((document.querySelector('#scene') as HTMLElement | null)?.dataset.pieces ?? 0) >= 1, null, { timeout: 4000 }).catch(() => undefined);
+      const firstPiece = await scene('next');
+      await page.waitForFunction(() => (document.querySelector('#mid') as HTMLElement | null)?.dataset.gate === 'go', null, { timeout: 8000 }).catch(() => undefined);
+      await press(page, 'n', 12, 800);
+      // what is read while playing: the words outside the picture, the drawings and the practice keys left out
+      const words = await page.evaluate(() => {
+        const copy = document.querySelector('#app')!.cloneNode(true) as HTMLElement;
+        copy.querySelectorAll('canvas, svg, .practice, [hidden]').forEach((e) => e.remove());
+        document.body.append(copy);
+        const said = copy.innerText;
+        copy.remove();
+        return said.split(/\s+/).filter((w) => /[A-Za-zÄÖÜäöü]/.test(w));
+      });
+      await page.screenshot({ path: resolve(out, 'night.png') });
+      check('night: struck pieces score, and a chain of clean hits brings in the band layer by layer', (await points()) >= 300 && Number(await scene('level')) >= 1 && (await page.locator('.night-row.on').count()) >= 2, `score ${await points()}, band level ${await scene('level')}, ${await page.locator('.night-row.on').count()} layers on`);
+      check('night: while it is played, the screen has only a few words on it', words.length <= 20, `${words.length}: ${words.join(' ')}`);
+      // the same night again, later the same day: its rule and its first piece (from another page, or the
+      // address would not change and nothing would open again)
+      await page.goto(base + '?autostart#/nf');
+      await page.waitForSelector('.night-card');
+      await page.goto(base + '?autostart#/night');
+      await page.waitForSelector('#brief', { timeout: 8000 });
+      const kickAgain = await text(page, '#brief .kick');
+      await page.keyboard.press('Space');
+      await page.waitForFunction(() => Number((document.querySelector('#scene') as HTMLElement | null)?.dataset.pieces ?? 0) >= 1, null, { timeout: 4000 }).catch(() => undefined);
+      const firstAgain = await scene('next');
+      check('night: the same all day: a second visit has the same rule and the same first piece', kickAgain === nightKick && firstPiece !== '' && firstAgain === firstPiece, `${nightKick} / ${kickAgain} · ${firstPiece} / ${firstAgain}`);
+
+      // a changes run of one wave on the groove, played to its end: the Mute, then one sentence and three gains
+      await page.goto(base + '?autostart#/run/changes/1');
+      await startRun(page);
+      check('changes run: the Mute comes after its one wave on the groove', await playUntil('#btiles', 700, 80), `${await text(page, '#ttl')}`);
+      await page.waitForTimeout(700);
+      const seals = await page.locator('#btiles .tile').count();
+      for (let i = 1; i <= seals; i++) await pressUntil(page, 'n', '#btiles .tile.clean', i, '#rerun');
+      await page.waitForSelector('#rerun', { timeout: 8000 }).catch(() => undefined);
+      await page.screenshot({ path: resolve(out, 'changes-end.png') });
+      check('changes run: ends in one sentence, three gains as sentences, Again and Go on, and the table behind Details', /^The light held: [\d,]+ points\.$/.test(await text(page, '.night-end h1')) && (await page.locator('.night-gains li').count()) === 3 && (await page.locator('#rerun').count()) === 1 && (await page.locator('#onward').count()) === 1 && (await page.locator('.night-more[open]').count()) === 0 && ((await page.locator('.night-more tbody').textContent()) ?? '').includes(`${seals} of ${seals} strings`), `${await text(page, '.night-end h1')} | ${(await page.locator('.night-gains').innerText().catch(() => '')).replace(/\s+/g, ' ')}`);
 
       // a one-wave run, so that the boss is reached: the small F♯m, four strings
       await page.goto(base + '?autostart#/run/fingers/1');
@@ -919,7 +972,7 @@ const sections: [string, () => Promise<void>][] = [
       await page.screenshot({ path: resolve(out, 'boss-guitar.png') });
       for (let i = 1; i <= segments; i++) await pressUntil(page, 'n', '#btiles .tile.clean', i, '#rerun');
       await page.waitForSelector('#rerun', { timeout: 6000 }).catch(() => undefined);
-      check('guitar boss: every string clean wins the run', (await text(page, 'tbody')).includes(`${segments} of ${segments} strings`), (await text(page, 'h1')).slice(0, 60));
+      check('guitar boss: every string clean wins the run', ((await page.locator('tbody').first().textContent()) ?? '').includes(`${segments} of ${segments} strings`) && /^The light held/.test(await text(page, '#mid h1')), (await text(page, '#mid h1')).slice(0, 60));
       await page.screenshot({ path: resolve(out, 'debrief.png') });
 
       // upgrades: the run must still hear you after one was chosen
@@ -1089,7 +1142,7 @@ const sections: [string, () => Promise<void>][] = [
       await page.screenshot({ path: resolve(out, 'boss-piano.png') });
       for (let i = 4; i <= 8; i++) await pressUntil(page, 'n', '#btiles .tile.clean', i, '#rerun');
       await page.waitForSelector('#rerun', { timeout: 6000 }).catch(() => undefined);
-      check('piano boss: eight ringing keys win the run', /8 of 8 keys/.test(await text(page, 'tbody')), (await text(page, 'h1')).slice(0, 60));
+      check('piano boss: eight ringing keys win the run', /8 of 8 keys/.test((await page.locator('tbody').first().textContent()) ?? ''), (await text(page, 'h1')).slice(0, 60));
 
 
       // ── the piano's chords: the book of pieces, the chord check, changes, pieces of chords, the games.
