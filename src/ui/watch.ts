@@ -108,6 +108,43 @@ interface Geo {
   dr: number;
 }
 
+/** What a frame is drawn with, between its start and its end. */
+interface Frame {
+  ctx: CanvasRenderingContext2D;
+  g: Geo;
+  h: Hour;
+  ink: RGB;
+  lock: RGB;
+  still: boolean;
+  dt: number;
+}
+
+/** A piece of the groove as the picture needs it. */
+export interface GroovePiece {
+  id: number;
+  /** the chord's name, as it is written on the piece */
+  name: string;
+  lane: number;
+  /** how far it has come, 0 at the horizon, 1 at the lamp, moving with the beat */
+  p: number;
+  /** it reaches the lamp first: the ring, and the beam */
+  next: boolean;
+}
+
+/** A frame of the groove. */
+export interface GrooveView {
+  /** the clock bolts are timed on: seconds on the listener's clock, as the player hears it */
+  clock: number;
+  /** how far into the current beat, 0 to 1; below 0 before the first */
+  phase: number;
+  pieces: GroovePiece[];
+  /** layers of the band playing, 0 (drums) to 3 */
+  level: number;
+  integrity: number;
+  maxIntegrity: number;
+  boss: Boss | null;
+}
+
 export class Watch {
   private readonly s: Surface;
   private readonly tints = new Tints();
@@ -125,6 +162,9 @@ export class Watch {
   private rings: { x: number; y: number; t: number; c: RGB; size: number }[] = [];
   private texts: { x: number; y: number; t: number; text: string }[] = [];
   private readonly pos = new Map<string, { x: number; y: number }>();
+  /** where each piece of the groove was last drawn, and the bolts on their way to them */
+  private readonly gpos = new Map<number, { x: number; y: number; r: number }>();
+  private readonly flights = new Map<number, { x: number; y: number; r: number; from: number; at: number; inTime: boolean; burst: boolean }>();
   private readonly struck = new Map<string, number>();
   private readonly sealBroken = new Map<number, number>();
   private sealFailed: { i: number; t: number } | null = null;
@@ -550,6 +590,49 @@ export class Watch {
    * a pause, while the picture goes on breathing).
    */
   draw(run: Run | null, ts: number, moving = true): void {
+    const f = this.open(ts);
+    const { ctx, g, h, ink, lock, still, dt } = f;
+    const boss = run?.state === 'boss' || (run?.boss && this.ending) ? run.boss : null;
+    if (boss) this.mute(ctx, g, boss, h, ink, lock);
+
+    // where the lamp looks: at the piece being played, at the seal that is due, or slowly round
+    const locked = run?.state === 'playing' ? run.locked() : null;
+    let look: { x: number; y: number } | null = null;
+    if (locked) look = this.place(locked, g);
+    else if (boss && !this.ending) look = this.sealAt(g, boss, Math.min(boss.at, boss.steps.length - 1));
+    const lampOn = !(this.ending && !this.won);
+    const power = run ? 0.5 + 0.5 * (run.integrity / run.maxIntegrity) : 1;
+    // after a blow the lamp flickers, or, held still, burns lower for a moment
+    const flick = this.blow > 0 ? (still ? 0.7 : 0.55 + 0.45 * Math.sin(this.t * 70) * Math.sin(this.t * 23)) : 1;
+    const lamp = lampOn ? power * flick : Math.max(0, 1 - this.ending * 1.5) * 0.6;
+    this.turn(look, dt);
+    this.light(ctx, g, h, lamp, look);
+
+    if (run && run.state === 'playing') {
+      const foes = run.foes.slice().sort((a, b) => (a === locked ? 1 : 0) - (b === locked ? 1 : 0) || a.y - b.y);
+      const seen = new Set<string>();
+      for (const fo of foes) {
+        const p = this.place(fo, g);
+        seen.add(fo.id);
+        this.pos.set(fo.id, p);
+        if (p.x < g.W + 60) this.foe(ctx, g, fo, p, fo === locked, h, ink, lock, moving);
+      }
+      for (const id of this.struck.keys()) if (!seen.has(id)) this.struck.delete(id);
+    }
+    this.close(f, 16);
+  }
+
+  /** The beam turns toward what the lamp looks at, or sweeps slowly round when there is nothing. */
+  private turn(look: { x: number; y: number } | null, dt: number): void {
+    const g = this.geo();
+    if (look) {
+      const want = Math.atan2(look.y - g.ly, look.x - g.lx);
+      this.beam += (want - this.beam) * Math.min(1, dt * 7);
+    } else this.beam += (-0.14 + 0.1 * Math.sin(this.t * 0.5) - this.beam) * Math.min(1, dt * 2);
+  }
+
+  /** The start of every frame: the hour painted behind, clouds, birds and the water. */
+  private open(ts: number): Frame {
     const dt = this.last ? Math.min(0.1, Math.max(0, ts - this.last)) : 0;
     this.last = ts;
     this.t += dt;
@@ -582,7 +665,7 @@ export class Watch {
     const ctx = this.s.begin(sx, sy);
     if (this.old) ctx.drawImage(this.old, -4, -4, g.W + 8, g.H + 8);
     ctx.globalAlpha = this.old ? ease(this.fade) : 1;
-    ctx.drawImage(this.back, -4, -4, g.W + 8, g.H + 8);
+    ctx.drawImage(this.back!, -4, -4, g.W + 8, g.H + 8);
     ctx.globalAlpha = 1;
 
     // clouds: pale washes going by, slowly
@@ -628,39 +711,12 @@ export class Watch {
       ctx.lineTo(x + 10 + 50 * k, g.hz + 6 + k * depth * 0.95);
       ctx.stroke();
     }
+    return { ctx, g, h, ink, lock, still, dt };
+  }
 
-    const boss = run?.state === 'boss' || (run?.boss && this.ending) ? run.boss : null;
-    if (boss) this.mute(ctx, g, boss, h, ink, lock);
-
-    // where the lamp looks: at the piece being played, at the seal that is due, or slowly round
-    const locked = run?.state === 'playing' ? run.locked() : null;
-    let look: { x: number; y: number } | null = null;
-    if (locked) look = this.place(locked, g);
-    else if (boss && !this.ending) look = this.sealAt(g, boss, Math.min(boss.at, boss.steps.length - 1));
-    const lampOn = !(this.ending && !this.won);
-    const power = run ? 0.5 + 0.5 * (run.integrity / run.maxIntegrity) : 1;
-    // after a blow the lamp flickers, or, held still, burns lower for a moment
-    const flick = this.blow > 0 ? (still ? 0.7 : 0.55 + 0.45 * Math.sin(this.t * 70) * Math.sin(this.t * 23)) : 1;
-    const lamp = lampOn ? power * flick : Math.max(0, 1 - this.ending * 1.5) * 0.6;
-    if (look) {
-      const want = Math.atan2(look.y - g.ly, look.x - g.lx);
-      this.beam += (want - this.beam) * Math.min(1, dt * 7);
-    } else this.beam += (-0.14 + 0.1 * Math.sin(this.t * 0.5) - this.beam) * Math.min(1, dt * 2);
-    this.light(ctx, g, h, lamp, look);
-
-    if (run && run.state === 'playing') {
-      const foes = run.foes.slice().sort((a, b) => (a === locked ? 1 : 0) - (b === locked ? 1 : 0) || a.y - b.y);
-      const seen = new Set<string>();
-      for (const f of foes) {
-        const p = this.place(f, g);
-        seen.add(f.id);
-        this.pos.set(f.id, p);
-        if (p.x < g.W + 60) this.foe(ctx, g, f, p, f === locked, h, ink, lock, moving);
-      }
-      for (const id of this.struck.keys()) if (!seen.has(id)) this.struck.delete(id);
-    }
-
-    // lines of light, rings, sparks, words
+  /** The end of every frame: lines of light, rings, sparks, words, the plants in front, the paper. */
+  private close(f: Frame, petalCount: number): void {
+    const { ctx, g, h, ink, still, dt } = f;
     this.bolts = this.bolts.filter((b) => this.t - b.t < 0.3);
     for (const b of this.bolts) this.ray(ctx, g.lx, g.ly, b.x, b.y, b.seed, 1 - (this.t - b.t) / 0.3, b.wide);
     this.rings = this.rings.filter((r) => this.t - r.t < 0.7);
@@ -683,7 +739,7 @@ export class Watch {
     }
 
     this.leaves(ctx, g, h);
-    this.weather(ctx, g, h, dt, true);
+    this.weather(ctx, g, h, dt, true, petalCount);
     if (!still && this.flash > 0.01) {
       ctx.fillStyle = css(WHITE, this.flash * 0.55);
       ctx.fillRect(-20, -20, g.W + 40, g.H + 40);
@@ -695,8 +751,172 @@ export class Watch {
     paperFinish(this.s, g.bt, h.paper);
   }
 
+  // ───────────────────────── the lighthouse on a groove (game/groove.ts)
+
+  /** Is the hour on show a night one (a dark sky)? */
+  get night(): boolean {
+    return HOURS[this.shown].night;
+  }
+
+  /** Where a piece of the groove is: from the horizon on the right to the lamp, in its lane, nearer ones larger. */
+  private spot(p: GroovePiece, g: Geo): { x: number; y: number; r: number } {
+    const lanes = g.bh > 260 ? 4 : 3;
+    const lane = p.lane % lanes;
+    // over the sky, clear of the headland and the rocks in front: dark ink reads on the light
+    const top = g.bt + clamp(g.bh * 0.14, 36, 80);
+    const bottom = Math.max(top + 30, g.bt + (g.hz - g.bt) * 0.74);
+    const seed = hash(p.id, 7) * TAU;
+    // the far ones float high near the horizon line, the near ones lower and larger; all bob a little
+    let y = lerp(top, bottom, lanes > 1 ? lane / (lanes - 1) : 0.5) + 4 * Math.sin(this.t * 1.1 + seed);
+    y = lerp(y, g.ly + 10, ease((p.p - 0.78) / 0.22));
+    const x = lerp(g.W * 0.93 - 24, g.lx + 70, p.p);
+    const r = lerp(clamp(g.bh * 0.06, 17, 26), clamp(g.bh * 0.15, 36, 62), Math.pow(p.p, 0.8));
+    return { x, y, r };
+  }
+
+  /** The bolt for a piece sets off now and strikes it at `at` (a beat, on the view's clock). */
+  fire(id: number, from: number, at: number, inTime: boolean): void {
+    const s = this.gpos.get(id);
+    if (!s) return;
+    this.flights.set(id, { ...s, from, at, inTime, burst: false });
+  }
+
+  /** The bell pushed a piece back. */
+  rang(id: number): void {
+    const s = this.gpos.get(id);
+    if (s) this.rings.push({ x: s.x, y: s.y, t: this.t, c: GLOW, size: 2.4 * s.r });
+  }
+
+  /** A piece of the groove reached the lamp. */
+  reached(id: number): void {
+    this.pos.set(`g${id}`, this.gpos.get(id) ?? { x: 0, y: 0 });
+    this.landed(`g${id}`);
+    this.gpos.delete(id);
+  }
+
+  /** A layer of the band came in: a little more light over the water, gone again as it settles. */
+  swelled(): void {
+    const g = this.geo();
+    this.rings.push({ x: g.lx, y: g.ly, t: this.t, c: GOLD, size: 160 });
+  }
+
+  /**
+   * One frame of the groove: the pieces with their chords, the ring round the one that reaches the lamp
+   * first, pulsing on the beat, and the beam swelling on the beat and turning toward it. Bolts fly from the
+   * moment a chord was heard and strike on the beat they were given.
+   */
+  drawGroove(v: GrooveView, ts: number): void {
+    const f = this.open(ts);
+    const { ctx, g, h, ink, lock, still, dt } = f;
+    if (v.boss) this.mute(ctx, g, v.boss, h, ink, lock);
+    // the beat: a pulse that peaks on it and dies away, held steady for whoever asked for less motion
+    const pulse = v.phase < 0 ? 0 : still ? 0.35 : Math.exp(-v.phase * 4.5);
+    const next = v.pieces.find((p) => p.next && !this.flights.has(p.id));
+    let look: { x: number; y: number } | null = null;
+    if (next) {
+      const s = this.spot(next, g);
+      look = { x: s.x, y: s.y };
+    } else if (v.boss && !this.ending) look = this.sealAt(g, v.boss, Math.min(v.boss.at, v.boss.steps.length - 1));
+    const lampOn = !(this.ending && !this.won);
+    const power = 0.55 + 0.45 * (v.integrity / v.maxIntegrity);
+    const flick = this.blow > 0 ? (still ? 0.7 : 0.55 + 0.45 * Math.sin(this.t * 70) * Math.sin(this.t * 23)) : 1;
+    // the band brings light: the beam reaches further and burns brighter with every layer
+    const lamp = lampOn ? power * flick * (0.82 + 0.06 * v.level) * (1 + 0.28 * pulse) : Math.max(0, 1 - this.ending * 1.5) * 0.6;
+    this.turn(look, dt);
+    this.light(ctx, g, h, Math.min(1.25, lamp), look);
+
+    const seen = new Set<number>();
+    // far ones first, so that the near ones lie over them
+    const order = v.pieces.slice().sort((a, b) => a.p - b.p);
+    for (const p of order) {
+      seen.add(p.id);
+      const fl = this.flights.get(p.id);
+      if (fl?.burst) continue;
+      const s = fl ? { x: fl.x, y: fl.y, r: fl.r } : this.spot(p, g);
+      if (!fl) this.gpos.set(p.id, s);
+      this.blotPiece(ctx, h, p, s, !!fl, p.next && !fl ? pulse : -1, lock, ink);
+    }
+    // bolts in flight, and the strike on its beat
+    for (const [id, fl] of this.flights) {
+      if (fl.burst) {
+        if (v.clock > fl.at + 2) this.flights.delete(id);
+        continue;
+      }
+      const u = clamp((v.clock - fl.from) / Math.max(0.05, fl.at - fl.from));
+      if (u < 1) {
+        // the bolt grows from the lamp toward its piece, arriving on the beat
+        const k = ease(u);
+        this.ray(ctx, g.lx, g.ly, lerp(g.lx, fl.x, k), lerp(g.ly, fl.y, k), id * 31, 0.45 + 0.55 * u, fl.inTime ? 1.1 : 0.8);
+        continue;
+      }
+      fl.burst = true;
+      const many = fl.inTime ? 1 : 0.6;
+      this.bolts.push({ x: fl.x, y: fl.y, t: this.t, seed: (this.t * 1000) | 0, wide: fl.inTime ? 1.3 : 1 });
+      this.sparks.burst(fl.x, fl.y, Math.round(34 * many), GOLD, 240, { span: 0.9, size: 2.8, solid: true });
+      this.sparks.burst(fl.x, fl.y, Math.round(22 * many), h.dark, 150, { span: 1.1, size: 4.4, g: 90, solid: true });
+      this.rings.push({ x: fl.x, y: fl.y, t: this.t, c: GOLD, size: fl.r * (fl.inTime ? 2.4 : 1.6) });
+      this.shake = Math.max(this.shake, fl.inTime ? 3 : 1.5);
+    }
+    for (const id of this.gpos.keys()) if (!seen.has(id) && !this.flights.has(id)) this.gpos.delete(id);
+    // with the whole band, more of the strong colour is in the air
+    this.close(f, 8 + 6 * v.level);
+  }
+
+  /** A piece of the groove: a blot of ink with its chord written large on it, the next one ringed. */
+  private blotPiece(ctx: CanvasRenderingContext2D, h: Hour, p: GroovePiece, s: { x: number; y: number; r: number }, fired: boolean, pulse: number, lock: RGB, ink: RGB): void {
+    const { x, y, r } = s;
+    const rnd = prng(p.id * 7 + 3);
+    const body = mix(h.dark, h.near, 0.18);
+    // the ink has bled a little into the wet sky
+    stain(ctx, x, y, r * 1.7, h.dark, h.night ? 0.22 : 0.16);
+    // a thin tail, trailing behind it on the way to the lamp
+    ctx.strokeStyle = css(body, 0.6);
+    ctx.lineWidth = Math.max(1.5, r * 0.1);
+    ctx.lineCap = 'round';
+    const wave = Math.sin(this.t * 2.2 + p.id) * r * 0.12;
+    ctx.beginPath();
+    ctx.moveTo(x + r * 0.55, y + r * 0.62);
+    ctx.quadraticCurveTo(x + r * 1.15, y + r * 0.9 + wave, x + r * 1.6, y + r * 0.62 - wave);
+    ctx.stroke();
+    // the body: a rough round wash, darker in its middle
+    const rim: Pt[] = [];
+    const n = 16;
+    const breathe = fired ? 1 + 0.05 * Math.sin(this.t * 40) : 1;
+    for (let i = 0; i < n; i++) {
+      const a = (i / n) * TAU;
+      const rr = r * (0.86 + 0.24 * rnd()) * breathe;
+      rim.push([x + Math.cos(a) * rr, y + Math.sin(a) * rr * 0.84]);
+    }
+    ctx.fillStyle = css(body, 0.93);
+    shape(ctx, rough(rim, 2, r * 0.05, rnd));
+    ctx.fill();
+    blot(ctx, x - r * 0.1, y - r * 0.08, r * 0.6, r * 0.5, h.dark, 0.35, r * 0.2, rnd, 6);
+    // the ring round the piece that reaches the lamp first: it pulses on the beat
+    if (pulse >= 0) {
+      ctx.strokeStyle = css(GOLD, 0.45 + 0.5 * pulse);
+      ctx.lineWidth = 2 + 1.5 * pulse;
+      ctx.beginPath();
+      ctx.arc(x, y, r * (1.32 + 0.1 * pulse), 0, TAU);
+      ctx.stroke();
+    }
+    // its chord, large, in paper white: what is played to strike it
+    const size = Math.max(15, r * (p.name.length > 3 ? 0.62 : p.name.length > 2 ? 0.75 : 0.9));
+    ctx.font = `700 ${size.toFixed(1)}px ${SANS}`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.lineJoin = 'round';
+    ctx.lineWidth = Math.max(2, size * 0.12);
+    ctx.strokeStyle = css(body, 0.9);
+    ctx.strokeText(p.name, x, y + size * 0.04);
+    ctx.fillStyle = css(fired ? GLOW : [253, 246, 232]);
+    ctx.fillText(p.name, x, y + size * 0.04);
+    ctx.textBaseline = 'alphabetic';
+    void lock;
+    void ink;
+  }
+
   /** Rain and far lightning in a storm; petals on the wind otherwise. */
-  private weather(ctx: CanvasRenderingContext2D, g: Geo, h: Hour, dt: number, front: boolean): void {
+  private weather(ctx: CanvasRenderingContext2D, g: Geo, h: Hour, dt: number, front: boolean, petalCount = 16): void {
     if (!front) {
       // far lightning, with its flash, is left out for whoever asked for less motion
       if (h.rain < 0.3 || calm()) return;
@@ -723,7 +943,7 @@ export class Watch {
       return;
     }
     // petals, or whatever the wind has picked up, drifting in from the sea
-    petals(ctx, this.t, 16, g.W, g.bt + g.bh * 0.1, g.bh * 0.9, [h.accent, h.disc]);
+    petals(ctx, this.t, petalCount, g.W, g.bt + g.bh * 0.1, g.bh * 0.9, [h.accent, h.disc]);
   }
 
   /** The lamp and its beam: warm light laid over the picture. */

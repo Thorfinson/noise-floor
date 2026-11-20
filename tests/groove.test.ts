@@ -312,3 +312,23 @@ describe('the night: the same all day', () => {
     expect(nightLog(progress, 20450).map((e) => e.day)).toEqual([20450]);
   });
 });
+
+describe('the groove of a song', () => {
+  it('is its first part, at most eight bars, its chords in order; a picked song is strummed once a beat', async () => {
+    const { grooveOf } = await import('../src/game/groove');
+    const { SONGS } = await import('../src/music/content');
+    const picked = grooveOf(SONGS.find((s) => s.id === 'scarborough-fair')!)!;
+    expect(picked.bars.length).toBeLessThanOrEqual(8);
+    expect(picked.chords[0]).toBe('Am');
+    expect(picked.bars.every((b) => b.notes.length === picked.beatsPerBar && b.notes.every((n) => n.strum))).toBe(true);
+    // a song in parts: its verse alone
+    const clementine = grooveOf(SONGS.find((s) => s.id === 'clementine')!)!;
+    expect(clementine.bars.length).toBe(8);
+    expect(clementine.beatsPerBar).toBe(3);
+    expect(clementine.units).toBe(8 * 3 * clementine.unitsPerBeat);
+    // the band's chords begin where the strums change chord
+    expect(clementine.band[0]).toEqual({ u: 0, id: 'G' });
+    // a melody has no chords: no groove of its own
+    expect(grooveOf(SONGS.find((s) => s.id === 'ode-guitar')!)).toBeNull();
+  });
+});

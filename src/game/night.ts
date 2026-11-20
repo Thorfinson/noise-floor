@@ -52,12 +52,13 @@ export function seeded(seed: number): () => number {
  * from outside the song), and not yesterday's again.
  */
 export function nightRule(day: number, playable: (id: RuleId) => boolean = () => true): NightRule {
-  const fair = NIGHT_RULES.filter((r) => playable(r.id));
-  const rules = fair.length ? fair : NIGHT_RULES.filter((r) => r.id !== 'mixed');
-  const raw = (d: number): number => nightSeed(d) % rules.length;
+  // drawn from all of them, so that what can be played changes a night's rule only where it has to
+  const n = NIGHT_RULES.length;
+  const raw = (d: number): number => nightSeed(d) % n;
   let i = raw(day);
-  if (rules.length > 1 && i === raw(day - 1)) i = (i + 1) % rules.length;
-  return rules[i];
+  if (i === raw(day - 1)) i = (i + 1) % n;
+  for (let k = 0; k < n && !playable(NIGHT_RULES[i].id); k++) i = (i + 1) % n;
+  return NIGHT_RULES[i];
 }
 
 /** The date of a night as the language writes it: November 20, 20. November. Days are local days. */

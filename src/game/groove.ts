@@ -20,6 +20,8 @@
 import type { StringResult } from '../audio/listener';
 import { L } from '../core/i18n';
 import type { RunRow } from '../core/store';
+import { noteTimes, partsOf, type Bar, type Song, type TabNote } from '../music/content';
+import { strumPatternOf } from '../music/strums';
 import type { Boss, BossSpec, Measurement } from './run';
 import { HEARD_AFTER } from './stride';
 
@@ -620,4 +622,69 @@ export class Groove {
   lean(): number {
     return this.offsets.length ? mean(this.offsets) : 0;
   }
+}
+
+// ───────────────────────── the music a groove is played over
+
+/** The music of a groove: the bars of a song's first part, strummed, and how it is counted. */
+export interface GrooveMusic {
+  /** the bars as the tab line shows them: strums only */
+  bars: { chord?: string; notes: TabNote[] }[];
+  /** the chords for the band, each from the note unit it begins at */
+  band: { u: number; id: string }[];
+  /** the length of the loop, in note units */
+  units: number;
+  unitsPerBeat: number;
+  beatsPerBar: number;
+  /** the chords in the order they come */
+  chords: string[];
+  /** the strumming pattern of the song, as the band's feel */
+  feel?: string;
+}
+
+/** The chords sounding in a bar, in order: its strums, or the chord it is held over. */
+const chordsIn = (b: Bar, before?: string): string[] => {
+  const s = b.notes.filter((n) => n.strum).map((n) => n.strum!);
+  const all = s.length ? s : b.chord ? [b.chord] : before ? [before] : [];
+  return all.filter((c, i) => c !== all[i - 1]);
+};
+
+/**
+ * The groove of a song: its first part, at most eight bars, as a loop. A strummed song keeps its own strums;
+ * a picked one is strummed once on every beat over its chords. A song without chords has no groove.
+ */
+export function grooveOf(song: Song): GrooveMusic | null {
+  const part = partsOf(song)[0];
+  const bars = (part ? song.bars.slice(part.from, part.to) : song.bars).slice(0, 8);
+  if (!bars.some((b) => chordsIn(b).length)) return null;
+  const upb = Math.max(1, song.beat);
+  const first = bars.find((b) => chordsIn(b).length)!;
+  const beatsPerBar = Math.max(2, Math.round(Math.max(1, noteTimes(first.notes).total) / upb));
+  const strummed = bars.every((b) => b.notes.length && b.notes.every((n) => n.strum));
+  let sounding: string | undefined;
+  const shown = bars.map((b) => {
+    const cs = chordsIn(b, sounding);
+    sounding = cs[cs.length - 1] ?? sounding;
+    if (strummed) return { chord: cs[0], notes: b.notes };
+    // a picked bar: one strum a beat, its chords sharing the bar
+    const notes: TabNote[] = Array.from({ length: beatsPerBar }, (_, k) => ({ s: 0, f: 0, strum: cs[Math.min(cs.length - 1, Math.floor((k * cs.length) / beatsPerBar))] ?? sounding ?? 'Em', ...(upb !== 1 ? { len: upb } : {}) }));
+    return { chord: cs[0], notes };
+  });
+  const band: { u: number; id: string }[] = [];
+  let u = 0;
+  for (const b of shown) {
+    const t = noteTimes(b.notes);
+    b.notes.forEach((n, i) => {
+      if (n.strum && n.strum !== band[band.length - 1]?.id) band.push({ u: u + t.at[i], id: n.strum });
+    });
+    u += Math.max(beatsPerBar * upb, t.total);
+  }
+  const chords = [...new Set(band.map((c) => c.id))];
+  return { bars: shown, band, units: u, unitsPerBeat: upb, beatsPerBar, chords, feel: strumPatternOf(song) ?? undefined };
+}
+
+/** A groove of two chords, one bar each, for a song without chords of its own. */
+export function vamp(a: string, b: string): GrooveMusic {
+  const bar = (c: string): { chord: string; notes: TabNote[] } => ({ chord: c, notes: Array.from({ length: 4 }, () => ({ s: 0, f: 0, strum: c })) });
+  return { bars: [bar(a), bar(b), bar(a), bar(b)], band: [0, 4, 8, 12].map((u, i) => ({ u, id: i % 2 ? b : a })), units: 16, unitsPerBeat: 1, beatsPerBar: 4, chords: [a, b], feel: 'beat' };
 }
