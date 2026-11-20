@@ -296,7 +296,7 @@ function consoleSvg(f: Foe, nx: Foe | null): string {
 
 export const nfRun: Screen = (root, [t, short, again], ctx) => {
   const type: RunType = TYPES.find((x) => x === t) ?? (store.settings.instrument === 'voice' ? 'sing' : store.settings.instrument === 'piano' ? 'keys' : 'song');
-  // the guitar's changes are played on a groove, with the band (screens/groove.ts)
+  // the guitar's changes are played on a groove, with the band (screens/nightrun.ts)
   if (type === 'changes') return grooveRun(root, ctx, { night: false, waves: Number(short) || 0, again: !!again });
   const piano = isPianoRun(type);
   const voice = isVoiceRun(type);

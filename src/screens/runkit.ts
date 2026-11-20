@@ -1,7 +1,7 @@
 /**
  * What the screens of the games share: menus chosen from the instrument (strum a chord on a card, or play a
  * key), and a few small helpers. Used by the runs (screens/nf.ts) and the lighthouse on a groove
- * (screens/groove.ts).
+ * (screens/nightrun.ts).
  */
 import { engine } from '../audio/engine';
 import { L, num } from '../core/i18n';
