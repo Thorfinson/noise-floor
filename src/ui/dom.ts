@@ -27,6 +27,16 @@ export interface SessionCtx {
   after: string;
 }
 
+/**
+ * An explanation on a play screen is needed the first times, then it is in the way: with the instrument in
+ * the hands only a sentence is read. hintFresh says whether it is still shown; hintSeen counts a showing.
+ */
+export const hintFresh = (key: string, times = 2): boolean => (store.progress['hint:' + key] ?? 0) < times;
+export function hintSeen(key: string): void {
+  store.progress['hint:' + key] = (store.progress['hint:' + key] ?? 0) + 1;
+  store.save();
+}
+
 /** A screen fills the root element and may return a function that cleans up when it is left. */
 export type Screen = (root: HTMLElement, params: string[], ctx?: SessionCtx) => void | (() => void);
 

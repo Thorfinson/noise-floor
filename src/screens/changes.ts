@@ -9,7 +9,7 @@ import { L } from '../core/i18n';
 import { store } from '../core/store';
 import { pairKey } from '../music/difficulty';
 import { changeTip, chordName, CHORDS, keyTip, strumIs } from '../music/theory';
-import { $, esc, hear, icon, keys, micMeter, pianoEars, type Screen } from '../ui/dom';
+import { $, esc, hear, icon, keys, micMeter, pianoEars, type Screen, hintFresh, hintSeen } from '../ui/dom';
 import { chordBox, keyChord, LEARN } from '../ui/draw';
 import { practiceBar, setSimTarget } from '../ui/practice';
 import { isKeyChord } from './keys';
@@ -28,6 +28,9 @@ export const changeDrill: Screen = (root, [a0, b0], ctx) => {
   /** what the player does to a chord: strum it on the guitar, play it on the piano */
   const Verb = piano ? 'Play' : 'Strum';
   let phase: 'warm' | 'ready' | 'minute' | 'done' = 'warm';
+  // how the drill works is said the first two times; after that the first strum needs no explaining
+  const howFresh = hintFresh('changedrill');
+  hintSeen('changedrill');
   /** strums heard in this phase; the chord wanted next is a for even counts */
   let n = 0;
   let startT = -1;
@@ -60,7 +63,9 @@ export const changeDrill: Screen = (root, [a0, b0], ctx) => {
       $('#eb', root).textContent = L(`${label}The change ${name(a)} → ${name(b)} · first without a clock · ${Math.min(n + 1, WARM)} of ${WARM}`, `${label}Der Wechsel ${name(a)} → ${name(b)} · erst ohne Uhr · ${Math.min(n + 1, WARM)} von ${WARM}`);
       $('#h1', root).innerHTML = n === 0 ? L(`${Verb} <em>${esc(name(w))}</em>.`, piano ? `Spiel <em>${esc(name(w))}</em>.` : `Schlag <em>${esc(name(w))}</em> an.`) : L(`Change to <em>${esc(name(w))}</em>${piano ? '' : ' and strum'}.`, `Wechsle zu <em>${esc(name(w))}</em>${piano ? '' : ' und schlag an'}.`);
       $('#tip', root).innerHTML =
-        n === 0
+        n === 0 && !howFresh
+          ? ''
+          : n === 0
           ? L(
               `<b>How it works</b>${piano ? `Lay the hand on ${esc(name(a))} and play it once, all keys together.` : `Put ${esc(name(a))} down and strum once, slowly.`} The app waits. Then it shows how to get to ${esc(name(b))}.`,
               `<b>So geht’s</b>${piano ? `Leg die Hand auf ${esc(name(a))} und spiel den Akkord einmal, alle Tasten zusammen.` : `Greif ${esc(name(a))} und schlag einmal langsam an.`} Die App wartet. Dann zeigt sie, wie du zu ${esc(name(b))} kommst.`,

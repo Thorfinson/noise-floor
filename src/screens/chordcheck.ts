@@ -8,7 +8,7 @@ import { L } from '../core/i18n';
 import { dayOf } from '../core/days';
 import { store } from '../core/store';
 import { barreStrings, chordMidis, CHORDS, noteName, STRING_FULL, STRING_NAMES, stringName, type Chord } from '../music/theory';
-import { $, cap, esc, hear, icon, keys, later, learnRing, stopTimer, type Screen } from '../ui/dom';
+import { $, cap, esc, hear, icon, keys, later, learnRing, stopTimer, type Screen, hintFresh, hintSeen } from '../ui/dom';
 import { chordBox, LEARN, type Mark } from '../ui/draw';
 import { setSimTarget } from '../ui/practice';
 import { frame, levelNews, nextStep } from './frame';
@@ -91,6 +91,9 @@ export const chordCheck: Screen = (root, ids, ctx) => {
   /** a chord that already rings is first asked for from memory: its picture stays hidden until asked for or needed */
   let shown = true;
 
+  // the rule of the guided check is said the first two times
+  const showRule = hintFresh('chordcheck');
+  if (ctx) hintSeen('chordcheck');
   root.innerHTML = frame(
     `<b>${L('Chord check', 'Akkord-Check')}</b> · <span id="cname"></span>`,
     `<div class="two">
@@ -103,7 +106,7 @@ export const chordCheck: Screen = (root, ids, ctx) => {
      </div>`,
     `<div class="grp"><button class="btn" id="again">${L('Start over', 'Von vorn')} <kbd>R</kbd></button><button class="btn" id="back">${icon('left')}${L('Back a string', 'Eine Saite zurück')} <kbd>←</kbd></button><button class="btn" id="fwd"><span id="fwdl"></span> <kbd>→</kbd></button>${nextStep(ctx)}</div>${
       ctx
-        ? `<p class="auto">${ids.includes('stay') ? L('Optional. A barre takes weeks, not minutes: a few tries a day do more than one long fight.', 'Freiwillig. Ein Barré braucht Wochen, nicht Minuten: Ein paar Versuche am Tag bringen mehr als ein langer Kampf.') : L('No clock. A string that will not ring after three tries is left for next time.', 'Keine Uhr. Eine Saite, die nach drei Versuchen nicht klingt, bleibt fürs nächste Mal.')}</p>`
+        ? `<p class="auto"${!ids.includes('stay') && !showRule ? ' hidden' : ''}>${ids.includes('stay') ? L('Optional. A barre takes weeks, not minutes: a few tries a day do more than one long fight.', 'Freiwillig. Ein Barré braucht Wochen, nicht Minuten: Ein paar Versuche am Tag bringen mehr als ein langer Kampf.') : L('No clock. A string that will not ring after three tries is left for next time.', 'Keine Uhr. Eine Saite, die nach drei Versuchen nicht klingt, bleibt fürs nächste Mal.')}</p>`
         : `<nav class="chords" aria-label="${L('Chord', 'Akkord')}">${[...new Set(['Em', 'Am', 'E', 'A', 'D', 'C', 'G', 'Dm', 'F', chord.id])]
             .map((id) => CHORDS[id])
             .map((c) => `<a href="#/chord/${encodeURIComponent(c.id)}" aria-current="${c.id === chord.id}">${c.name}</a>`)
