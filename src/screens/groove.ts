@@ -120,7 +120,6 @@ export const groove: Screen = (root, [id, how = 'free', partParam = '0'], ctx?: 
     if (c === shownChord) return;
     shownChord = c;
     $('#gbig', root).innerHTML = bigChord(c, 200) + (c ? `<b class="groove-name">${esc(shapeOf(c).name)}</b>` : '');
-    if (running) $('#gh1', root).textContent = c ? shapeOf(c).name : '';
     setSimTarget(c ? { kind: 'chord', id: shapeOf(c).id } : null);
   }
   draw(0);
@@ -174,6 +173,7 @@ export const groove: Screen = (root, [id, how = 'free', partParam = '0'], ctx?: 
     startSound(t0);
     $('#gplay', root).innerHTML = `${L('Pause', 'Pause')} <kbd>${L('Space', 'Leertaste')}</kbd>`;
     $('#gsub', root).textContent = L('Count in…', 'Einzählen …');
+    $('#gh1', root).textContent = L('Play along.', 'Spiel mit.');
     tick();
   }
 
