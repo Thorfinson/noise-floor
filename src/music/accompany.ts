@@ -2,7 +2,7 @@
  * A song of chords with its words: the words under each bar, and the melody laid over the bars of the chords,
  * moved into their key. The screen that shows it is src/screens/singalong.ts.
  */
-import { allSongs, noteTimes, shapeOf, type Song } from './content';
+import { allSongs, noteTimes, shapeOf, wholeSong, type Song } from './content';
 import { LYRICS, SING_ALONG, syllables } from './lyrics';
 import { pianoChord } from './theory';
 import { tuneNotes } from './tunes';
@@ -112,6 +112,42 @@ export function tuneOf(song: Song): { melody: SungNote[]; words: string[][] | nu
   if (sh) return { melody: sh.melody, words: sh.words };
   const melody = tuneNotes(song);
   return melody?.length ? { melody, words: null } : null;
+}
+
+/**
+ * The tune of a song laid over its whole form: each bar of the whole song gets the notes its own bar has, and a part
+ * that begins the song again (the verse after a chorus) gets the song's upbeat before it, which cuts short whatever
+ * was held into it. In note units from the first bar of the whole song (the upbeat lies before 0); null without a tune.
+ */
+export function wholeTune(song: Song): SungNote[] | null {
+  const melody = tuneOf(song)?.melody;
+  if (!melody?.length) return null;
+  if (!song.form?.length) return melody;
+  const units = barUnits(song);
+  const starts: number[] = [];
+  units.reduce((u, n) => (starts.push(u), u + n), 0);
+  const upbeat = melody.filter((n) => n.u < -1e-6);
+  const out: SungNote[] = [];
+  let at = 0;
+  const bars = wholeSong(song);
+  bars.forEach((f, k) => {
+    if (f.index === 0 && k > 0)
+      for (const n of upbeat) {
+        const u = at + n.u;
+        for (const o of out) if (o.u < u - 1e-6 && o.u + o.len > u) o.len = u - o.u;
+        out.push({ ...n, u });
+      }
+    else if (k === 0) out.push(...upbeat.map((n) => ({ ...n })));
+    // a note held over the bar line is held into the next bar only where the song goes on as written
+    const end = bars[k + 1]?.index === f.index + 1 ? Infinity : at + units[f.index];
+    for (const n of melody)
+      if (n.u >= starts[f.index] - 1e-6 && n.u < starts[f.index] + units[f.index] - 1e-6) {
+        const u = n.u - starts[f.index] + at;
+        out.push({ ...n, u, len: Math.min(n.len, end - u) });
+      }
+    at += units[f.index];
+  });
+  return out.filter((n) => n.len > 1e-6).sort((a, b) => a.u - b.u);
 }
 
 /** The songs that can be sung and played here. */

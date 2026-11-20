@@ -6,7 +6,7 @@
 import { L } from '../core/i18n';
 import { TEMPOS } from '../core/playalong';
 import { store } from '../core/store';
-import { barKey, noteTimes, phraseKey, shapeOf, songLines, stepMidis, type PianoNote, type PianoPiece, type Song, type TabNote } from './content';
+import { barKey, joinWords, noteTimes, phraseKey, shapeOf, songLines, stepMidis, type PianoNote, type PianoPiece, type Song, type TabNote } from './content';
 import { keysId } from './theory';
 
 /** One thing to play in a lesson: a note (or several at once), or a strum. */
@@ -62,6 +62,8 @@ export interface Material {
   endOf: (bar: number) => string | undefined;
   /** guitar: the part of the song a bar belongs to, where the song names its parts */
   partOf: (bar: number) => string | undefined;
+  /** guitar: the words sung over a bar the first time its part is played, where the song has words */
+  wordsOf?: (bar: number) => string | undefined;
   /** who wrote it or made it known */
   by?: string;
   /** "line" or "phrase" */
@@ -104,7 +106,7 @@ export function songMaterial(song: Song): Material {
     for (let i = Math.min(b, song.bars.length - 1); i >= 0; i--) if (song.bars[i].part) return song.bars[i].part;
     return undefined;
   };
-  return { id: song.id, title: song.title, by: song.by, piano: false, noteDur: song.noteDur, beat: song.beat, count: per === 3 ? 3 : 4, lines, skill: (b) => barKey(song, b), chordOf: (b) => song.bars[b]?.chord, endOf, partOf, unit: 'line' };
+  return { id: song.id, title: song.title, by: song.by, piano: false, noteDur: song.noteDur, beat: song.beat, count: per === 3 ? 3 : 4, lines, skill: (b) => barKey(song, b), chordOf: (b) => song.bars[b]?.chord, endOf, partOf, wordsOf: (b) => song.bars[b]?.words, unit: 'line' };
 }
 
 export function pieceMaterial(piece: PianoPiece): Material {
@@ -136,6 +138,12 @@ export function pieceMaterial(piece: PianoPiece): Material {
   };
   return { id: piece.id, title: piece.title, by: piece.by, piano: true, noteDur: piece.noteDur, beat: piece.beat, count: piece.count ?? 4, lines, skill: (k) => phraseKey(piece, k), chordOf: () => undefined, endOf: (k) => named(k).pop(), partOf, unit: 'phrase' };
 }
+
+/**
+ * The words of a line of the material as one line to read ("I come from Alabama with my banjo on my knee"), the
+ * words of its bars joined; empty where the song has no words there. What the lesson can show under a line.
+ */
+export const lineWords = (m: Material, line: number): string => (m.wordsOf ? joinWords((m.lines[line]?.bars ?? []).map(m.wordsOf)) : '');
 
 /** The unit of a lesson in German, one or more: Zeile, Zeilen; Phrase, Phrasen. */
 export const unitDe = (m: Material, plural = false): string => (m.piano ? 'Phrase' : 'Zeile') + (plural ? 'n' : '');

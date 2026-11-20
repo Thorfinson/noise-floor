@@ -101,7 +101,7 @@ export const shown = (s: string): string => (s === '_' ? '' : s);
  */
 export const SING_ALONG: Record<string, { voice: string; at?: number; repeat?: boolean; lead?: number }> = {
   'oh-susanna-chords': { voice: 'oh-susanna~voice' },
-  'skip-to-my-lou': { voice: 'skip-to-my-lou~voice', repeat: true },
+  'skip-to-my-lou': { voice: 'skip-to-my-lou~voice' },
   'auld-lang-syne-chords': { voice: 'auld-lang-syne~voice', repeat: true },
   'jingle-bells-chords': { voice: 'jingle-bells~voice', at: 16 },
   'la-cucaracha-chords': { voice: 'la-cucaracha~voice', repeat: true },

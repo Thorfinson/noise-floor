@@ -43,10 +43,10 @@ const TUNES: Record<string, Written> = {
     beats: 4,
     notes: 'A3 A3:2 A3 | B3:2 D4:2 | F#4:4 | F#4:4 | A3 A3:2 A3 | B3:2 D4:2 | E4:4 | -:4 | A3 A3:2 A3 | B3:2 D4:2 | E4:4 | E4:4 | E4 E4:2 F#4 | E4 D4 B3:2 | D4:4 | -:4',
   },
-  // Spiritual: Frank Nordberg's ABC for Musica Viva, from G down to the C of the chords; the chorus, twice.
+  // Spiritual: Frank Nordberg's ABC for Musica Viva, from G down to the C of the chords: one stanza, which the
+  // whole song sings seven times.
   'whole-world': {
     beats: 4,
-    times: 2,
     notes: 'G4:0.5 G4:0.5 E4:0.5 | G4:2 E4:0.5 C4:1.5 | -:0.5 G4:0.5 A4:0.5 G4 G4:0.5 G4:0.5 E4:0.5 | F4 F4 D4:0.5 B3:1.5 | -:0.5 G4:0.5 A4:0.5 G4 G4:0.5 G4:0.5 E4:0.5 | G4:2 E4:0.5 C4:1.5 | -:0.5 G4:0.5 A4:0.5 G4 G4:0.5 G4:0.5 E4:0.5 | G4 G4 F4:0.5 D4:0.5 D4:0.5 C4:0.5 | -:4',
   },
   // The Digital Tradition's ABC (DOWNVALY), from C to G. It sings "low" and "blow" a bar each; held over a
