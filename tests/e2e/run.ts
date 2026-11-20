@@ -383,33 +383,49 @@ const sections: [string, () => Promise<void>][] = [
       page.on('pageerror', (e) => errors.push(e.message));
 
       await page.goto(base + '?autostart#/');
+      // without a song of the week the start page asks for one: three that suit, and one's own
+      await page.waitForSelector('[data-week]');
+      check('home: without a song of the week it asks for one, three that suit and a way to bring your own', (await page.locator('[data-week]').count()) === 3 && (await page.locator('a[href="#/import"]').count()) >= 1 && (await text(page, 'h1')).includes('by Sunday'), await text(page, 'h1'));
+      await page.screenshot({ path: resolve(out, 'home-choose.png') });
+      // the first of the three is the app's proposal: take it
+      const weekTitle = await text(page, '.wsong-pick.first h3');
+      const weekId = (await page.getAttribute('.wsong-pick.first [data-week]', 'data-week')) ?? '';
+      await page.locator('.wsong-pick.first [data-week]').click();
       await page.waitForSelector('.plan');
-      check('home: one clear start and the plan for today', (await text(page, '#go')).includes("Start today's session") && (await page.locator('.plan li').count()) === 6 && (await text(page, '.plan')).includes('Chord check: Am, G, C') && (await text(page, '.plan')).includes('By ear: three motifs from Scarborough Fair') && (await text(page, '.plan')).includes('Barre practice: F'), (await text(page, '.plan')).replace(/\s+/g, ' '));
+      check('home: the song of the week is the title, with its parts, one button to play and the band as a switch', (await text(page, 'h1')).includes(weekTitle) && (await page.locator('.wsong-form li').count()) >= 2 && (await text(page, '#go')).includes('Play') && (await page.locator('[data-band]').count()) === 3, `${await text(page, 'h1')} · ${await page.locator('.wsong-form li').count()} parts`);
+      check('home: today is four steps around the song: warm up, focus, new, encore', (await page.locator('.plan li').count()) === 4 && (await text(page, '.plan')).includes('Warm up') && /New chord: [A-G]/.test(await text(page, '.plan')) && (await text(page, '.plan')).includes(weekTitle) && (await text(page, '.plan')).includes('Encore'), (await text(page, '.plan')).replace(/\s+/g, ' '));
       await page.screenshot({ path: resolve(out, 'home.png') });
 
       // the guided session from start to finish
       await page.keyboard.press('Space');
       await page.waitForSelector('#strings');
-      check('session: starts with tuning', (await text(page, '#eb')).includes('Step 1 of 6'), await text(page, '#eb'));
+      check('session: warms up by tuning first', (await text(page, '#eb')).includes('Step 1 of 4'), await text(page, '#eb'));
       await pressUntilText(page, 'w', '#msg', 'too low');
       check('session: an out-of-tune string is called too low', (await text(page, '#msg')).includes('too low'), await text(page, '#msg'));
       await page.screenshot({ path: resolve(out, 'session-tune.png') });
       // two strings tuned, then back one: it loses its tick and is tuned again
       for (let i = 1; i <= 2; i++) {
-        await pressUntil(page, 'n', '#strings button.ok', i, '#tiles');
+        await pressUntil(page, 'n', '#strings button.ok', i, '#gplay');
         await page.waitForFunction((k) => document.querySelectorAll('#strings button')[k]?.classList.contains('hit'), i, { timeout: 4000 }).catch(() => undefined);
       }
       await page.keyboard.press('ArrowLeft');
       await page.waitForTimeout(200);
       check('session: the left arrow goes back a string, which is then tuned again', (await page.locator('#strings button.ok').count()) === 1 && (await text(page, '#h1')).includes('A string'), `${await page.locator('#strings button.ok').count()} ticked, ${await text(page, '#h1')}`);
       for (let i = 2; i <= 6; i++) {
-        await pressUntil(page, 'n', '#strings button.ok', i, '#tiles');
-        // the tuner takes a moment before it asks for the next string
+        await pressUntil(page, 'n', '#strings button.ok', i, '#gplay');
         if (i < 6) await page.waitForFunction((k) => document.querySelectorAll('#strings button')[k]?.classList.contains('hit'), i, { timeout: 4000 }).catch(() => undefined);
       }
+      // then music: the groove of the song of the week with the band, nothing measured, started by a strum
+      await page.waitForSelector('#gplay', { timeout: 8000 });
+      check('session: six tuned strings lead into the groove, with nothing measured', (await text(page, '#gkick')).includes('Warm-up') && (await text(page, '#gsub')).includes('nothing is measured') && (await page.locator('#gl0 line, #gl0 path').count()) > 4, `${await text(page, '#gkick')} | ${await text(page, '#gsub')}`);
+      await page.keyboard.press('n');
+      const grooving = await page.waitForFunction(() => /Round|Count in/.test(document.querySelector('#gsub')?.textContent ?? ''), null, { timeout: 5000 }).then(() => true).catch(() => false);
+      check('session: a strum starts the groove, counted in', grooving, await text(page, '#gsub'));
+      await page.screenshot({ path: resolve(out, 'session-groove.png') });
+      await page.click('#nextstep');
+      // the focus: a chord of the coming part that does not ring yet, string by string, with where the fingers go
       await page.waitForSelector('#tiles', { timeout: 8000 });
-      check('session: six tuned strings lead to the chord check', (await text(page, '#eb')).includes('Step 2 of 6'), await text(page, '#eb'));
-      check('session: the chord check takes the chords of the lines of the song that come today, and says where the fingers go', (await text(page, '#eb')).includes('Chord 1 of 3 · Am') && (await text(page, '#tip')).includes('How to hold Am') && (await text(page, '#tip')).includes('Middle finger: D string, fret 2'), `${await text(page, '#eb')} | ${(await text(page, '#tip')).replace(/\s+/g, ' ')}`);
+      check('session: the focus takes a chord the song needs that does not ring yet, and says where the fingers go', (await text(page, '#eb')).includes('Step 2 of 4') && /How to hold [A-G]/.test(await text(page, '#tip')) && /finger: [A-Za-z ]+ string, fret \d/.test(await text(page, '#tip')), `${await text(page, '#eb')} | ${(await text(page, '#tip')).replace(/\s+/g, ' ')}`);
       await page.screenshot({ path: resolve(out, 'session-chord.png') });
       await page.waitForTimeout(600);
       /** Plays every string of the chord on show that is still to come. */
@@ -420,28 +436,77 @@ const sections: [string, () => Promise<void>][] = [
         for (let i = have + 1; i <= strings - gone; i++) await pressUntil(page, 'n', '#tiles .tile.clean', i, '#brief');
         await page.waitForFunction(() => /ring(s)? clean/.test(document.querySelector('#h1')?.textContent ?? ''), null, { timeout: 4000 }).catch(() => undefined);
       };
-      await playChord();
-      check('session: a clean chord is followed by the next of today\'s chords', (await text(page, '#h1')).includes('Every string rings clean') && (await text(page, '#fwd')).includes('Next chord: G'), `${await text(page, '#h1')} | ${await text(page, '#fwd')}`);
-      await page.keyboard.press('ArrowRight');
-      await page.waitForFunction(() => document.querySelector('#eb')?.textContent?.includes('Chord 2 of 3 · G'), null, { timeout: 4000 }).catch(() => undefined);
       // a string that will not ring: after three tries it is left for next time, and the check goes on
       for (let i = 0; i < 5 && !(await text(page, '#tiles')).includes('next time'); i++) {
         await page.keyboard.press('m');
         await page.waitForTimeout(1300);
       }
-      check('session: a string that will not ring is left for next time after three tries', (await text(page, '#tiles')).includes('next time') && (await text(page, '#eb')).includes('string 2 of 6'), `${(await text(page, '#tiles')).replace(/\s+/g, ' ')} | ${await text(page, '#eb')}`);
+      check('session: a string that will not ring is left for next time after three tries', (await text(page, '#tiles')).includes('next time'), (await text(page, '#tiles')).replace(/\s+/g, ' '));
       await playChord();
-      check('session: the chord ends with what rang, without getting stuck', (await text(page, '#h1')).includes('5 of 6 strings ring clean'), await text(page, '#h1'));
+      check('session: the chord ends with what rang, without getting stuck', /\d of \d strings ring clean/.test(await text(page, '#h1')), await text(page, '#h1'));
       await page.keyboard.press('ArrowRight');
-      await page.waitForFunction(() => document.querySelector('#eb')?.textContent?.includes('Chord 3 of 3'), null, { timeout: 4000 }).catch(() => undefined);
-      await playChord();
-      await page.keyboard.press('ArrowRight');
-      // the change is taught before it is drilled: first without a clock, then one calm minute
+      // a song not begun yet is heard first: its words and chords on show, the lesson one press away
+      const heardFirst = await page.waitForSelector('.sp-pre', { timeout: 6000 }).then(() => true).catch(() => false);
+      check('session: a song not begun yet is heard first, then started on the player\'s word', heardFirst && (await page.locator('#sp-play').count()) === 1 && (await page.locator('.sp-sheet .sp-line').count()) >= 2 && (await page.locator('#sp-go').count()) === 1, await text(page, '.sp-pre h1'));
+      if (heardFirst) await page.click('#sp-go');
+      await page.waitForSelector('#cbox');
+      check('session: the new part of the song is step 3, with a chord diagram for the fingers', (await text(page, '#eb')).includes('Step 3 of 4') && (await page.locator('#cbox circle').count()) >= 3, `${await page.locator('#cbox circle').count()} dots, ${await text(page, '#eb')}`);
+      await page.waitForTimeout(600);
+      await press(page, 'n', 12, 380);
+      await page.screenshot({ path: resolve(out, 'session-song.png') });
+      await page.click('#nextstep');
+      // the encore: the game with this week's chords
+      const encore = await page.waitForSelector('#brief, #scene', { timeout: 8000 }).then(() => true).catch(() => false);
+      check('session: the encore is the game', encore, await text(page, 'body'));
+      await page.screenshot({ path: resolve(out, 'session-brief.png') });
+      await page.click('#skipstep, #nextstep').catch(() => page.keyboard.press('ArrowRight'));
+      const ended = await page
+        .waitForSelector('#endh1', { timeout: 8000 })
+        .then(() => true)
+        .catch(() => false);
+      check('session: it ends with a sentence on the song, what is next tomorrow, and playing on with the band', ended && (await text(page, '.wsong-tomorrow')).includes('Tomorrow') && ((await page.locator('#free').getAttribute('href')) ?? '').startsWith(`#/groove/${weekId}`), `${await text(page, 'h1')} · ${(await text(page, '.wsong-tomorrow')).replace(/\s+/g, ' ')}`);
+      await page.screenshot({ path: resolve(out, 'session-done.png') });
+
+      // once today's session is through, the start page says so and offers to play on with the band
+      await page.goto(base + '?autostart#/');
+      await page.waitForSelector('.plan', { timeout: 8000 }).catch(() => undefined);
+      check("home: once today's session is done, the start page says so, and offers to play on and another round", /done for today/i.test(await text(page, '.wsong-hero .kick')) && (await text(page, '#go')).includes('Keep playing') && (await text(page, '.heroacts')).includes('Another round'), `${await text(page, '.wsong-hero .kick')} · ${await text(page, '#go')}`);
+      await page.screenshot({ path: resolve(out, 'home-done.png') });
+      // another round starts from step 1; a session left half-way goes on where it stopped, and can be begun again
+      await page.click('a[href="#/session/new"]');
+      await page.waitForSelector('#skip');
+      await page.click('#skip');
+      await page.waitForSelector('#gplay', { timeout: 6000 }).catch(() => undefined);
+      await page.click('#nextstep');
+      await page.waitForSelector('#tiles', { timeout: 6000 }).catch(() => undefined);
+      await page.click('header.top a[href="#/"]');
+      await page.waitForSelector('.plan');
+      check(
+        'home: a session left at step 2 is offered to go on there, with what is done ticked',
+        (await text(page, '#go')).includes('Go on at step 2') && (await page.locator('.plan li.done').count()) === 1 && (await page.locator('.plan li.cur').count()) === 1 && (await page.locator('#anew').count()) === 1,
+        `${(await text(page, '#go')).replace(/\s+/g, ' ')} · ${await page.locator('.plan li.done').count()} done · ${await text(page, 'h1')}`,
+      );
+      check('pages: each has its own title', (await page.title()) === 'Today · Noise Floor', await page.title());
+      await page.keyboard.press('Space');
+      await page.waitForSelector('#tiles', { timeout: 6000 }).catch(() => undefined);
+      check('session: going on starts at the step it was left at', (await text(page, '#eb')).includes('Step 2 of 4'), await text(page, '#eb'));
+      await page.click('header.top a[href="#/"]');
+      await page.waitForSelector('#anew');
+      await page.click('#anew');
+      await page.waitForSelector('#strings', { timeout: 6000 }).catch(() => undefined);
+      check('session: it can also be begun again from step 1', (await text(page, '#eb')).includes('Step 1 of 4'), await text(page, '#eb'));
+      await page.goto(base + '?autostart#/');
+      await page.waitForSelector('#go');
+      // today's session was taken to its end before: begun again and left at step 1, the day still counts as done
+      check('home: begun again and left at step 1, the day still counts as done, with playing on offered', (await text(page, '#go')).includes('Keep playing') && (await page.locator('.plan li.done').count()) >= 1, (await text(page, '#go')).replace(/\s+/g, ' '));
+
+      // the change, taught before it is drilled: first without a clock, then one calm minute (the focus of a day, or on its own)
+      await page.goto(base + '?autostart#/change/Em/Am');
       await page.waitForSelector('#boxa', { timeout: 8000 });
-      check('session: a chord change is first made without a clock, with both shapes on show', (await text(page, '#eb')).includes('first without a clock') && (await text(page, '#h1')).startsWith('Strum ') && (await page.locator('#boxa circle').count()) >= 2 && (await page.locator('#boxb circle').count()) >= 2, `${await text(page, '#eb')} | ${await text(page, '#h1')}`);
+      check('change: first made without a clock, with both shapes on show', (await text(page, '#eb')).includes('first without a clock') && (await text(page, '#h1')).startsWith('Strum ') && (await page.locator('#boxa circle').count()) >= 2 && (await page.locator('#boxb circle').count()) >= 2, `${await text(page, '#eb')} | ${await text(page, '#h1')}`);
       await page.keyboard.press('n');
       await page.waitForFunction(() => document.querySelector('#h1')?.textContent?.startsWith('Change to'), null, { timeout: 4000 }).catch(() => undefined);
-      check('session: at the change it says how it is made', /(stay|keep their shape|No finger stays)/.test(await text(page, '#tip')), (await text(page, '#tip')).replace(/\s+/g, ' '));
+      check('change: at the change it says how it is made', /(stay|keep their shape|No finger stays)/.test(await text(page, '#tip')), (await text(page, '#tip')).replace(/\s+/g, ' '));
       await page.screenshot({ path: resolve(out, 'session-change.png') });
       for (let i = 0; i < 8 && !(await text(page, '#eb')).includes('one calm minute'); i++) {
         await page.keyboard.press('n');
@@ -451,107 +516,10 @@ const sections: [string, () => Promise<void>][] = [
         await page.keyboard.press('n');
         await page.waitForTimeout(900);
       }
-      check('session: then one calm minute counts the clean changes', (await text(page, '#eb')).includes('one calm minute') && /^[2-9] changes/.test(await text(page, '#big')), `${await text(page, '#eb')} | ${await text(page, '#big')}`);
+      check('change: then one calm minute counts the clean changes', (await text(page, '#eb')).includes('one calm minute') && /^[2-9] changes/.test(await text(page, '#big')), `${await text(page, '#eb')} | ${await text(page, '#big')}`);
       await page.keyboard.press('Space');
       await page.waitForTimeout(200);
-      check('session: a minute cut short is not taken for a measurement', (await text(page, '#tip')).includes('Too short to measure'), (await text(page, '#tip')).replace(/\s+/g, ' '));
-      await page.keyboard.press('Space');
-      await page.waitForSelector('#brief', { timeout: 8000 });
-      check('session: the chord changes are introduced before anything moves: the chords with their shapes, and how it works', (await text(page, '#brief h1')).startsWith('Chord changes: ') && (await page.locator('#brief .shapes figure').count()) >= 2 && (await page.locator('#brief .how li').count()) === 3 && (await page.locator('#con').count()) === 0, `${await text(page, '#brief h1')} · ${await page.locator('#brief .shapes figure').count()} shapes`);
-      check('session: the run only asks for chords that have been met', (await page.locator('#brief .shapes figcaption').allInnerTexts()).every((c) => ['Em', 'Am', 'G', 'C', 'D'].includes(c)), (await page.locator('#brief .shapes figcaption').allInnerTexts()).join(' '));
-      await page.screenshot({ path: resolve(out, 'session-brief.png') });
-      await page.keyboard.press('Space');
-      const counted = await page
-        .waitForFunction(() => document.querySelector('#banner')?.classList.contains('count') && /^[1-4]$/.test(document.querySelector('#banner')?.textContent ?? '') && !!document.querySelector('#con text'), null, { timeout: 4000 })
-        .then(() => true)
-        .catch(() => false);
-      // how far the first piece of noise has come toward the lamp: it must not move while the count goes on
-      const near = (): Promise<string> => page.evaluate(() => (document.querySelector('#scene') as HTMLElement | null)?.dataset.near ?? '');
-      const y0 = await near();
-      await page.waitForTimeout(500);
-      const y1 = await near();
-      await page.screenshot({ path: resolve(out, 'session-count.png') });
-      check('session: the run counts in, with the first change already on show and nothing coming nearer yet', counted && ((await page.locator('#con').textContent()) ?? '').includes('Strum') && y0 !== '' && y0 === y1, `${await text(page, '#banner')} | ${y0} then ${y1}`);
-      // the picture of the run: a canvas over the whole window, painted, with the lighthouse scene in it
-      const painted = await page.evaluate(() => {
-        const c = document.querySelector('#scene') as HTMLCanvasElement | null;
-        if (!c) return 'no canvas';
-        const box = c.getBoundingClientRect();
-        const ctx = c.getContext('2d')!;
-        const tones = new Set<string>();
-        for (let i = 1; i < 12; i++) {
-          for (let j = 1; j < 6; j++) {
-            const d = ctx.getImageData(Math.floor((c.width * i) / 12), Math.floor((c.height * j) / 12), 1, 1).data;
-            tones.add(`${d[0] >> 4},${d[1] >> 4},${d[2] >> 4}`);
-          }
-        }
-        return `${Math.round(box.width)}x${Math.round(box.height)} of ${innerWidth}x${innerHeight}, ${tones.size} tones`;
-      });
-      const [, pw, ph, ww, wh, tones] = /^(\d+)x(\d+) of (\d+)x(\d+), (\d+) tones$/.exec(painted) ?? [];
-      check('games: the run is played in a painted picture that fills the window', pw === ww && ph === wh && Number(tones) >= 12, painted);
-      await page.waitForFunction(() => (document.querySelector('#mid') as HTMLElement | null)?.dataset.gate === 'go', null, { timeout: 8000 }).catch(() => undefined);
-      check('session: then comes the chord-change run', (await text(page, '.hud .k')).includes('STEP 3 OF 6'), await text(page, '.hud .k'));
-      await press(page, 'n', 6, 1100);
-      await page.screenshot({ path: resolve(out, 'session-run.png') });
-      await page.click('#skipstep');
-      // before the song: by ear, three motifs of it or three chords that are known, nothing shown before asking
-      await page.waitForFunction(() => /Step 4 of 6/.test(document.querySelector('#eb')?.textContent ?? ''), null, { timeout: 8000 }).catch(() => undefined);
-      check('session: before the song comes playing by ear, with nothing shown before it is asked for', /Step 4 of 6 · (Play it back|Which chord\?)/.test(await text(page, '#eb')) && (await page.locator('#tiles .tile').count()) === 3 && (await page.locator('#reveal').isHidden()), await text(page, '#eb'));
-      await page.click('#nextstep');
-      // a song not begun yet is heard first: its words and chords on show, the lesson one press away
-      const heardFirst = await page.waitForSelector('.sp-pre', { timeout: 6000 }).then(() => true).catch(() => false);
-      check('session: a song not begun yet is heard first, then started on the player\'s word', heardFirst && (await page.locator('#sp-play').count()) === 1 && (await page.locator('.sp-sheet .sp-line').count()) >= 2 && (await page.locator('#sp-go').count()) === 1, await text(page, '.sp-pre h1'));
-      if (heardFirst) await page.click('#sp-go');
-      await page.waitForSelector('#cbox');
-      check('session: the song step shows a chord diagram for the fingers', (await page.locator('#cbox circle').count()) >= 3, `${await page.locator('#cbox circle').count()} dots, ${await text(page, '#eb')}`);
-      await page.waitForTimeout(600);
-      await press(page, 'n', 12, 380);
-      await page.screenshot({ path: resolve(out, 'session-song.png') });
-      await page.waitForTimeout(3200);
-      await press(page, 'n', 12, 380);
-      // the hard chord of the song comes last, is explained, and can simply be left
-      await page.waitForSelector('#tiles', { timeout: 10000 }).catch(() => undefined);
-      const tipF = (await text(page, '#tip')).replace(/\s+/g, ' ');
-      check('session: the hard chord comes last, as practice that can be left', (await text(page, '#eb')).includes('Step 6 of 6 · F') && tipF.includes('Index finger flat across fret 2, from the G string to the high e string') && tipF.includes('Thumb behind the neck') && (await text(page, '#nextstep')).includes('Finish'), `${await text(page, '#eb')} | ${tipF}`);
-      await page.screenshot({ path: resolve(out, 'session-barre.png') });
-      await page.click('#nextstep');
-      const ended = await page
-        .waitForFunction(() => document.querySelector('h1')?.textContent?.startsWith('Done.'), null, { timeout: 8000 })
-        .then(() => true)
-        .catch(() => false);
-      check('session: after the song and the barre it ends with a summary', ended && (await page.locator('.res li').count()) >= 2, `${await text(page, 'h1')} · ${await page.locator('.res li').count()} results`);
-      await page.screenshot({ path: resolve(out, 'session-done.png') });
-
-      // once today's session is through, the start page says so, shows what was measured, and offers more
-      await page.goto(base + '?autostart#/');
-      await page.waitForSelector('.donecard', { timeout: 8000 }).catch(() => undefined);
-      check("home: once today's session is done, the start page says so, with what was measured today, and offers another round", (await text(page, 'h1')).includes("Today's session is done") && (await page.locator('.donecard .res li').count()) >= 2 && (await text(page, '#go')).includes('Another round'), `${await text(page, 'h1')} · ${await page.locator('.donecard .res li').count()} measured · ${await text(page, '#go')}`);
-      await page.screenshot({ path: resolve(out, 'home-done.png') });
-      // another round starts from step 1; a session left half-way goes on where it stopped, and can be begun again
-      await page.keyboard.press('Space');
-      await page.waitForSelector('#skip');
-      await page.click('#skip');
-      await page.waitForSelector('#tiles', { timeout: 6000 }).catch(() => undefined);
-      await page.click('header.top a[href="#/"]');
-      await page.waitForSelector('.plan');
-      check(
-        'home: a session left at step 2 is offered to go on there, with what is done ticked',
-        (await text(page, '#go')).includes('Continue at step 2') && (await page.locator('.plan li.done').count()) === 1 && (await page.locator('.plan li.cur').count()) === 1 && /minutes left/i.test(await text(page, '.herosheet .kick')) && (await page.locator('#anew').count()) === 1,
-        `${(await text(page, '#go')).replace(/\s+/g, ' ')} · ${await page.locator('.plan li.done').count()} done · ${await text(page, 'h1')}`,
-      );
-      check('pages: each has its own title', (await page.title()) === 'Today · Noise Floor', await page.title());
-      await page.keyboard.press('Space');
-      await page.waitForSelector('#tiles', { timeout: 6000 }).catch(() => undefined);
-      check('session: going on starts at the step it was left at', (await text(page, '#eb')).includes('Step 2 of 6'), await text(page, '#eb'));
-      await page.click('header.top a[href="#/"]');
-      await page.waitForSelector('#anew');
-      await page.click('#anew');
-      await page.waitForSelector('#strings', { timeout: 6000 }).catch(() => undefined);
-      check('session: it can also be begun again from step 1', (await text(page, '#eb')).includes('Step 1 of 6'), await text(page, '#eb'));
-      await page.goto(base + '?autostart#/');
-      await page.waitForSelector('#go');
-      // today's session was taken to its end before: begun again and left at step 1, the day still counts as done
-      check('home: begun again and left at step 1, the day still counts as done, with another round on offer', (await text(page, '#go')).includes('Another round') && (await page.locator('.plan li.done').count()) === 0, (await text(page, '#go')).replace(/\s+/g, ' '));
+      check('change: a minute cut short is not taken for a measurement', (await text(page, '#tip')).includes('Too short to measure'), (await text(page, '#tip')).replace(/\s+/g, ' '));
 
       await page.goto(base + '?autostart#/chord/F%23m');
       await page.waitForSelector('#tiles');
@@ -573,6 +541,15 @@ const sections: [string, () => Promise<void>][] = [
       await page.screenshot({ path: resolve(out, 'chord-done.png') });
 
       // a chord that already rings is asked for from memory: no picture until it is asked for
+      // Am played clean and quickly once (a level of two or more) ...
+      await page.goto(base + '?autostart#/chord/Am');
+      await page.waitForSelector('#tiles');
+      await page.waitForTimeout(400);
+      for (let i = 1; i <= 5; i++) await pressUntil(page, 'n', '#tiles .tile.clean', i);
+      await page.waitForFunction(() => /rings clean/.test(document.querySelector('#h1')?.textContent ?? ''), null, { timeout: 4000 }).catch(() => undefined);
+      // ... is asked for from memory the next time (the same address again would not open the page anew)
+      await page.goto(base + '?autostart#/songs');
+      await page.waitForTimeout(300);
       await page.goto(base + '?autostart#/chord/Am');
       await page.waitForSelector('#tiles');
       const hidden = (await text(page, '#tip')).startsWith('From memory') && (await page.locator('#box circle[fill]:not([fill="none"])').count()) === 0;
@@ -687,7 +664,7 @@ const sections: [string, () => Promise<void>][] = [
       const book = SONGS.length - EXERCISES().length;
       check('songs: the songbook has some seventy songs free of copyright, every level with a fair share of them', levels[0] === SONGS.length + 1 && book >= 65 && Math.min(...levels.slice(1)) >= (book + 1) / 7 && (await rows()) < levels[0], `all ${levels[0]} (${book} of the book), levels ${levels.slice(1).join(' / ')}, ${await rows()} shown at first`);
       await page.click('[data-level="0"]');
-      check('songs: the list has the built-in songs and the new one, which is now in the session', (await rows()) === SONGS.length + 1 && (await text(page, '.lib li.cur')).includes('Check song'), `${await rows()} songs`);
+      check('songs: the list has the built-in songs and the new one', (await rows()) === SONGS.length + 1 && (await text(page, '.lib')).includes('Check song'), `${await rows()} songs`);
       check('songs: every song says how hard it is and why, and which of its chords already ring', (await page.locator('.lib .grade').count()) === SONGS.length + 1 && (await text(page, '.lib')).includes('Basic version') && (await text(page, '.lib')).includes('Open chords only') && /You know (all )?\d of its/.test(await text(page, '.lib')) && /hard/i.test(await text(page, '.lib li:last-child .grade')), (await text(page, '.lib li:last-child')).replace(/\s+/g, ' ').slice(0, 160));
       await page.screenshot({ path: resolve(out, 'songs.png') });
       await page.fill('#q', 'scarborough');
@@ -946,6 +923,15 @@ const sections: [string, () => Promise<void>][] = [
       await page.waitForSelector('#go');
       await pickInstrument(page, 'guitar');
       await page.waitForFunction(() => document.querySelector('[data-inst="guitar"]')?.getAttribute('aria-pressed') === 'true', null, { timeout: 4000 }).catch(() => undefined);
+      // a returning player strums the chords they know: what rings twice is taken as known
+      await page.goto(base + '?autostart#/placement');
+      await page.waitForSelector('.place-grid');
+      for (let i = 0; i < 10 && (await page.locator('.place-chord.known').count()) < 3; i++) {
+        await page.keyboard.press('n');
+        await page.waitForTimeout(900);
+      }
+      check('placement: chords strummed and heard ringing are marked as known', (await page.locator('.place-chord.known').count()) >= 3, `${await page.locator('.place-chord.known').count()} known · ${await text(page, '#sub')}`);
+      await page.screenshot({ path: resolve(out, 'placement.png') });
       await page.goto(base + '?autostart#/learn');
       await page.waitForSelector('#stage h2');
       const stops = await page.locator('.stop').count();
