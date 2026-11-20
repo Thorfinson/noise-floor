@@ -1464,7 +1464,7 @@ body[data-fit] .slacts .btn.big { min-height: 54px; padding-inline: 24px; font-s
   .top .sltitle { max-width: 34vw; }
 }
 
-/* the lighthouse on a groove (screens/groove.ts): the painting fills the window, the chords are written on
+/* the lighthouse on a groove (screens/nightrun.ts): the painting fills the window, the chords are written on
    the pieces in it; a slim strip at the bottom shows the band, the groove as tab and the next shape */
 body[data-mode='nf'] .night-hud { background: none; border-bottom: 0; }
 .night-hud .g { align-items: center; }

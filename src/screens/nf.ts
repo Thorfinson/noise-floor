@@ -12,7 +12,7 @@ import { CHORD_PAIRS, KEY_PAIRS, PIANO_PIECES, shapeOf, SONGS } from '../music/c
 import { changeTip, chordName, CHORDS, keyTip, noteName, STRING_FULL, stringName, strumIs } from '../music/theory';
 import { $, cap, esc, go, hear, keys, learnRing, micMeter, pianoEars, type Screen } from '../ui/dom';
 import { armed, bossChord, menuOn, pickHint, pickMenu, pickState, slowly, STRUM, tenths } from './runkit';
-import { groovePlan, grooveRun } from './groove';
+import { groovePlan, grooveRun } from './nightrun';
 import { grooveOf } from '../game/groove';
 import { nightDate, nightLog } from '../game/night';
 import { chordBox, keyboard, keyChord, keyRange, NF, NFX, type KeyMark } from '../ui/draw';
