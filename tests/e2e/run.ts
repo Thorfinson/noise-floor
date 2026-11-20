@@ -1056,7 +1056,8 @@ const sections: [string, () => Promise<void>][] = [
       // the changes run is the groove run tonight's night plays and scores (section 2n): here it is opened for the pause
       await page.goto(base + '?autostart#/run/changes');
       await startRun(page);
-      await press(page, 'n', 2, 1100);
+      // a few changes played first: the gesture is listened for once the run is under way
+      await press(page, 'n', 6, 1100);
 
       // pausing by hitting the muted strings twice (still in the changes run)
       await page.keyboard.press('x');
