@@ -62,11 +62,22 @@ export function songSound(m: Material, o: SongSoundOpts): SongSound {
   const t0 = 0.15 + lead * unit;
   const out = new Float32Array(Math.ceil((t0 + (to - from) * unit + ring + 0.3) * sr));
   const a4 = m.piano ? (o.pianoA4 ?? 440) : (o.a4 ?? 440);
+  // a whole song strums the same few chords hundreds of times: each sound is made once and mixed in wherever it
+  // comes (the synth is the same every time), which brings a song of four minutes from seconds to a blink
+  const made = new Map<string, Float32Array>();
+  const once = (key: string, make: () => Float32Array): Float32Array => {
+    let x = made.get(key);
+    if (!x) made.set(key, (x = make()));
+    return x;
+  };
   if (o.instrument)
     for (let li = first; li <= last; li++)
-      for (const s of m.lines[li].steps) mixInto(out, stepSound(m, s, sr, ring, a4), (t0 + (starts[li] - from + s.at) * unit) * sr);
+      for (const s of m.lines[li].steps) mixInto(out, once(s.chord ? `c:${s.chord}` : `n:${s.midis.join(',')}`, () => stepSound(m, s, sr, ring, a4)), (t0 + (starts[li] - from + s.at) * unit) * sr);
   // the tune over the chords: a voice, a little softer than the strums so that both are heard
-  for (const n of tune) mixInto(out, voiceTone({ sr, midi: n.midi, dur: Math.max(0.12, n.len * unit * 0.95), amp: 0.17, vibrato: 18, scoop: 25, a4: o.a4 ?? 440 }), (t0 + (n.u - from) * unit) * sr);
+  for (const n of tune) {
+    const dur = Math.max(0.12, n.len * unit * 0.95);
+    mixInto(out, once(`v:${n.midi}:${dur.toFixed(4)}`, () => voiceTone({ sr, midi: n.midi, dur, amp: 0.17, vibrato: 18, scoop: 25, a4: o.a4 ?? 440 })), (t0 + (n.u - from) * unit) * sr);
+  }
   // strums ring on into the next ones: the sum is brought under full scale, so that nothing clips
   let peak = 0;
   for (let i = 0; i < out.length; i++) peak = Math.max(peak, Math.abs(out[i]));

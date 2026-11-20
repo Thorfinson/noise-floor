@@ -117,8 +117,10 @@ describe('words: more songs, under the notes, and over the chords', () => {
     expect(last.midi % 12).toBe(0);
     expect(Math.abs(last.midi - 64)).toBeLessThan(12);
     // a song the chords go through twice has its words twice
-    const skip = sheet(findSong('skip-to-my-lou'))!;
-    expect(said(skip.words[8])).toBe(said(skip.words[0]));
+    const auld = sheet(findSong('auld-lang-syne-chords'))!;
+    expect(said(auld.words[8])).toBe(said(auld.words[0]));
+    // Skip to My Lou holds its refrain once: the verses go to the same bars in the whole song
+    expect(sheet(findSong('skip-to-my-lou'))!.words.length).toBe(8);
   });
 });
 

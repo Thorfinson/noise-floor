@@ -3,6 +3,8 @@ import { L } from '../core/i18n';
 import { store } from '../core/store';
 import { pianoBook } from './pianobook';
 import { SONGBOOK } from './songbook';
+import { SONG_WORDS } from './songwords';
+import { withWords } from './songwriting';
 import { EXERCISES } from './exercises';
 import { CHORDS, midiToTab as place, OPEN_STRINGS, OVERTONE_STEPS, pianoChord, type Chord } from './theory';
 
@@ -67,6 +69,11 @@ export interface Song {
   form?: string[];
   /** the words of each repetition of a part after its first, bar by bar: verses.Verse[0] is the second verse */
   verses?: Record<string, string[][]>;
+  /**
+   * What each entry of the form is called where that is not the name of the part whose bars it plays ('' where it
+   * is): the chorus of Red River Valley is sung to the bars of its verse, so its form says "Verse" and this "Chorus".
+   */
+  formNames?: string[];
 }
 
 /** One bar of the whole song, as it is played from the start to the end with every repetition of its parts. */
@@ -79,6 +86,8 @@ export interface FormBar {
   /** which time round that part is, counted from 0 */
   rep: number;
   words?: string;
+  /** what this time round is called, where the form names it otherwise than its part (a chorus sung to the verse's bars) */
+  name?: string;
 }
 
 /** The bars of a song's parts: each part from the bar that starts it to the bar before the next part. */
@@ -97,16 +106,96 @@ export function wholeSong(song: Song): FormBar[] {
   if (!song.form?.length || !parts.length) return song.bars.map((bar, index) => ({ bar, index, rep: 0, words: bar.words, part: parts.find((p) => index >= p.from && index < p.to)?.name }));
   const seen: Record<string, number> = {};
   const out: FormBar[] = [];
-  for (const name of song.form) {
+  song.form.forEach((name, k) => {
     const p = parts.find((x) => x.name === name);
-    if (!p) continue;
+    if (!p) return;
     const rep = seen[name] ?? 0;
     seen[name] = rep + 1;
+    const called = song.formNames?.[k] || undefined;
     for (let i = p.from; i < p.to; i++) {
       const bar = song.bars[i];
       const later = rep > 0 ? song.verses?.[name]?.[rep - 1]?.[i - p.from] : undefined;
-      out.push({ bar, index: i, part: name, rep, words: later ?? bar.words });
+      // a bar left empty in a later time round has no words then: the words of the first time are not sung twice
+      const words = rep > 0 && song.verses?.[name]?.[rep - 1] ? later || undefined : bar.words;
+      out.push({ bar, index: i, part: name, rep, words, ...(called ? { name: called } : {}) });
     }
+  });
+  return out;
+}
+
+const PART_DE: Record<string, string> = { verse: 'Strophe', chorus: 'Refrain', refrain: 'Refrain', bridge: 'Bridge', intro: 'Intro', outro: 'Outro', interlude: 'Zwischenspiel', instrumental: 'Zwischenspiel', solo: 'Zwischenspiel', 'pre-chorus': 'Vorrefrain', all: 'Song' };
+/** A part's name as it is shown, in the language shown: "Verse 2" is "Strophe 2" in German. Unknown names stay as they are. */
+export function partLabel(name: string): string {
+  const m = /^(.*?)(\s+\d+)?$/.exec(name.trim())!;
+  const de = PART_DE[m[1].toLowerCase()];
+  return de ? L(m[1] === 'All' ? 'Song' : m[1], de) + (m[2] ?? '') : name;
+}
+
+/** One time round of a part in the whole song: what it is called and which bars of wholeSong() it covers. */
+export interface FormPart {
+  /** the part whose bars it plays */
+  part: string;
+  /** what it is called: the part, or the form's own name for it */
+  name: string;
+  /** as shown: "Strophe 2", "Refrain" */
+  label: string;
+  rep: number;
+  /** its bars in wholeSong(), from the first to the one after the last */
+  from: number;
+  to: number;
+}
+
+/**
+ * The whole song as the parts it is played in, each labelled for showing: names that come round with other words
+ * each time (verses) are counted ("Verse 1", "Verse 2"), those that come back with the same words (a chorus) are not.
+ * Empty for a song without parts.
+ */
+export function formParts(song: Song): FormPart[] {
+  const bars = wholeSong(song);
+  const out: FormPart[] = [];
+  bars.forEach((f, i) => {
+    const name = f.name ?? f.part;
+    const last = out[out.length - 1];
+    if (!name || !f.part) return;
+    if (last && last.part === f.part && last.rep === f.rep) last.to = i + 1;
+    else out.push({ part: f.part, name, label: '', rep: f.rep, from: i, to: i + 1 });
+  });
+  const text = (p: FormPart): string => bars.slice(p.from, p.to).map((f) => f.words ?? '').join('|');
+  const kind = (n: string): string => n.replace(/\s+\d+$/, '');
+  const count: Record<string, number> = {};
+  for (const p of out) {
+    const same = out.filter((q) => kind(q.name) === kind(p.name));
+    const differ = new Set(same.map(text)).size > 1;
+    count[kind(p.name)] = (count[kind(p.name)] ?? 0) + 1;
+    p.label = differ && same.length > 1 ? `${partLabel(kind(p.name))} ${count[kind(p.name)]}` : partLabel(p.name);
+  }
+  return out;
+}
+
+/**
+ * The whole song as one long song: its bars in the order of the form, each with the words of that time round.
+ * What is played when the whole song is heard or played through; its bar keys are those of the song's own bars only
+ * where the chords are the same (they are keyed by chord), so measuring is still done on the song itself.
+ */
+export function flatSong(song: Song): Song {
+  if (!song.form?.length) return song;
+  const bars = wholeSong(song).map((f, i, all): Bar => ({ ...f.bar, words: f.words, part: i === 0 || all[i - 1].rep !== f.rep || all[i - 1].part !== f.part ? (f.name ?? f.part) : undefined }));
+  return { ...song, bars, form: undefined, verses: undefined, formNames: undefined };
+}
+
+/** Seconds the whole song lasts at full speed, every repetition of its parts included. */
+export const wholeSeconds = (song: Song): number => wholeSong(song).reduce((s, f) => s + noteTimes(f.bar.notes).total, 0) * song.noteDur;
+
+/**
+ * The words of some bars as one line to read: "I come from Ala-" and "bama with my" become "I come from Alabama
+ * with my". A bar's words end in "-" where a word goes on in the next bar.
+ */
+export function joinWords(words: (string | undefined)[]): string {
+  let out = '';
+  for (const w of words) {
+    const t = (w ?? '').trim();
+    if (!t) continue;
+    out = out.endsWith('-') ? out.slice(0, -1) + t : out ? `${out} ${t}` : t;
   }
   return out;
 }
@@ -122,14 +211,18 @@ const [D3, E3, G3, A3, B3] = [50, 52, 55, 57, 59];
 
 /** The four the app began with, and then the songbook. */
 export const SONGS: Song[] = [
-  {
-    id: 'amazing-grace-chords',
-    title: 'Amazing Grace (chords)',
-    by: 'Traditional',
-    noteDur: 0.75,
-    beat: 1,
-    bars: strums(['G', 'G', 'C', 'G', 'G', 'G', 'D', 'D', 'G', 'G', 'C', 'G', 'Em', 'D', 'G', 'G'], 3),
-  },
+  // the hymn's five verses, sung to these sixteen bars each (the words and their sources are in songwords.ts)
+  withWords(
+    {
+      id: 'amazing-grace-chords',
+      title: 'Amazing Grace (chords)',
+      by: 'Traditional',
+      noteDur: 0.75,
+      beat: 1,
+      bars: strums(['G', 'G', 'C', 'G', 'G', 'G', 'D', 'D', 'G', 'G', 'C', 'G', 'Em', 'D', 'G', 'G'], 3).map((b, i) => (i === 0 ? { ...b, part: 'Verse' } : b)),
+    },
+    SONG_WORDS['amazing-grace-chords'],
+  ),
   {
     id: 'four-chords',
     title: 'Four chords in A (with F♯m)',
@@ -192,12 +285,16 @@ export const findSong = (id: string | undefined): Song => allSongs().find((s) =>
 /** Skill a bar measures. Bars over the same chord share one; melody bars have one each. */
 export const barKey = (song: Song, bar: number): string => `bar:${song.id}:${song.bars[bar].chord ?? 'b' + (bar + 1)}`;
 
-/** Bars shown side by side as one line: more of them when the bars are short. */
+/** Bars shown side by side as one line: more of them when the bars are short. A new part always begins a new line. */
 export function songLines(song: Song): number[][] {
   const steps = song.bars.reduce((sum, b) => sum + b.notes.length, 0) / Math.max(1, song.bars.length);
   const per = steps <= 3 ? 4 : steps <= 6 ? 2 : 1;
   const lines: number[][] = [];
-  for (let i = 0; i < song.bars.length; i += per) lines.push(song.bars.slice(i, i + per).map((_, k) => i + k));
+  song.bars.forEach((b, i) => {
+    const line = lines[lines.length - 1];
+    if (!line || line.length >= per || (b.part && i > 0)) lines.push([i]);
+    else line.push(i);
+  });
   return lines;
 }
 

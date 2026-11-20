@@ -93,18 +93,72 @@ export function chart(text: string, id: string): Laid[] {
   return bars;
 }
 
+/** The strums of one bar in a pattern: a bar shared by several chords gives each its share of the slots. */
+export function strumBar(chords: string[], pattern: keyof typeof STRUMS): TabNote[] {
+  const { slots } = STRUMS[pattern];
+  const hits = [...slots].map((c, i) => ({ c, i })).filter((x) => x.c !== '.');
+  return hits.map((h, k): TabNote => {
+    const len = (hits[k + 1]?.i ?? slots.length) - h.i;
+    return { s: 0, f: 0, strum: chords[Math.floor((h.i * chords.length) / slots.length)], ...(len !== 1 ? { len } : {}), ...(h.c === 'U' ? { up: true } : {}) };
+  });
+}
+
 /** A song of strummed chords. bpm counts the clicks. */
 export function strummed(id: string, title: string, by: string, bpm: number, pattern: keyof typeof STRUMS, text: string): Song {
-  const { slots, beat } = STRUMS[pattern];
-  const hits = [...slots].map((c, i) => ({ c, i })).filter((x) => x.c !== '.');
-  const bars = chart(text, id).map(({ chords, part }): Bar => {
-    const notes = hits.map((h, k): TabNote => {
-      const len = (hits[k + 1]?.i ?? slots.length) - h.i;
-      return { s: 0, f: 0, strum: chords[Math.floor((h.i * chords.length) / slots.length)], ...(len !== 1 ? { len } : {}), ...(h.c === 'U' ? { up: true } : {}) };
-    });
-    return { chord: chords[0], notes, ...(part ? { part } : {}) };
-  });
+  const { beat } = STRUMS[pattern];
+  const bars = chart(text, id).map(({ chords, part }): Bar => ({ chord: chords[0], notes: strumBar(chords, pattern), ...(part ? { part } : {}) }));
   return { id, title, by, noteDur: 60 / bpm / beat, beat, bars };
+}
+
+/**
+ * Gives a song of the book its words and its form, from a sheet written like the words of a song book with bar
+ * lines in it (songwords.ts):
+ *
+ *   [Verse]
+ *   As I was a walking | over | Wicklow | mountain, |
+ *   ...
+ *   [Chorus]
+ *   Mush a ring a do a | da, | ...
+ *
+ * Each "[Part]" is one time round of a part of the chart, in the order they are sung; the words of each bar end in
+ * "|" (an empty cell is a bar with nothing new to sing), and the line breaks are only there to read. A word that
+ * goes on in the next bar ends in "-". "[Chorus=Verse]" is a chorus sung to the bars of the verse. The first time
+ * round of a part gives its bars their words; the later ones become the song's verses.
+ */
+export function withWords(song: Song, sheet: string | undefined): Song {
+  if (!sheet) return song;
+  const parts: { name: string; from: number; to: number }[] = [];
+  song.bars.forEach((b, i) => {
+    if (!b.part) return;
+    if (parts.length) parts[parts.length - 1].to = i;
+    parts.push({ name: b.part, from: i, to: song.bars.length });
+  });
+  const form: string[] = [];
+  const names: string[] = [];
+  const firsts: Record<string, string[]> = {};
+  const verses: Record<string, string[][]> = {};
+  const blocks = sheet.split(/^\s*\[([^\]]+)\]\s*$/m);
+  if (blocks[0].trim()) throw new Error(`${song.id}: words before the first [Part]`);
+  for (let k = 1; k < blocks.length; k += 2) {
+    const [name, on = name] = blocks[k].split('=').map((x) => x.trim());
+    const part = parts.find((p) => p.name === on);
+    if (!part) throw new Error(`${song.id}: no part called ${on}`);
+    const pieces = blocks[k + 1].split('|');
+    if (pieces[pieces.length - 1].trim()) throw new Error(`${song.id}: words after the last | of a ${name}`);
+    const cells = pieces.slice(0, -1).map((c) => c.trim().replace(/\s+/g, ' '));
+    if (cells.length !== part.to - part.from) throw new Error(`${song.id}: a ${name} has ${cells.length} bars of words, the part ${on} has ${part.to - part.from}`);
+    form.push(on);
+    names.push(name === on ? '' : name);
+    if (!firsts[on]) firsts[on] = cells;
+    else (verses[on] ??= []).push(cells);
+  }
+  for (const p of parts) if (!firsts[p.name]) throw new Error(`${song.id}: the part ${p.name} is never sung`);
+  const bars = song.bars.map((b, i): Bar => {
+    const p = parts.find((x) => i >= x.from && i < x.to);
+    const words = p ? firsts[p.name][i - p.from] : '';
+    return words ? { ...b, words } : b;
+  });
+  return { ...song, bars, form, verses, ...(names.some(Boolean) ? { formNames: names } : {}) };
 }
 
 /** The shape a picking pattern is written for: the small one where there is one, since its notes are in the full barre too. */

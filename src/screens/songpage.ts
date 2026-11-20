@@ -3,18 +3,19 @@
  * through it, from the first line to keeping it. Opened from the song list and the start page (#/songs/<id>);
  * the lesson is one click away. Nothing listens here: it is a page to read and to hear.
  */
-import { barUnits, tuneOf } from '../music/accompany';
+import { chooseWeek } from '../music/week';
+import { barUnits, tuneOf, wholeTune } from '../music/accompany';
 import { songSound, type SongSound } from '../audio/songsound';
 import { L } from '../core/i18n';
 import { store, type Instrument } from '../core/store';
-import { findPiece, findSong, noteTimes, type Song } from '../music/content';
+import { findPiece, findSong, flatSong, formParts, noteTimes, partLabel, partsOf, wholeSong, type Song } from '../music/content';
 import { chordKey, finished, pieceProfile, songProfile } from '../music/difficulty';
-import { pieceMaterial, songMaterial, suggest, type Material } from '../music/material';
+import { lineWords, pieceMaterial, songMaterial, suggest, type Material } from '../music/material';
 import { relDay, reviewKey } from '../music/review';
 import { STRUM_PATTERNS, strumPatternOf } from '../music/strums';
 import { CHORDS, pianoChord } from '../music/theory';
 import { guitarA4 } from '../music/tuning';
-import { $, $$, esc, icon, keys, type Screen } from '../ui/dom';
+import { $, $$, esc, go, icon, keys, type Screen } from '../ui/dom';
 import { chordBox, LEARN } from '../ui/draw';
 import { frame } from './frame';
 
@@ -102,14 +103,27 @@ function about(id: string) {
   // the strumming: one of the trainer's patterns, or else what the song's first full bar does, strum by strum
   const trainer = song && strummed ? STRUM_PATTERNS().find((p) => p.id === strumPatternOf(song)) : undefined;
   const pattern: { name: string; about: string; slots: string; count: string[]; beat: number } | undefined = trainer ?? (song && strummed ? ownPattern(song) : undefined);
-  const seconds = m.lines.reduce((s, l) => s + l.units, 0) * m.noteDur;
+
+  // the whole song: its parts in the order of its form, each time round with its own words. What is heard when the
+  // song is played; the lines below are its parts once each, as they are learned
+  const parts = song ? formParts(song) : [];
+  const whole = song && song.form?.length ? flatSong(song) : null;
+  const wm = whole ? songMaterial(whole) : null;
+  const wb = song ? wholeSong(song) : [];
+  const wholeNotes = whole && tune ? wholeTune(song!) : null;
+  const wholeStart: number[] = [];
+  (whole ? barUnits(whole) : []).reduce((u, n) => (wholeStart.push(u), u + n), 0);
+  const seconds = (wm ?? m).lines.reduce((s, l) => s + l.units, 0) * m.noteDur;
 
   // where each bar begins, in note units (the material's lines are whole bars of the song)
   const barStart: number[] = [];
   (song ? barUnits(song) : []).reduce((u, n) => (barStart.push(u), u + n), 0);
-  const words = tune?.words ?? null;
-  const flat = words ? words.flatMap((w, k) => w.map((s) => ({ s, k }))) : [];
-  const aligned = !!tune && flat.length === tune.melody.length;
+  // the words: a song of the book written out bar by bar (and every song read from a chord sheet) has them in its
+  // bars; a song to sing along has them syllable by syllable from the voice book, to light up as they are sung
+  const barWords = !!song?.bars.some((b) => b.words);
+  const words = barWords ? song!.bars.map((b) => (b.words ? [b.words] : [])) : (tune?.words ?? null);
+  const flat = words && !barWords ? words.flatMap((w, k) => w.map((s) => ({ s, k }))) : [];
+  const aligned = !!tune && !barWords && flat.length === tune.melody.length;
 
   // how far the player has come
   const lvl = (ks: string[]): number => Math.min(...ks.map((k) => store.skills.level(k)));
@@ -122,15 +136,23 @@ function about(id: string) {
     // with words, the chord stands where it changes; without, every bar is named (faint where it stays) so the line reads as a chart
     const change = !!c && (first || c !== m.chordOf(b - 1));
     const show = !!c && (change || !words);
-    const from = flat.findIndex((x) => x.k === b);
-    const ws = words?.[b] ?? [];
-    return `<div class="sp-bar"><span class="sp-c${change ? '' : ' same'}" data-bar="${b}">${show ? esc(chordName(c!)) : ''}</span><span class="sp-w">${ws.map((w, i) => `<s data-n="${from + i}">${w === '_' ? '' : esc(w.endsWith('-') ? w.slice(0, -1) + '‑' : w + ' ')}</s>`).join('')}</span></div>`;
+    return `<div class="sp-bar"><span class="sp-c${change ? '' : ' same'}" data-bar="${b}">${show ? esc(chordName(c!)) : ''}</span><span class="sp-w" data-b="${b}">${sung(b, words?.[b] ?? [])}</span></div>`;
   };
+  /** The words of a bar as they are shown: whole words of a bar, or syllables that light up one by one. */
+  const sung = (b: number, ws: string[]): string => {
+    if (barWords) return ws.length ? `<s>${esc(ws[0].replace(/-$/, '‑'))}</s>` : '';
+    const from = flat.findIndex((x) => x.k === b);
+    return ws.map((w, i) => `<s data-n="${from + i}">${w === '_' ? '' : esc(w.endsWith('-') ? w.slice(0, -1) + '‑' : w + ' ')}</s>`).join('');
+  };
+  // a song of several parts says where each begins
+  const named = !!song && partsOf(song).length > 1;
   const sheet = piano
     ? `<div class="sp-phrases">${m.lines.map((_, li) => `<span class="sp-ph" data-line="${li}">${Unit} ${li + 1}</span>`).join('')}</div>`
-    : m.lines.map((l, li) => `<div class="sp-line" data-line="${li}"><span class="sp-ln">${Unit} ${li + 1}</span>${l.bars.map((b, i) => cell(b, i === 0)).join('')}</div>`).join('');
+    : m.lines.map((l, li) => `${named && song!.bars[l.bars[0]].part ? `<p class="sp-pt">${esc(partLabel(song!.bars[l.bars[0]].part!))}</p>` : ''}<div class="sp-line" data-line="${li}"><span class="sp-ln">${Unit} ${li + 1}</span>${l.bars.map((b, i) => cell(b, i === 0)).join('')}</div>`).join('');
+  // the whole form as chips, in the order it is sung: one to click to read its words in the lines
+  const formRow = parts.length > 1 ? `<div class="sp-form" role="group" aria-label="${L('The whole song', 'Der ganze Song')}">${parts.map((p, k) => `<button type="button" class="sp-fp${k === 0 ? ' sel' : ''}" data-k="${k}" aria-pressed="${k === 0}">${esc(p.label)}</button>`).join('')}</div>` : '';
   const listenSub = tune ? L('The tune and the chords, as the song goes', 'Melodie und Akkorde, so wie der Song geht') : strummed ? L('The chords, as the song goes', 'Die Akkorde, so wie der Song geht') : L('As it is played', 'So, wie es gespielt wird');
-  return { inst, piano, song, piece, m, title, by, profile, strummed, tune, Unit, unitWord, chordName, pattern, seconds, barStart, words, flat, aligned, lineState, begun, sheet, listenSub };
+  return { inst, piano, song, piece, m, title, by, profile, strummed, tune, Unit, unitWord, chordName, pattern, seconds, barStart, words, barWords, flat, aligned, lineState, begun, sheet, listenSub, parts, wm, wb, wholeNotes, wholeStart, formRow, sung };
 }
 type About = ReturnType<typeof about>;
 
@@ -144,17 +166,39 @@ function controls(s: About, primary: boolean): string {
   </div>`;
 }
 
-/** Plays the song in an audio context of its own (nothing listens while it does) and lights up the sheet as it goes. */
+/**
+ * Plays the song in an audio context of its own (nothing listens while it does) and lights up the sheet as it goes.
+ * "Play the song" plays the whole of it, every part as often as its form has it: the chip of the part being sung
+ * lights up, and the lines show the words of that time round. A line asked for (lines) is played once, as learned.
+ */
 function player(root: HTMLElement, s: About, onHeard: () => void): { play: (lines?: [number, number]) => void; stop: () => void; close: () => void } {
-  const { m, tune, piano, barStart, flat, aligned } = s;
+  const { m, tune, piano, barStart, flat, aligned, wm, wb, parts, song, barWords } = s;
   let actx: AudioContext | null = null;
   let playing: { src: AudioBufferSourceNode; raf: number } | null = null;
   let shownLine: HTMLElement | null = null;
   const playBtn = $<HTMLButtonElement>('#sp-play', root);
   const speed = (): number => Number(root.querySelector('.sp-seg [aria-pressed="true"]')?.getAttribute('data-s')) || 1;
+  /** which time round of each part the lines show now */
+  const shown: Record<string, number> = {};
+  /** The lines show the words of one time round of a part: a chip of the form. */
+  const show = (k: number): void => {
+    const p = parts[k];
+    if (!p || !song) return;
+    $$<HTMLButtonElement>('.sp-fp', root).forEach((b) => {
+      const on = Number(b.dataset.k) === k;
+      b.classList.toggle('sel', on);
+      b.setAttribute('aria-pressed', String(on));
+    });
+    if (shown[p.part] === k) return;
+    shown[p.part] = k;
+    wb.slice(p.from, p.to).forEach((f) => {
+      const cell = root.querySelector<HTMLElement>(`.sp-w[data-b="${f.index}"]`);
+      if (cell) cell.innerHTML = s.sung(f.index, f.words ? [f.words] : []);
+    });
+  };
   const lightsOut = (): void => {
     $$('.sp-w s', root).forEach((el) => el.classList.remove('now', 'sung'));
-    $$('.sp-c, .sp-ph', root).forEach((el) => el.classList.remove('on'));
+    $$('.sp-c, .sp-ph, .sp-fp', root).forEach((el) => el.classList.remove('on'));
     $$('.sp-line', root).forEach((el) => el.classList.remove('cur'));
   };
   function stop(): void {
@@ -175,7 +219,12 @@ function player(root: HTMLElement, s: About, onHeard: () => void): { play: (line
     void actx.resume();
     const withTune = !tune || (root.querySelector<HTMLInputElement>('#sp-tune')?.checked ?? true);
     const withChords = !tune || (root.querySelector<HTMLInputElement>('#sp-chords')?.checked ?? true);
-    const sound: SongSound = songSound(m, { sr: actx.sampleRate, speed: lines ? 1 : speed(), instrument: withChords, tune: withTune ? tune?.melody : null, lines, a4: guitarA4(), pianoA4: store.settings.pianoA4 });
+    // the whole song, or a line of it as it is learned
+    const full = !lines && !!wm;
+    const mat = full ? wm! : m;
+    const melody = full ? s.wholeNotes : tune?.melody;
+    const starts = full ? s.wholeStart : barStart;
+    const sound: SongSound = songSound(mat, { sr: actx.sampleRate, speed: lines ? 1 : speed(), instrument: withChords, tune: withTune ? melody : null, lines, a4: guitarA4(), pianoA4: store.settings.pianoA4 });
     const buf = actx.createBuffer(1, sound.samples.length, actx.sampleRate);
     buf.getChannelData(0).set(sound.samples);
     const src = actx.createBufferSource();
@@ -197,8 +246,15 @@ function player(root: HTMLElement, s: About, onHeard: () => void): { play: (line
         while (li + 1 < sound.starts.length && sound.starts[li + 1] <= u) li++;
         $$('.sp-ph', root).forEach((p) => p.classList.toggle('on', u >= 0 && Number(p.dataset.line) === li));
       } else {
-        let b = 0;
-        while (b + 1 < barStart.length && barStart[b + 1] <= u) b++;
+        let k = 0;
+        while (k + 1 < starts.length && starts[k + 1] <= u) k++;
+        // in the whole song, which bar of the song that is, and which time round of its part
+        const b = full ? wb[k].index : k;
+        if (full) {
+          const chip = parts.findIndex((p) => k >= p.from && k < p.to);
+          show(chip);
+          $$('.sp-fp', root).forEach((el) => el.classList.toggle('on', u >= 0 && Number((el as HTMLElement).dataset.k) === chip));
+        }
         $$('.sp-c', root).forEach((c) => c.classList.toggle('on', u >= 0 && Number(c.dataset.bar) === b));
         $$('.sp-line', root).forEach((l) => l.classList.toggle('cur', m.lines[Number(l.dataset.line)].bars.includes(b)));
         // in the session's short sheet the line being sung is kept in sight; the page itself is left where the player scrolled it
@@ -207,7 +263,15 @@ function player(root: HTMLElement, s: About, onHeard: () => void): { play: (line
           shownLine = cur;
           cur.scrollIntoView({ block: 'nearest' });
         }
-        if (aligned && withTune) {
+        if (barWords && withTune) {
+          // the words of a bar light up while it is played, those of the bars before it in the line stay read
+          const line = m.lines.find((l) => l.bars.includes(b))?.bars ?? [];
+          $$('.sp-w', root).forEach((w) => {
+            const of = Number(w.dataset.b);
+            w.querySelector('s')?.classList.toggle('now', u >= 0 && of === b);
+            w.querySelector('s')?.classList.toggle('sung', u >= 0 && line.includes(of) && of < b);
+          });
+        } else if (aligned && withTune && !full) {
           let n = -1;
           while (n + 1 < tune!.melody.length && tune!.melody[n + 1].u <= u) n++;
           // a held syllable ("_") keeps the one before it lit
@@ -223,6 +287,7 @@ function player(root: HTMLElement, s: About, onHeard: () => void): { play: (line
       if (now < end) playing.raf = requestAnimationFrame(tick);
       else {
         stop();
+        show(0);
         if (!lines) onHeard();
       }
     };
@@ -239,6 +304,9 @@ function player(root: HTMLElement, s: About, onHeard: () => void): { play: (line
         }
       }),
   );
+  // a chip of the form shows the words of that time round in the lines
+  $$<HTMLButtonElement>('.sp-fp', root).forEach((b) => (b.onclick = () => show(Number(b.dataset.k))));
+  parts.forEach((p, k) => (shown[p.part] ??= k));
   return {
     play,
     stop,
@@ -258,7 +326,10 @@ export const songPage: Screen = (root, [id]) => {
 
   const sayLine = (li: number): string => {
     const l = m.lines[li];
-    if (words) {
+    if (s.barWords) {
+      const t = lineWords(m, li);
+      if (t) return esc(t);
+    } else if (words) {
       const t = l.bars.flatMap((b) => words[b] ?? []).filter((w) => w && w !== '_').map((w) => (w.endsWith('-') ? w.slice(0, -1) : w + ' ')).join('').trim();
       if (t) return esc(t);
     }
@@ -295,18 +366,22 @@ export const songPage: Screen = (root, [id]) => {
   // the lesson opens at a line: #/song/<id>/<rung>/<line>, the line counted from 1
   const lesson = !begun ? lessonBase : !allLearned ? `${lessonBase}/1/${nextLine + 1}` : !allFull && !done ? lessonBase : `${lessonBase}/3`;
 
+  // any song can be made the song of the week from its page: one chosen among three, or one of the player's own
+  const isWeek = store.weeks.guitar?.id === m.id;
+  const weekBtn = !piano ? (isWeek ? `<p class="note sp-week">${L('Your song of the week.', 'Dein Song der Woche.')}</p>` : `<p class="sp-week"><button class="btn quiet" id="sp-weekbtn">${L('Make it the song of the week', 'Als Song der Woche nehmen')}</button></p>`) : '';
   root.innerHTML = `<div class="page bare songp">
     <div><a class="btn quiet" href="#/songs">${icon('left')}${piano ? L('All pieces', 'Alle Stücke') : L('All songs', 'Alle Songs')}</a></div>
     <section class="paper sp-head">
       <p class="kick">${piano ? L('Piece', 'Stück') : L('Song', 'Song')}${by ? ` · ${esc(byLine(by))}` : ''}</p>
-      <h1>${esc(title)}</h1>
+      <h1>${esc(title)}</h1>${weekBtn}
       <p class="lede">${what} ${begun ? '' : L('Hear it once, then learn it a line at a time.', 'Hör ihn dir einmal an, dann lernst du ihn Zeile für Zeile.')}</p>
-      <div class="sp-facts"><span>${m.lines.length} ${unitWord(m.lines.length)}</span>${chords.length ? `<span>${L(`${chords.length} ${chords.length === 1 ? 'chord' : 'chords'}`, `${chords.length} ${chords.length === 1 ? 'Akkord' : 'Akkorde'}`)}: ${chords.map((c) => esc(chordName(c))).join(' ')}</span>` : ''}${pattern ? `<span>${esc(pattern.name)}</span>` : ''}<span>${seconds < 90 ? L(`about ${Math.round(seconds / 5) * 5} seconds`, `etwa ${Math.round(seconds / 5) * 5} Sekunden`) : L(`about ${Math.round(seconds / 60)} minutes`, `etwa ${Math.round(seconds / 60)} Minuten`)}</span></div>
+      <div class="sp-facts"><span>${m.lines.length} ${unitWord(m.lines.length)}</span>${chords.length ? `<span>${L(`${chords.length} ${chords.length === 1 ? 'chord' : 'chords'}`, `${chords.length} ${chords.length === 1 ? 'Akkord' : 'Akkorde'}`)}: ${chords.map((c) => esc(chordName(c))).join(' ')}</span>` : ''}${pattern ? `<span>${esc(pattern.name)}</span>` : ''}<span>${s.parts.length > 1 ? L(`${clock(seconds)} with every verse`, `${clock(seconds)} mit allen Strophen`) : seconds < 90 ? L(`about ${Math.round(seconds / 5) * 5} seconds`, `etwa ${Math.round(seconds / 5) * 5} Sekunden`) : L(`about ${Math.round(seconds / 60)} minutes`, `etwa ${Math.round(seconds / 60)} Minuten`)}</span></div>
     </section>
 
     <section class="paper sp-listen" aria-labelledby="sp-hear">
       <div class="sectitle"><h2 id="sp-hear"><span class="spno">1</span>${L('Hear it first', 'Erst anhören')}</h2><span class="note">${s.listenSub}</span></div>
       ${controls(s, !begun)}
+      ${s.formRow}
       <div class="sp-sheet" id="sp-sheet">${s.sheet}</div>
       <p class="sp-note">${
         strummed && !tune
@@ -343,7 +418,7 @@ export const songPage: Screen = (root, [id]) => {
             <div class="sp-lines">${m.lines.map((_, li) => `<a class="sp-l" href="${lessonBase}/${lineState[li].learned ? 2 : 1}/${li + 1}" data-line="${li}"><b>${Unit} ${li + 1}</b><em>${sayLine(li)}</em><span class="sp-rp"><i class="${lineState[li].learned ? 'ok' : ''}">${lineState[li].learned ? icon('check') : '1'} ${L('Learn', 'Lernen')}</i><i class="${lineState[li].full ? 'ok' : ''}">2 ${lineState[li].learned && !lineState[li].full ? `${lineState[li].tempo} %` : L('Click', 'Klick')}</i></span></a>`).join('')}</div>
             <div class="sp-key"><p><i>1</i><span><b>${L('Learn', 'Lernen')}:</b> ${L('no clock. The app waits until it hears each strum, so you can look at your fingers.', 'ohne Uhr. Die App wartet, bis sie jeden Anschlag hört, so kannst du auf deine Finger schauen.')}</span></p><p><i>2</i><span><b>${L('With the click', 'Mit Klick')}:</b> ${L('the same line in time, slow at first, faster when it goes well.', 'dieselbe Zeile im Takt, erst langsam, schneller, wenn es gut geht.')}</span></p></div>
           </div></li>
-          <li class="${done ? 'ok' : ''}"><span class="dot">${done ? icon('check') : '3'}</span><h3>${piano ? L('The whole piece', 'Das ganze Stück') : L('The whole song', 'Der ganze Song')} <span>· ${L('start to end, full speed', 'von Anfang bis Ende, volles Tempo')}</span></h3><div class="body"><p>${L('Recorded, so you can listen back. Clean once: it joins your repertoire.', 'Aufgenommen, damit du es dir anhören kannst. Einmal sauber: Es kommt in dein Repertoire.')}</p></div></li>
+          <li class="${done ? 'ok' : ''}"><span class="dot">${done ? icon('check') : '3'}</span><h3>${piano ? L('The whole piece', 'Das ganze Stück') : L('The whole song', 'Der ganze Song')} <span>· ${L('start to end, full speed', 'von Anfang bis Ende, volles Tempo')}</span></h3><div class="body">${s.parts.length > 1 ? `<p>${esc(L(`All of it, as it is sung: ${s.parts.map((p) => p.label).join(', ')}.`, `Alles, so wie es gesungen wird: ${s.parts.map((p) => p.label).join(', ')}.`))}</p>` : ''}<p>${L('Recorded, so you can listen back. Clean once: it joins your repertoire.', 'Aufgenommen, damit du es dir anhören kannst. Einmal sauber: Es kommt in dein Repertoire.')}</p></div></li>
           <li class="${review ? 'ok' : ''}"><span class="dot">${review ? icon('check') : '4'}</span><h3>${L('Keep it', 'Behalten')} <span>· ${review ? L(`next visit ${relDay(review.due)}`, `nächster Besuch ${relDay(review.due)}`) : L('it comes back in a few days', 'es kommt in ein paar Tagen wieder')}</span></h3><div class="body"><p>${L('Played from cold, without warming up, at growing gaps, so that it stays in your hands.', 'Aus dem Stand gespielt, ohne Aufwärmen, in wachsenden Abständen, damit es in deinen Händen bleibt.')}</p></div></li>
         </ol>
         <div class="row"><a class="btn${begun ? ' primary' : ''} big" id="sp-start" href="${lesson}">${start}${icon('right')} <kbd>${L('Space', 'Leertaste')}</kbd></a></div>
@@ -352,6 +427,10 @@ export const songPage: Screen = (root, [id]) => {
     </div>
   </div>`;
 
+  root.querySelector<HTMLButtonElement>('#sp-weekbtn')?.addEventListener('click', () => {
+    chooseWeek('guitar', m.id);
+    go('/');
+  });
   let heard = false;
   const p = player(root, s, () => {
     // heard once: the next thing to do is the first line, so the blue moves there
@@ -392,6 +471,7 @@ export function hearFirst(lesson: Screen): Screen {
       `<div class="sp-pre">
         <div class="say"><p class="eyebrow">${esc(ctx.label)} · ${s.piano ? L('A new piece', 'Ein neues Stück') : L('A new song', 'Ein neuer Song')}</p><h1>${L(`Hear it first: <em>${esc(s.title)}</em>`, `Erst anhören: <em>${esc(s.title)}</em>`)}</h1><p class="sub">${s.listenSub}. ${L(`Then you learn it ${s.Unit.toLowerCase()} by ${s.Unit.toLowerCase()}.`, `Dann lernst du ihn ${s.Unit} für ${s.Unit}.`)}</p></div>
         ${controls(s, true)}
+        ${s.formRow}
         <div class="sp-sheet compact">${s.sheet}</div>
       </div>`,
       `<div class="grp do"><button class="btn" id="sp-go">${L(`Start with ${s.Unit.toLowerCase()} 1`, `Mit ${s.Unit} 1 beginnen`)}${icon('right')} <kbd>${L('Space', 'Leertaste')}</kbd></button></div>`,

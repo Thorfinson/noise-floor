@@ -813,11 +813,12 @@ const sections: [string, () => Promise<void>][] = [
       await page.waitForSelector('.songp', { timeout: 5000 }).catch(() => undefined);
       const songPageAt = await page.evaluate(() => location.hash);
       check('song page: a song in the list opens its page, with hearing it, what it asks and the way through it', songPageAt === '#/songs/amazing-grace-chords' && (await page.locator('.songp .paper').count()) === 4 && (await page.locator('.sp-chord').count()) === 4 && (await page.locator('.sp-l').count()) === 4, `${songPageAt}, ${await page.locator('.songp .paper').count()} sheets`);
-      // hearing it: the tune over the chords, the words lighting up as they are sung
+      // hearing it: the tune over the chords, the words of each bar lighting up as it is played (the second bar after
+      // the upbeat and the first bar, some 3.2 to 5.4 s in), and the first verse of the five lit in the form
       await page.click('#sp-play');
-      await page.waitForTimeout(2600);
-      const lit = await page.evaluate(() => ({ now: document.querySelectorAll('.sp-w s.now').length, sung: document.querySelectorAll('.sp-w s.sung').length, chord: document.querySelector('.sp-c.on')?.textContent ?? '' }));
-      check('song page: playing the song lights up its words and chords as they come', lit.now === 1 && lit.sung >= 1 && lit.chord === 'G', JSON.stringify(lit));
+      await page.waitForTimeout(4300);
+      const lit = await page.evaluate(() => ({ now: document.querySelectorAll('.sp-w s.now').length, sung: document.querySelectorAll('.sp-w s.sung').length, bar: (document.querySelector('.sp-c.on') as HTMLElement | null)?.dataset.bar ?? '', part: document.querySelector('.sp-fp.on')?.textContent ?? '', parts: document.querySelectorAll('.sp-fp').length }));
+      check('song page: playing the song lights up its words and chords as they come, and the verse in the whole form', lit.now === 1 && lit.sung >= 1 && lit.bar === '1' && lit.part === 'Verse 1' && lit.parts === 5, JSON.stringify(lit));
       await page.click('#sp-play');
       await page.screenshot({ path: resolve(out, 'song-page.png'), fullPage: true });
       // a song without words has its tune written for it (Tom Dooley); one with no tune at all (the four-chord
@@ -831,6 +832,34 @@ const sections: [string, () => Promise<void>][] = [
       await page.click('#sp-start');
       await page.waitForFunction(() => location.hash.startsWith('#/song/four-chords'), null, { timeout: 4000 }).catch(() => undefined);
       check('song page: its button opens the lesson', (await page.evaluate(() => location.hash)).startsWith('#/song/four-chords'), await page.evaluate(() => location.hash));
+      // a whole song: its form as chips, the parts named over their lines, its real length, and the words of any time round
+      await page.goto(base + '?autostart#/songs/whiskey-in-the-jar');
+      await page.waitForSelector('.sp-fp');
+      const form = await page.evaluate(() => ({ chips: [...document.querySelectorAll('.sp-fp')].map((b) => b.textContent), heads: [...document.querySelectorAll('.sp-pt')].map((h) => h.textContent), time: document.querySelector('#sp-time')?.textContent ?? '', first: document.querySelector('.sp-w[data-b="0"]')?.textContent ?? '' }));
+      check('song page: a whole song shows its form, its parts and its length with every verse', form.chips.join() === 'Verse 1,Chorus,Verse 2,Chorus,Verse 3,Chorus,Verse 4,Chorus' && form.heads.join() === 'Verse,Chorus' && /\/ 3:\d\d$/.test(form.time) && form.first === 'As I was a walking', JSON.stringify(form));
+      await page.click('.sp-fp[data-k="2"]');
+      check('song page: a chip of the form shows that verse\'s words under the chords', (await text(page, '.sp-w[data-b="0"]')) === "It's when I got the" && (await page.getAttribute('.sp-fp[data-k="2"]', 'aria-pressed')) === 'true', await text(page, '.sp-w[data-b="0"]'));
+      // any song from its chord sheet: pasted, read as parts and the whole song, saved, its page opened
+      await page.goto(base + '?autostart#/import/sheet');
+      await page.waitForSelector('#sheet');
+      await page.click('#example');
+      const sheet = await page.evaluate(() => ({ found: document.querySelector('#found')?.textContent ?? '', parts: [...document.querySelectorAll('.cs-part h3')].map((h) => h.textContent), chords: document.querySelector('.cs-line .cs-bar b')?.textContent ?? '', local: document.querySelector('.cs-head')?.textContent?.includes('stays on this computer') }));
+      check('chord sheet: the example is read as verses and choruses, chords over words, and it says it stays here', sheet.found.includes('2 parts, sung 4 times round') && sheet.parts.join() === 'Verse 1,Chorus,Verse 2,Chorus' && sheet.chords === 'G' && !!sheet.local, JSON.stringify(sheet));
+      await page.fill('#sheet', '[Verse]\nEb        Bb\nOh blow ye winds\n[Chorus]\nCmaj9 G/B\nBring back');
+      check('chord sheet: chords the app has no shape for are named, with a transposition that plays them all; others are simplified', /no shape for Eb/.test(await text(page, '#found')) && (await page.locator('#moveit').count()) === 1 && /Cmaj9 → Cmaj7/.test(await text(page, '#found')), await text(page, '#found'));
+      await page.click('#example');
+      await page.fill('#title', 'Sheet check');
+      await page.click('#save');
+      await page.waitForSelector('.songp', { timeout: 5000 }).catch(() => undefined);
+      check('chord sheet: saved, it is one of your own songs and its page opens with its form', /^#\/songs\/my-/.test(await page.evaluate(() => location.hash)) && (await text(page, '.sp-head h1')) === 'Sheet check' && (await page.locator('.sp-fp').count()) === 4, `${await page.evaluate(() => location.hash)} ${await text(page, '.sp-head h1')}`);
+      // taken out again, so that the list below counts the book and the song from the tab
+      await page.goto(base + '?autostart#/songs');
+      await page.waitForSelector('.lib');
+      await page.fill('#q', 'sheet check');
+      await page.click('[data-del]');
+      await page.click('[data-del]');
+      await page.waitForFunction(() => !document.querySelector('[data-del]'), null, { timeout: 4000 }).catch(() => undefined);
+      await page.fill('#q', '');
       await page.goto(base + '?autostart#/songs');
       await page.waitForSelector('.lib');
       await page.fill('#q', 'scarborough');

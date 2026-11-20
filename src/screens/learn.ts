@@ -14,7 +14,7 @@ import { L } from '../core/i18n';
 import { Take, TEMPOS, type TakeStep } from '../core/playalong';
 import { saveTake, TAKE_MAX } from '../core/takes';
 import { store, type Instrument } from '../core/store';
-import { findPiece, findSong, shapeOf, stepKeys, type Song } from '../music/content';
+import { findPiece, findSong, partLabel, shapeOf, stepKeys, type Song } from '../music/content';
 import { pieceMaterial, songMaterial, suggest, unitDe, type Material, type Step } from '../music/material';
 import { enlist, REVIEW_DAYS, reviewed, reviewKey, reviewLines } from '../music/review';
 import { changeTip, chordName, chordNotes, isBlackKey, keyName, keysAlike, keyTip, noteName, pianoChord, STRING_FULL, strumIs } from '../music/theory';
@@ -362,7 +362,7 @@ function lesson(root: HTMLElement, m: Material, wanted: string | undefined, ctx?
   /** The top bar: the line on show (the title is the way out, on the left), its part, who the song is by, the capo. */
   const where = (li: number): void => {
     const part = m.partOf(m.lines[li].bars[0]);
-    $('#where', root).innerHTML = `<b>${L(`${cap(m.unit)} ${li + 1} of ${n}`, `${unitDe(m)} ${li + 1} von ${n}`)}</b>${part && part !== 'All' ? ` · ${esc(part.toLowerCase())}` : ''}${m.by ? ` · ${esc(m.by === 'Traditional' ? L('Traditional', 'Traditionell') : m.by)}` : ''}${!m.piano && guitarSetup() ? ` · ${guitarSetup()}` : ''}`;
+    $('#where', root).innerHTML = `<b>${L(`${cap(m.unit)} ${li + 1} of ${n}`, `${unitDe(m)} ${li + 1} von ${n}`)}</b>${part && part !== 'All' ? ` · ${esc(partLabel(part))}` : ''}${m.by ? ` · ${esc(m.by === 'Traditional' ? L('Traditional', 'Traditionell') : m.by)}` : ''}${!m.piano && guitarSetup() ? ` · ${guitarSetup()}` : ''}`;
   };
   /**
    * A model to listen to before playing: the line as it should sound, a little slower than full speed.
