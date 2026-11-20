@@ -994,15 +994,34 @@ const sections: [string, () => Promise<void>][] = [
       // the rhythm game: stones in time with the click, the chord changing at every bar line
       await page.goto(base + '?autostart#/nf');
       await page.waitForSelector('.cards');
-      const cardTops = await page.locator('.cards .card:not(.night-card):not(.free-card)').evaluateAll((els) => els.map((e) => Math.round(e.getBoundingClientRect().top)));
+      const cardTops = await page.locator('.cards .card:not(.night-card):not(.free-card):not(.extra)').evaluateAll((els) => els.map((e) => Math.round(e.getBoundingClientRect().top)));
       const bannerTops = await page.locator('.cards .night-card, .cards .free-card').evaluateAll((els) => els.map((e) => Math.round(e.getBoundingClientRect().top)));
-      const cardBottom = await page.locator('.cards .card').evaluateAll((els) => Math.max(...els.map((e) => e.getBoundingClientRect().bottom)));
+      // Dares and Five notes lie under the four games, side by side
+      const extraTops = await page.locator('.cards .card.extra').evaluateAll((els) => els.map((e) => Math.round(e.getBoundingClientRect().top)));
+      const cardBottom = await page.locator('.cards .card:not(.extra)').evaluateAll((els) => Math.max(...els.map((e) => e.getBoundingClientRect().bottom)));
       const firstCard = (await page.locator('.cards .card').first().getAttribute('class')) ?? '';
       check(
-        "games: tonight's night comes first, Freestyle beside it; the four games side by side below them, none of them below the fold",
-        firstCard.includes('night-card') && /^The night of [A-Z][a-z]+ \d+$/.test(await text(page, '.night-card h2')) && bannerTops.length === 2 && new Set(bannerTops).size === 1 && cardTops.length === 4 && new Set(cardTops).size === 1 && cardTops[0] > bannerTops[0] && cardBottom <= 900 && (await text(page, '.cards')).includes('Stepping stones') && (await page.title()) === 'Games · Noise Floor',
-        `${firstCard} · ${await text(page, '.night-card h2')} · ${cardTops.length} cards at y ${[...new Set(cardTops)].join(', ')}, bottom ${Math.round(cardBottom)} · ${await page.title()}`,
+        "games: tonight's night comes first, Freestyle beside it; the four games side by side below them, none of them below the fold; Dares and Five notes under the games",
+        firstCard.includes('night-card') && /^The night of [A-Z][a-z]+ \d+$/.test(await text(page, '.night-card h2')) && bannerTops.length === 2 && new Set(bannerTops).size === 1 && cardTops.length === 4 && new Set(cardTops).size === 1 && cardTops[0] > bannerTops[0] && cardBottom <= 900 && extraTops.length === 2 && new Set(extraTops).size === 1 && extraTops[0] > cardTops[0],
+        `${firstCard} · ${await text(page, '.night-card h2')} · ${cardTops.length} cards at y ${[...new Set(cardTops)].join(', ')}, ${extraTops.length} extras at y ${[...new Set(extraTops)].join(', ')}, bottom ${Math.round(cardBottom)} · ${await page.title()}`,
       );
+      // Five notes: the day's tune is played; five right notes find it at once, and the song is named
+      await page.goto(base + '?autostart#/five');
+      await page.waitForSelector('#fngrid');
+      await page.keyboard.press('Space');
+      await page.waitForFunction(() => (document.querySelector('#app') as HTMLElement).dataset.listening !== '1', null, { timeout: 15000 }).catch(() => undefined);
+      for (let i = 0; i < 5; i++) {
+        await page.keyboard.press('n');
+        await page.waitForTimeout(700);
+      }
+      await page.waitForFunction(() => /^Found in/.test(document.querySelector('#fnh1')?.textContent ?? ''), null, { timeout: 5000 }).catch(() => undefined);
+      check('five notes: the tune of the day is played, five right notes find it at once, and the song is named', (await text(page, '#fnh1')) === 'Found in 1.' && (await page.locator('.fn-cell.gold').count()) === 5 && /opening of/.test(await text(page, '#fnsub')), `${await text(page, '#fnh1')} · ${await text(page, '#fnsub')}`);
+      // Dares: the five dares to choose for the song of the week, toggled by their number
+      await page.goto(base + '?autostart#/dares');
+      await page.waitForSelector('#drpick .dares-dare');
+      await page.keyboard.press('2');
+      check('dares: five dares to choose, toggled by their number', (await page.locator('.dares-dare').count()) === 5 && (await page.locator('.dares-dare[data-dare="climb"]').getAttribute('aria-pressed')) === 'true' && /what do you dare/.test(await text(page, '#drh1')), await text(page, '#drh1'));
+
       await page.goto(base + '?autostart#/stride/four');
       await page.waitForSelector('#brief');
       check('stepping stones: introduced with its two chords and how the bar is counted', (await text(page, '#brief h1')).startsWith('Keep the pulse') && (await page.locator('#brief .count b').count()) === 4 && (await page.locator('#brief .shapes figure').count()) === 2, await text(page, '#brief h1'));
@@ -1502,7 +1521,7 @@ const sections: [string, () => Promise<void>][] = [
       await page.goto(base + '?autostart#/nf');
       await page.waitForSelector('.cards');
       const pianoCards = await text(page, '.cards');
-      check('games, piano: the finger gym, chord changes, the run of the piece and Stepping stones', (await page.locator('.cards .card').count()) === 4 && ['Finger gym', 'Chord changes', 'Piece run', 'Stepping stones'].every((n) => pianoCards.includes(n)), pianoCards.replace(/\s+/g, ' ').slice(0, 120));
+      check('games, piano: the finger gym, chord changes, the run of the piece and Stepping stones, with Five notes across the top', (await page.locator('.cards .card').count()) === 5 && ['Finger gym', 'Chord changes', 'Piece run', 'Stepping stones', 'Five notes'].every((n) => pianoCards.includes(n)) && (await page.locator('.cards .card.extra.band').count()) === 1, pianoCards.replace(/\s+/g, ' ').slice(0, 120));
       await page.goto(base + '?autostart#/run/kchanges');
       await page.waitForSelector('#brief');
       check('changes run, piano: introduced with its chords as keys', (await text(page, '#brief h1')) === 'Chord changes: C and G' && (await page.locator('#brief .shapes figure').count()) === 2 && (await page.locator('#brief .shapes rect').count()) >= 30, await text(page, '#brief h1'));

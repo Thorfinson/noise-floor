@@ -1,5 +1,6 @@
 /** Everything that is kept between sessions lives in the browser's local storage, on this machine only. */
 import type { Bar, PianoNote, PianoPiece, Song, TabNote } from '../music/content';
+import type { DareId, DaresRecord } from '../game/dares';
 import { dayOf, weekOf } from './days';
 import { cleanSkills, Skills, type SkillRecord } from './skills';
 
@@ -178,6 +179,14 @@ export interface WeekState {
   start: number;
 }
 
+/** Five notes on one day: the tune it was, the tries played (the notes heard), the hearings used, and whether it is over. */
+export interface FiveDay {
+  id: string;
+  rows: number[][];
+  hears: number;
+  done: boolean;
+}
+
 /** The barre chord as a project: which shape, from which day, and the most strings that rang on each day. */
 export interface BarreProject {
   chord: string;
@@ -210,6 +219,10 @@ interface Saved {
   barre: BarreProject | null;
   /** the lines of Freestyle the player kept, newest first */
   licks: Lick[];
+  /** Dares: the best run on each song, by instrument and song ("guitar:scarborough-fair"), src/game/dares.ts */
+  dares: Record<string, DaresRecord>;
+  /** Five notes: each day's tune and tries, the day's number as the key, src/game/fivenotes.ts */
+  fivenotes: Record<string, FiveDay>;
   /** when this was saved, to tell which of two copies (the browser's, a progress file's) is newer */
   savedAt: number;
 }
@@ -360,6 +373,8 @@ const lickNote: Check<LickNote> = shape<LickNote>({ kind: oneOf('note', 'chk', '
 const lick: Check<Lick> = all<Lick>({ id, t: num, spot: id, total: within(0, 1e9), tricks: list(id), notes: list(lickNote) });
 const perInstrument = <T>(c: Check<T>): Check<Partial<Record<Instrument, T>>> => shape<Partial<Record<Instrument, T>>>({ guitar: c, piano: c, voice: c });
 const time: Check<string> = (v) => (typeof v === 'string' && /^(\d{1,2}:\d{2}(:\d{2})?)?$/.test(v) ? v : undefined);
+const dareId = oneOf<DareId>('dark', 'climb', 'called', 'clean', 'onetake');
+const notes: Check<number[][]> = (v) => (Array.isArray(v) && v.length <= 12 && v.every((r) => Array.isArray(r) && r.length <= 8 && r.every((x) => typeof x === 'number' && Number.isFinite(x) && x >= 0 && x <= 127)) ? (v as number[][]) : undefined);
 const FIELDS: { [K in keyof Saved]-?: Check<Saved[K]> } = {
   settings: (v) => {
     const s = shape<Settings>(SETTINGS)(v);
@@ -385,10 +400,12 @@ const FIELDS: { [K in keyof Saved]-?: Check<Saved[K]> } = {
   weeks: perInstrument(all<WeekState>({ id, start: num })),
   barre: (v) => (v === null ? null : all<BarreProject>({ chord: str, start: num, rings: dict(within(0, 6)) })(v)),
   licks: list(lick),
+  dares: dict(all<DaresRecord>({ t: num, points: num, dares: list(dareId), stage: within(0, 3), tempo: within(20, 200), held: count, take: bool })),
+  fivenotes: dict(all<FiveDay>({ id, rows: notes, hears: count, done: bool })),
   savedAt: num,
 };
 /** What is kept when nothing was saved yet. */
-const EMPTY = (): Saved => ({ settings: { ...DEFAULTS }, skills: {}, speeds: {}, best: {}, runs: [], sessions: [], progress: {}, songs: [], pieces: [], current: {}, reviews: {}, favs: [], recent: {}, practice: {}, plan: null, ratings: [], takes: {}, planOff: {}, weeks: {}, barre: null, licks: [], savedAt: 0 });
+const EMPTY = (): Saved => ({ settings: { ...DEFAULTS }, skills: {}, speeds: {}, best: {}, runs: [], sessions: [], progress: {}, songs: [], pieces: [], current: {}, reviews: {}, favs: [], recent: {}, practice: {}, plan: null, ratings: [], takes: {}, planOff: {}, weeks: {}, barre: null, licks: [], dares: {}, fivenotes: {}, savedAt: 0 });
 
 /** Saved data checked field by field: every field that passes, defaults for the others, and the names of those that failed. */
 function checkSaved(raw: unknown): { saved: Saved; failed: string[] } {
@@ -437,6 +454,8 @@ export class Store {
   barre!: BarreProject | null;
   /** the lines of Freestyle the player kept, newest first (their sound is kept as takes) */
   licks!: Lick[];
+  dares!: Record<string, DaresRecord>;
+  fivenotes!: Record<string, FiveDay>;
   /** when what is held was last saved (ms) */
   savedAt!: number;
   /** called after every save: a progress file of the player's is written then (src/core/progressfile.ts) */
@@ -490,6 +509,8 @@ export class Store {
     this.weeks = saved.weeks;
     this.barre = saved.barre;
     this.licks = saved.licks;
+    this.dares = saved.dares;
+    this.fivenotes = saved.fivenotes;
     this.savedAt = saved.savedAt;
     return failed;
   }
@@ -599,7 +620,7 @@ export class Store {
   }
 
   private snapshot(): Saved {
-    return { settings: this.settings, skills: this.skills.data, speeds: this.speeds, best: this.best, runs: this.runs.slice(-40), sessions: this.sessions.slice(-400), progress: this.progress, songs: this.songs, pieces: this.pieces, current: this.current, reviews: this.reviews, favs: this.favs, recent: this.recent, practice: this.practice, plan: this.plan, ratings: this.ratings.slice(-30), takes: this.takes, planOff: this.planOff, weeks: this.weeks, barre: this.barre, licks: this.licks.slice(0, 30), savedAt: this.savedAt };
+    return { settings: this.settings, skills: this.skills.data, speeds: this.speeds, best: this.best, runs: this.runs.slice(-40), sessions: this.sessions.slice(-400), progress: this.progress, songs: this.songs, pieces: this.pieces, current: this.current, reviews: this.reviews, favs: this.favs, recent: this.recent, practice: this.practice, plan: this.plan, ratings: this.ratings.slice(-30), takes: this.takes, planOff: this.planOff, weeks: this.weeks, barre: this.barre, licks: this.licks.slice(0, 30), dares: this.dares, fivenotes: Object.fromEntries(Object.entries(this.fivenotes).sort((a, b) => Number(b[0]) - Number(a[0])).slice(0, 400)), savedAt: this.savedAt };
   }
 
   save(): void {

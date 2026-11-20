@@ -26,6 +26,22 @@ The game for rhythm, a side-scroller. A wanderer with a lantern crosses still wa
 
 Four patterns (every beat; one and three; rest on two; a quick pair on three), each in a land of its own (a birch marsh at first light, a pinewood at noon, a heath in the evening, a coast at dusk), six tempi from 50 to 112 beats a minute. It says for every strum how early or late it was, notices one that is in time but still the old chord (or note), and a tempo counts when nine of ten stones were in time: then the beacon on the far bank is lit.
 
+## Dares
+
+Your song of the week, played round after round with the band, under the pressure you choose (`src/game/dares.ts`, `src/screens/dares.ts`, `#/dares`). Before a run you pick dares:
+
+- **Lights out:** after every round that holds, the chart loses a layer: the chord pictures, then the names, then all but the first chord of each line. The fourth round is played in the dark.
+- **Climb:** 4 % faster after every round that holds.
+- **Called:** the chords of every bar are dealt anew from the song's own chords and each is shown only a beat before it comes, as a bandleader calls them (songs of strummed chords only).
+- **Clean:** a wrong chord, a stray note or a strum that dies ends the round at once. Without it a round holds with nine of ten steps right and at most two stray sounds.
+- **One take:** the first round that breaks ends the run, and the whole run is recorded.
+
+A round is the whole song, or one of its parts when the whole would take more than about 80 seconds; a bar is counted in before each. A run ends when it holds in the dark, when it breaks under one take, after three broken rounds in a row, after a set of four rounds when nothing gets harder, or after twelve rounds. The best run on a song is its record, said as a sentence ("in the dark · at 112 % · one take"); with one take its recording is kept beside the song's own, under **Recordings**. On the guitar.
+
+## Five notes
+
+One tune a day, found by ear (`src/game/fivenotes.ts`, `src/screens/fivenotes.ts`, `#/five`). The app plays the first five notes of a song from the book (a tune's own notes, or the tune laid over a song of chords); you have six tries to play them back. After each try every note is marked: right note in the right place, in the tune but elsewhere, or not in it. Notes count by name, in any octave, and a repeated note counts as often as the tune has it. Two more hearings a day; a muted hit on the strings clears the row. Solved or not, the song is revealed with its five notes as tab, and can be opened. The tune is the same all day and a different one tomorrow; the list goes round before one comes back. The day's tries are kept. On the guitar and the piano.
+
 ## How they look and sound
 
 Both games are painted like watercolours on paper, in a few colours each: flat washes with uneven edges, far things pale in the mist and near things full, a large disc of bare paper for the sun or moon, fine hatching on the rocks. The picture fills the window; the panels of the game lie over it like sheets of paper. What does not move is painted once for each hour or land and kept (`src/ui/scene.ts`: washes laid down in many thin layers with a wandering edge, the settling of pigment, the grain of the paper); what moves is drawn over it every frame (`src/ui/watch.ts` for the lighthouse, `src/ui/trail.ts` for the walk). Everything is drawn by the code. When the system is set to reduce motion, the pictures keep still: no shaking, no flicker of the lamp or the flames, no lightning and no white flashes.
