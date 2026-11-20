@@ -1021,9 +1021,9 @@ const sections: [string, () => Promise<void>][] = [
       check('piano: a phrase played with the click is on the click', (await hits()) >= 6, await text(page, '#fbk'));
       await page.screenshot({ path: resolve(out, 'piano-click.png') });
 
-      // the piano session from start to finish
+      // the piano session from start to finish (the guitar's start page asks for a song of the week first)
       await page.goto(base + '?autostart#/');
-      await page.waitForSelector('#go');
+      await page.waitForSelector('.nav details.inst');
       await pickInstrument(page, 'piano');
       await page.waitForFunction(() => document.querySelectorAll('.plan li').length === 4, null, { timeout: 4000 }).catch(() => undefined);
       check('piano home: its own steps, with playing by ear before the piece', (await page.locator('.plan li').count()) === 4 && (await text(page, '.plan')).includes('Match the app to your piano') && (await text(page, '.plan')).includes('By ear'), (await text(page, '.plan')).replace(/\s+/g, ' '));
