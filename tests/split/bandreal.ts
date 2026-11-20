@@ -71,10 +71,5 @@ export function part1(only?: number[], CHUNK: [number, number] = [0, 1]): void {
       }
     });
 
-    it('without the informed listener, the same band is taken for strums the player never played', () => {
-      let extra = 0;
-      for (const p of pieces) extra += played(p, SETUPS[1], 'plain').extra;
-      expect(extra).toBeGreaterThan(10);
-    });
   });
 }

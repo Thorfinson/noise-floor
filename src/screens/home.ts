@@ -11,7 +11,7 @@ import { chordBox, LEARN } from '../ui/draw';
 import { describe, pieceMaterial } from '../music/material';
 import { currentPiece, currentSong, currentSongToSing, pieceProfile, songProfile } from '../music/difficulty';
 import { rangeMeasured, voiceRange } from './sing';
-import { begun, bindChoose, chooseRow, currentId, dayOf, describeSung, doneToday, focusChord, fullPlan, instrumentOf, plan, resumeAt, setPlanned, songChoices, todaysChords, todaysKeyChords, type Step } from './session';
+import { begun, bindChoose, chooseRow, currentId, dayOf, describeSung, doneToday, focusChord, fullPlan, instrumentOf, plan, resumeAt, setPlanned, songChoices, todaysKeyChords, type Step } from './session';
 
 import { cleanStrings, skillLabel } from '../music/labels';
 import { bindPlan, planCard, weekLine } from './habit';
@@ -52,22 +52,13 @@ export const home: Screen = (root) => {
   const piece = currentPiece();
   const song = currentSong();
   const sung = currentSongToSing();
-  // today's goal on the guitar: the chords of today's check that have not rung clean yet, otherwise the slowest of them
-  const today = piano || voice ? [] : todaysChords(now);
-  const fresh = today.filter((c) => store.skills.level('chord:' + c) < 1).map((c) => CHORDS[c].name);
-  const slowest = today[today.length - 1] ?? chord;
-  const freshList = fresh.length > 1 ? fresh.slice(0, -1).join(', ') + L(' and ', ' und ') + fresh[fresh.length - 1] : fresh[0];
-  const under = store.skills.next('chord:' + slowest)?.value ?? 5;
   const near = store.skills.next('pitch:match')?.value;
   const goal = voice
     ? !rangeMeasured()
       ? L(`your range found, then the first phrases of ${sung.title}`, `dein Umfang gefunden, dann die ersten Phrasen von ${sung.title}`)
       : L(`tones sung back${near ? ` within ${near} cents on average` : ''}, and ${sung.title}: ${describeSung(sung.id)}`, `Töne nachgesungen${near ? ` auf durchschnittlich ${near} Cent genau` : ''}, und ${sung.title}: ${describeSung(sung.id)}`)
-    : piano
-    ? L(`${piece.title}: ${describe(pieceMaterial(piece)).toLowerCase()}`, `${piece.title}: ${describe(pieceMaterial(piece))}`)
-    : fresh.length
-      ? L(`every string of ${freshList} rings clean`, `${freshList} ${fresh.length > 1 ? 'klingen' : 'klingt'} auf jeder Saite sauber`)
-      : L(`${CHORDS[slowest].name} with all strings clean in under ${under} seconds`, `${CHORDS[slowest].name} mit allen Saiten sauber in unter ${String(under).replace('.', ',')} Sekunden`);
+    : // the piano's; the guitar's start page is the week's (screens/today.ts)
+      L(`${piece.title}: ${describe(pieceMaterial(piece)).toLowerCase()}`, `${piece.title}: ${describe(pieceMaterial(piece))}`);
   const intro = voice
     ? L(
         'The app leads you through it. First it finds your range: a low note and a high one, both comfortable, and every song is moved into it. Then come five tones to sing back, a short game of sung patterns and two phrases of a song, with its words or in solfège (do re mi). Any octave counts. Nothing starts before you are ready, and nothing leaves your computer.',
@@ -229,8 +220,7 @@ export function stepPicture(st: Step): string {
     case 'barre':
       return miniBox(st.params[0] ?? 'F', 58);
     case 'changes': {
-      const two = piano ? [] : todaysChords(Date.now()).slice(0, 2);
-      return two.length === 2 ? `<span class="boxes">${miniBox(two[0], 44)}<svg viewBox="0 0 24 24" width="16"><path d="M4 12h14m-5-5 5 5-5 5" stroke="#26262e" stroke-width="2" fill="none" stroke-linecap="round"/></svg>${miniBox(two[1], 44)}</span>` : PIC.game;
+      return PIC.game;
     }
     case 'song':
     case 'visit': {

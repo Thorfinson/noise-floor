@@ -61,23 +61,6 @@ export function barreChord(): string | null {
   return needed ?? ladder.find(([c, level]) => store.skills.level('chord:' + c) < level)?.[0] ?? null;
 }
 
-/**
- * The chords of today's chord check: at most three, open chords only. First the ones today's lines of
- * the song need and that have not rung clean yet, so that the check prepares what the session then
- * plays; then other open chords that are new, easiest first; then the ones that need it most. The hard
- * chord has its own short step at the end of the session, where it cannot hold anything up.
- */
-export function todaysChords(now = Date.now()): string[] {
-  const fresh = (c: string): boolean => store.skills.level('chord:' + c) < 1;
-  // a song's own colours count too: A7, Dsus4, Cadd9 are open chords like the eight basic ones
-  const out = songChords().filter((c) => chordWeight(c) < 2 && fresh(c));
-  for (const c of OPEN_CHORDS) if (fresh(c) && !out.includes(c)) out.push(c);
-  // then the ones whose time has come to be confirmed again, the longest waiting first; then the weakest
-  const due = OPEN_CHORDS.filter((c) => !out.includes(c) && store.skills.due('chord:' + c, now)).sort((a, b) => (store.skills.get('chord:' + a)?.last ?? 0) - (store.skills.get('chord:' + b)?.last ?? 0));
-  const again = OPEN_CHORDS.filter((c) => !out.includes(c) && !due.includes(c)).sort((a, b) => store.skills.weight('chord:' + b, now) - store.skills.weight('chord:' + a, now));
-  return [...out, ...due, ...again].slice(0, 3);
-}
-
 /** The chord to work on, for the chord check outside the session: the barre chord, otherwise the weakest. */
 export function focusChord(): string {
   return barreChord() ?? [...new Set([...songChords(), ...OPEN_CHORDS])].reduce((a, b) => (store.skills.level('chord:' + b) < store.skills.level('chord:' + a) ? b : a));
@@ -490,19 +473,8 @@ function basePlan(): Step[] {
     const changes: Step = { kind: 'changes', short: L('Changes', 'Wechsel'), as: L('the chord changes', 'die Akkordwechsel'), title: L('Chord changes', 'Akkordwechsel'), detail: L('One change without a clock, one calm minute, then a short game', 'Ein Wechsel ohne Uhr, eine ruhige Minute, dann ein kurzes Spiel'), minutes: 4, mode: 'nf', screen: withIntro('change', changesStep), params: ['kchanges'] };
     return piece.kind === 'chords' ? [pitch, check, changes, earStep(true), lesson] : [pitch, check, gym, earStep(true), lesson];
   }
-  const chords = todaysChords();
-  const song = currentSong();
-  const hard = barreChord();
-  return [
-    { kind: 'tune', short: L('Tune', 'Stimmen'), as: L('tuning', 'das Stimmen'), title: L('Tune up', 'Stimmen'), detail: L('Pluck a string, the app says which way to turn', 'Zupf eine Saite, die App sagt, in welche Richtung du drehst'), minutes: 1, mode: 'learn', screen: withIntro('tuner', tuner), params: [] },
-    { kind: 'chords', short: L('Chords', 'Akkorde'), as: L('the chord check', 'der Akkord-Check'), title: L(`Chord check: ${chords.map((c) => CHORDS[c].name).join(', ')}`, `Akkord-Check: ${chords.map((c) => CHORDS[c].name).join(', ')}`), detail: L('String by string, no clock', 'Saite für Saite, ohne Uhr'), minutes: 3, mode: 'learn', screen: withIntro('chord', chordCheck), params: chords },
-    { kind: 'changes', short: L('Changes', 'Wechsel'), as: L('the chord changes', 'die Akkordwechsel'), title: L('Chord changes', 'Akkordwechsel'), detail: L('One change without a clock, one calm minute, then a short game', 'Ein Wechsel ohne Uhr, eine ruhige Minute, dann ein kurzes Spiel'), minutes: 4, mode: 'nf', screen: withIntro('change', changesStep), params: ['changes'] },
-    // a new strumming pattern takes the place of the ear on that day: one new thing at a time
-    strumStep(song) ?? earStep(false),
-    { kind: 'song', short: L('Song', 'Song'), as: song.title, title: song.title, detail: describe(songMaterial(song)), minutes: 5, mode: 'learn', screen: hearFirst(withIntro('song', songLesson)), params: [song.id] },
-    // the hard chord comes last and is optional: it is the long-term goal, never a gate
-    ...(hard ? [{ kind: 'barre', short: L('Barre', 'Barré'), as: L('the barre chord, if you like', 'der Barré-Akkord, wenn du magst'), title: L(`Barre practice: ${CHORDS[hard].name}`, `Barré-Übung: ${CHORDS[hard].name}`), detail: L('Two minutes on the hard one, if you like', 'Zwei Minuten für den schweren, wenn du magst'), minutes: 2, mode: 'learn' as const, screen: withIntro('chord', chordCheck), params: [hard, 'stay'] }] : []),
-  ];
+  // the guitar's day is the week's (weekPlan, above)
+  return weekPlan();
 }
 
 const fmt = (key: string, v: number): string => {

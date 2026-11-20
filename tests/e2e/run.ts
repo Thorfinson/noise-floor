@@ -152,6 +152,9 @@ const pressUntilText = async (page: Page, key: string, selector: string, part: s
   }
 };
 
+/** A song of the week chosen two days ago: what most visits to the guitar's start page find. */
+const MID_WEEK = { guitar: { id: 'amazing-grace-chords', start: Math.floor((Date.now() - new Date().getTimezoneOffset() * 60000) / 86400000) - 2 } };
+
 /** A run explains itself first and counts in: start it and wait until the noise falls. */
 const startRun = async (page: Page): Promise<void> => {
   await page.waitForSelector('#brief', { timeout: 8000 });
@@ -1040,7 +1043,6 @@ const sections: [string, () => Promise<void>][] = [
       for (const [type, gap, n] of [
         ['song', 1100, 14],
         ['fingers', 380, 22],
-        ['changes', 1100, 14],
       ] as const) {
         await page.goto(base + `?autostart#/run/${type}`);
         await startRun(page);
@@ -1050,6 +1052,10 @@ const sections: [string, () => Promise<void>][] = [
         check(`run ${type}: playing the locked phrase scores and clears noise`, score >= 300, `score ${score}, mult ${await text(page, '#mult')}`);
         await page.screenshot({ path: resolve(out, `run-${type}.png`) });
       }
+      // the changes run is the groove run tonight's night plays and scores (section 2n): here it is opened for the pause
+      await page.goto(base + '?autostart#/run/changes');
+      await startRun(page);
+      await press(page, 'n', 2, 1100);
 
       // pausing by hitting the muted strings twice (still in the changes run)
       await page.keyboard.press('x');
@@ -1763,7 +1769,8 @@ const sections: [string, () => Promise<void>][] = [
       /** opens a page as someone plays with the microphone (no practice instrument), looks, and closes it again */
       const look = async <T>(route: string, settings: Record<string, unknown>, wait: string, fn: (page: Page) => Promise<T>, size = { width: 1440, height: 900 }): Promise<T> => {
         const ctx = await browser.newContext({ viewport: size, deviceScaleFactor: 1 });
-        await ctx.addInitScript((s) => localStorage.setItem('noise-floor/v1', JSON.stringify(s)), { settings: { mic: false, practiceInstrument: false, lang: 'en', ...settings } });
+        // a player in the middle of a week: the start page is the day's, not the choice of a song
+        await ctx.addInitScript((s) => localStorage.setItem('noise-floor/v1', JSON.stringify(s)), { settings: { mic: false, practiceInstrument: false, lang: 'en', ...settings }, weeks: MID_WEEK });
         const page = await ctx.newPage();
         page.on('pageerror', (e) => errors.push(e.message));
         await page.goto(base + '?autostart#/' + route);
@@ -1870,7 +1877,7 @@ const sections: [string, () => Promise<void>][] = [
       const browser = await chromium.launch({ channel: 'msedge', headless: true, args: ['--autoplay-policy=no-user-gesture-required', '--lang=en-US'] });
       const errors: string[] = [];
       /** opens a page with the practice instrument (and these settings), looks, and closes it again */
-      const visit = async <T>(route: string, settings: Record<string, unknown>, wait: string, fn: (page: Page) => Promise<T>, size: { width: number; height: number; mobile?: boolean } = { width: 1440, height: 900 }, saved: Record<string, unknown> = {}): Promise<T> => {
+      const visit = async <T>(route: string, settings: Record<string, unknown>, wait: string, fn: (page: Page) => Promise<T>, size: { width: number; height: number; mobile?: boolean } = { width: 1440, height: 900 }, saved: Record<string, unknown> = { weeks: MID_WEEK }): Promise<T> => {
         const ctx = await browser.newContext({ viewport: { width: size.width, height: size.height }, deviceScaleFactor: size.mobile ? 2 : 1, isMobile: !!size.mobile, hasTouch: !!size.mobile });
         await ctx.addInitScript((s) => localStorage.setItem('noise-floor/v1', JSON.stringify(s)), { ...saved, settings: { mic: false, practiceInstrument: true, lang: 'en', ...settings } });
         const page = await ctx.newPage();
