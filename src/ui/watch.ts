@@ -769,8 +769,11 @@ export class Watch {
     // the far ones float high near the horizon line, the near ones lower and larger; all bob a little
     let y = lerp(top, bottom, lanes > 1 ? lane / (lanes - 1) : 0.5) + 4 * Math.sin(this.t * 1.1 + seed);
     y = lerp(y, g.ly + 10, ease((p.p - 0.78) / 0.22));
-    const x = lerp(g.W * 0.93 - 24, g.lx + 70, p.p);
-    const r = lerp(clamp(g.bh * 0.06, 17, 26), clamp(g.bh * 0.15, 36, 62), Math.pow(p.p, 0.8));
+    // in a narrow picture (a phone held upright) the pieces are smaller, so that two of them never fill it
+    const far = Math.min(clamp(g.bh * 0.06, 17, 26), g.W * 0.055);
+    const near = Math.min(clamp(g.bh * 0.15, 36, 62), g.W * 0.09);
+    const x = lerp(Math.min(g.W * 0.93 - 24, g.W - 2 * far), g.lx + Math.max(70, 1.4 * near), p.p);
+    const r = lerp(far, near, Math.pow(p.p, 0.8));
     return { x, y, r };
   }
 
