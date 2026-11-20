@@ -11,8 +11,8 @@ export interface TabImport {
 
 const MAX_FRET = 24;
 
-/** A line of a tab: an optional string name (a German tab calls the B string H), then mostly dashes, fret numbers and bar lines. */
-function tabBody(line: string): string | null {
+/** A line of a tab (also used to leave tab out of a chord sheet): an optional string name (a German tab calls the B string H), then mostly dashes, fret numbers and bar lines. */
+export function tabBody(line: string): string | null {
   const m = /^\s*[A-Ha-h]?[#b]?\s*([|:\-].*)$/.exec(line);
   if (!m) return null;
   let body = m[1].replace(/\s+$/, '');
