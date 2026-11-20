@@ -56,6 +56,7 @@ Jeder Song, den die App mitbringt, ist gemeinfrei; Text gibt es nur zu Liedern, 
 ```
 npm test        # Unit-Tests: Hörer, Gesang, Mitspielen, Spielregeln, Stufen, Songbuch, Klavierbuch, beide Sprachen
 npm run e2e     # Browser-Prüfungen in Microsoft Edge: Mikrofon, Übungsinstrument, Lesegrößen, Tablets, offline, Stimme, Deutsch
+npm run check   # beides nacheinander: etwa vier Minuten auf einem Rechner mit sechzehn Kernen
 npm run build   # Typprüfung und Produktions-Build
 npm run samples # einmalig: Aufnahmen echter Gitarren, Klaviere und Stimmen für die Tests laden (etwa 680 MB)
 ```

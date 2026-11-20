@@ -36,6 +36,7 @@
     "typecheck": "tsc --noEmit",
     "test": "node scripts/test.mjs",
     "e2e": "vite-node tests/e2e/run.ts",
+    "check": "npm test && npm run e2e",
     "samples": "node scripts/samples.mjs",
     "hear": "vite-node scripts/hear.ts --",
     "shots": "vite-node scripts/shots.ts"

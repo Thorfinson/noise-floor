@@ -10,7 +10,7 @@ import { mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { cpus } from 'node:os';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { chromium, type Page } from 'playwright-core';
+import { chromium, type Browser, type Page } from 'playwright-core';
 import { createServer } from 'vite';
 import { addNoise, mixInto, strum, tone } from '../../src/audio/synth';
 import { decodeWav } from '../../src/audio/wav';
@@ -167,6 +167,23 @@ await server.listen();
 const base = `http://localhost:${port}/`;
 
 /** The sections of the checks, each with a browser of its own: they run side by side (see below). */
+/**
+ * A browser for one of the guitar's sections of the practice instrument: each starts from the same saved state,
+ * so that the sections run side by side. The groove at its quickest tempo, so that a wave of a run on it is over
+ * in half a minute.
+ */
+const guitarPage = async (extra: Record<string, unknown> = {}): Promise<{ browser: Browser; page: Page; errors: string[] }> => {
+  const browser = await chromium.launch({ channel: 'msedge', headless: true, args: ['--autoplay-policy=no-user-gesture-required', '--lang=en-US'] });
+  const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+  await ctx.addInitScript((more) => {
+    if (!localStorage.getItem('noise-floor/v1')) localStorage.setItem('noise-floor/v1', JSON.stringify({ settings: { a4: 440, buzz: 0.5, mic: false, practiceInstrument: true, strumSelect: true }, current: { guitar: 'scarborough-fair' }, speeds: { groove: 120 }, ...more }));
+  }, extra);
+  const page = await ctx.newPage();
+  const errors: string[] = [];
+  page.on('pageerror', (e) => errors.push(e.message));
+  return { browser, page, errors };
+};
+
 const sections: [string, () => Promise<void>][] = [
   ['1', async () => {
     // 1. microphone path
@@ -474,17 +491,9 @@ const sections: [string, () => Promise<void>][] = [
     await browser.close();
   }],
   ['2', async () => {
-    // 2. practice instrument path
+    // 2. practice instrument path: the start page, the session around the song of the week, the change drill and the chord check
     {
-      const browser = await chromium.launch({ channel: 'msedge', headless: true, args: ['--autoplay-policy=no-user-gesture-required', '--lang=en-US'] });
-      const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
-      await ctx.addInitScript(() => {
-        // the groove at its quickest tempo, so that a wave of the changes run is over in half a minute
-        if (!localStorage.getItem('noise-floor/v1')) localStorage.setItem('noise-floor/v1', JSON.stringify({ settings: { a4: 440, buzz: 0.5, mic: false, practiceInstrument: true, strumSelect: true }, current: { guitar: 'scarborough-fair' }, speeds: { groove: 120 } }));
-      });
-      const page = await ctx.newPage();
-      const errors: string[] = [];
-      page.on('pageerror', (e) => errors.push(e.message));
+      const { browser, page, errors } = await guitarPage();
 
       await page.goto(base + '?autostart#/');
       // without a song of the week the start page asks for one: three that suit, and one's own
@@ -694,6 +703,17 @@ const sections: [string, () => Promise<void>][] = [
       await page.keyboard.press('s');
       await page.waitForTimeout(200);
       check('chord check: a chord that already rings is asked for from memory, and S shows its shape', hidden && (await text(page, '#tip')).startsWith('How to hold Am') && (await page.locator('#box circle[fill]:not([fill="none"])').count()) >= 3, (await text(page, '#tip')).slice(0, 60));
+      check('practice instrument: hardly any string had to be played twice to be heard', repeated() <= 2, `${repeated()} repeated`);
+      check('practice instrument: no script errors', errors.length === 0, errors.join(' | '));
+      await browser.close();
+    }
+  }],
+  ['2a', async () => {
+    // 2a. practice instrument path: playing along, songs and their pages, your own song, the handbook
+    {
+      // a player who brings a few chords along: the song list then says which of a song's it knows
+      const ringing = (c: string): [string, unknown] => ['chord:' + c, { level: 2, best: 12, last: Date.now() - 86400000, tops: 0, strings: 6 }];
+      const { browser, page, errors } = await guitarPage({ skills: Object.fromEntries(['Em', 'Am', 'C', 'G', 'D'].map(ringing)) });
 
       // playing along with the click: one line, then two lines in a row at full speed
       const playAlong = async (count: number, sign = true): Promise<void> => {
@@ -958,6 +978,15 @@ const sections: [string, () => Promise<void>][] = [
       await page.screenshot({ path: resolve(out, 'basics-piano.png') });
       await pickInstrument(page, 'guitar');
       await page.waitForFunction(() => document.querySelectorAll('#toc [data-page]').length === 13, null, { timeout: 3000 }).catch(() => undefined);
+      check('practice instrument: hardly any string had to be played twice to be heard', repeated() <= 2, `${repeated()} repeated`);
+      check('practice instrument: no script errors', errors.length === 0, errors.join(' | '));
+      await browser.close();
+    }
+  }],
+  ['2g', async () => {
+    // 2g. practice instrument path: the rhythm game and the runs
+    {
+      const { browser, page, errors } = await guitarPage();
 
       // the rhythm game: stones in time with the click, the chord changing at every bar line
       await page.goto(base + '?autostart#/nf');
@@ -1040,6 +1069,16 @@ const sections: [string, () => Promise<void>][] = [
         .then(() => true)
         .catch(() => false);
       check('run: two more start it again', resumed, await text(page, '#pause'));
+
+      check('practice instrument: hardly any string had to be played twice to be heard', repeated() <= 2, `${repeated()} repeated`);
+      check('practice instrument: no script errors', errors.length === 0, errors.join(' | '));
+      await browser.close();
+    }
+  }],
+  ['2n', async () => {
+    // 2n. practice instrument path: tonight's night, the boss and the upgrades, placement, the path and progress
+    {
+      const { browser, page, errors } = await guitarPage();
 
       /** Plays until the run shows something else than the arena, e.g. the upgrade cards or the boss. */
       const playUntil = async (selector: string, gap: number, limit = 70): Promise<boolean> => {
@@ -1136,17 +1175,25 @@ const sections: [string, () => Promise<void>][] = [
       check('upgrades: wave 2 goes on and still scores', (await points()) > before && (await text(page, '#wave')) === '2', `score ${before} → ${await points()}, wave ${await text(page, '#wave')}`);
 
       await page.goto(base + '?autostart#/');
-      await page.waitForSelector('#go');
+      await page.waitForSelector('.nav details.inst');
       await pickInstrument(page, 'guitar');
       await page.waitForFunction(() => document.querySelector('[data-inst="guitar"]')?.getAttribute('aria-pressed') === 'true', null, { timeout: 4000 }).catch(() => undefined);
       // a returning player strums the chords they know: what rings twice is taken as known
       await page.goto(base + '?autostart#/placement');
       await page.waitForSelector('.place-grid');
-      for (let i = 0; i < 10 && (await page.locator('.place-chord.known').count()) < 3; i++) {
+      for (let i = 0, was = 0, still = 0; i < 24 && (await page.locator('.place-chord.known').count()) < 3; i++) {
         await page.keyboard.press('n');
         await page.waitForTimeout(900);
+        const now = await page.locator('.place-chord.known').count();
+        still = now === was ? still + 1 : 0;
+        was = now;
+        // a chord the practice instrument is not heard as is passed over, as a player passes one they cannot play
+        if (still >= 3) {
+          await page.keyboard.press('ArrowRight');
+          still = 0;
+        }
       }
-      check('placement: chords strummed and heard ringing are marked as known', (await page.locator('.place-chord.known').count()) >= 3, `${await page.locator('.place-chord.known').count()} known · ${await text(page, '#sub')}`);
+      check('placement: the chords asked for one by one, strummed and heard ringing, are marked as known', (await page.locator('.place-chord.known').count()) >= 3, `${await page.locator('.place-chord.known').count()} known · ${await text(page, '#sub')}`);
       await page.screenshot({ path: resolve(out, 'placement.png') });
       await page.goto(base + '?autostart#/learn');
       await page.waitForSelector('#stage h2');
@@ -1181,7 +1228,7 @@ const sections: [string, () => Promise<void>][] = [
     }
   }],
   ['2p', async () => {
-    // 2p. practice instrument path, piano: a browser of its own, so that it runs beside the guitar's
+    // 2p. practice instrument path, piano: a browser of its own: lessons, the session of a tune, the boss
     {
       const browser = await chromium.launch({ channel: 'msedge', headless: true, args: ['--autoplay-policy=no-user-gesture-required', '--lang=en-US'] });
       const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
@@ -1201,13 +1248,6 @@ const sections: [string, () => Promise<void>][] = [
         }
       };
       const hits = async (): Promise<number> => Number(/(\d+) of \d+ on the click/.exec(await text(page, '#fbk'))?.[1] ?? -1);
-      /** As on another day: what was done today no longer counts as done (the page is then opened anew to read it). */
-      const newDay = (): Promise<void> =>
-        page.evaluate(() => {
-          const s = JSON.parse(localStorage.getItem('noise-floor/v1') ?? '{}');
-          for (const k of Object.keys(s.progress ?? {})) if (k.startsWith('session:')) delete s.progress[k];
-          localStorage.setItem('noise-floor/v1', JSON.stringify(s));
-        });
       const playUntil = async (selector: string, gap: number, limit = 70): Promise<boolean> => {
         for (let i = 0; i < limit; i++) {
           if (await page.locator(selector).count()) return true;
@@ -1217,6 +1257,7 @@ const sections: [string, () => Promise<void>][] = [
         return (await page.locator(selector).count()) > 0;
       };
       const points = async (): Promise<number> => Number((await text(page, '#score')).replace(/,/g, ''));
+
 
       // piano
       await page.goto(base + '?autostart#/piano/ode-to-joy');
@@ -1228,6 +1269,8 @@ const sections: [string, () => Promise<void>][] = [
       check('piano: a wrong key is named', (await text(page, '#fbk')).startsWith('Heard'), await text(page, '#fbk'));
       await page.screenshot({ path: resolve(out, 'piano.png') });
       await press(page, 'n', 6, 500);
+      // the last key is reported a moment after it is struck: wait for the verdict rather than for a fixed time
+      await page.waitForFunction(() => /of full speed/.test(document.querySelector('#fbk')?.textContent ?? ''), null, { timeout: 4000 }).catch(() => undefined);
       check('piano: the phrase is finished', (await text(page, '#fbk')).includes('of full speed'), await text(page, '#fbk'));
 
       await page.goto(base + '?autostart#/piano/twinkle/2');
@@ -1292,6 +1335,47 @@ const sections: [string, () => Promise<void>][] = [
       for (let i = 4; i <= 8; i++) await pressUntil(page, 'n', '#btiles .tile.clean', i, '#rerun');
       await page.waitForSelector('#rerun', { timeout: 6000 }).catch(() => undefined);
       check('piano boss: eight ringing keys win the run', /8 of 8 keys/.test((await page.locator('tbody').first().textContent()) ?? ''), (await text(page, 'h1')).slice(0, 60));
+
+
+
+      // the scale of the boss is measured, and shows on the piano's progress page
+      await page.goto(base + '?autostart#/progress');
+      await page.waitForSelector('.measured');
+      check('progress, piano: the scale played on the keys was measured', (await page.locator('.measured').innerHTML()).includes('C major scale'), `${await page.locator('tbody tr').count()} rows`);
+      check('practice instrument, piano: hardly any key had to be played twice to be heard', repeated() <= 2, `${repeated()} repeated`);
+      check('practice instrument, piano: no script errors', errors.length === 0, errors.join(' | '));
+      await browser.close();
+    }
+  }],
+  ['2q', async () => {
+    // 2q. practice instrument path, piano: its chords: the book of pieces, the chord check, changes, pieces of chords, the games, the path
+    {
+      const browser = await chromium.launch({ channel: 'msedge', headless: true, args: ['--autoplay-policy=no-user-gesture-required', '--lang=en-US'] });
+      const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+      await ctx.addInitScript(() => {
+        if (!localStorage.getItem('noise-floor/v1')) localStorage.setItem('noise-floor/v1', JSON.stringify({ settings: { a4: 440, buzz: 0.5, mic: false, practiceInstrument: true, strumSelect: true, instrument: 'piano' }, current: { guitar: 'scarborough-fair' } }));
+      });
+      const page = await ctx.newPage();
+      const errors: string[] = [];
+      page.on('pageerror', (e) => errors.push(e.message));
+
+      const playAlong = async (count: number, sign = true): Promise<void> => {
+        // a lesson with the click starts nothing before the sign: Space gives it, once the lesson opened waits for it
+        if (sign && (await page.waitForSelector('#app[data-armed]', { timeout: 4000 }).then(() => true).catch(() => false))) await page.keyboard.press('Space');
+        for (let i = 0; i < count; i++) {
+          await page.waitForFunction((n) => Number((document.querySelector('#app') as HTMLElement).dataset.step ?? -1) >= n, i, { timeout: 15000 });
+          await page.keyboard.press('n');
+        }
+      };
+      const hits = async (): Promise<number> => Number(/(\d+) of \d+ on the click/.exec(await text(page, '#fbk'))?.[1] ?? -1);
+      /** As on another day: what was done today no longer counts as done (the page is then opened anew to read it). */
+      const newDay = (): Promise<void> =>
+        page.evaluate(() => {
+          const s = JSON.parse(localStorage.getItem('noise-floor/v1') ?? '{}');
+          for (const k of Object.keys(s.progress ?? {})) if (k.startsWith('session:')) delete s.progress[k];
+          localStorage.setItem('noise-floor/v1', JSON.stringify(s));
+        });
+      const points = async (): Promise<number> => Number((await text(page, '#score')).replace(/,/g, ''));
 
 
       // ── the piano's chords: the book of pieces, the chord check, changes, pieces of chords, the games.
@@ -1463,9 +1547,6 @@ const sections: [string, () => Promise<void>][] = [
       await page.waitForFunction(() => document.querySelector('#stage h2')?.textContent?.includes('Moderate'), null, { timeout: 3000 }).catch(() => undefined);
       check('learning path, piano: a level of the book is a stage of five pieces, each named with its kind', (await page.locator('#stage .items li').count()) === 5 && /(a tune|chords)/.test(await text(page, '#stage .items')) && (await text(page, '#stage .go')).includes('Go on with'), (await text(page, '#stage .items')).replace(/\s+/g, ' ').slice(0, 120));
       await page.screenshot({ path: resolve(out, 'learn-piano.png'), fullPage: true });
-      await page.goto(base + '?autostart#/progress');
-      await page.waitForSelector('.measured');
-      check('progress, piano: the scale played on the keys was measured', (await page.locator('.measured').innerHTML()).includes('C major scale'), `${await page.locator('tbody tr').count()} rows`);
       check('practice instrument, piano: hardly any key had to be played twice to be heard', repeated() <= 2, `${repeated()} repeated`);
       check('practice instrument, piano: no script errors', errors.length === 0, errors.join(' | '));
       await browser.close();
@@ -1752,11 +1833,13 @@ const sections: [string, () => Promise<void>][] = [
         const nodeEnv = process.env.NODE_ENV;
         process.env.NODE_ENV = 'production';
         await build({ root: resolve(here, '../..'), logLevel: 'error', build: { outDir: dist, emptyOutDir: true } }).finally(() => (process.env.NODE_ENV = nodeEnv));
-        const srv = await preview({ root: resolve(here, '../..'), logLevel: 'error', build: { outDir: dist }, preview: { port: 5189, strictPort: true } });
+        // the built app on a port of its own, next to the dev server's (E2E_PORT moves both)
+        const builtPort = port + 1000;
+        const srv = await preview({ root: resolve(here, '../..'), logLevel: 'error', build: { outDir: dist }, preview: { port: builtPort, strictPort: true } });
         const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
         const p = await ctx.newPage();
         p.on('pageerror', (e) => errors.push('offline: ' + e.message));
-        await p.goto('http://localhost:5189/');
+        await p.goto(`http://localhost:${builtPort}/`);
         // the worker keeps what the first visit loaded: the page, its script, its styles
         let kept = 0;
         for (let i = 0; i < 30 && !kept; i++) {
@@ -1769,7 +1852,7 @@ const sections: [string, () => Promise<void>][] = [
         await srv.close();
         await p.reload().catch(() => undefined);
         const gate = await p.locator('#gmsg, h1').count();
-        await p.goto('http://localhost:5189/?autostart#/song/amazing-grace-chords/1').catch(() => undefined);
+        await p.goto(`http://localhost:${builtPort}/?autostart#/song/amazing-grace-chords/1`).catch(() => undefined);
         const lesson = await p.waitForSelector('#rowA text', { timeout: 8000 }).then(() => true).catch(() => false);
         check('offline: once opened, the built app opens again and a lesson plays with its server gone', kept >= 3 && gate > 0 && lesson, `${kept} files kept, the start ${gate ? 'shown' : 'missing'}, the lesson ${lesson ? 'shown' : 'missing'}`);
         await ctx.close();
@@ -2250,18 +2333,20 @@ const sections: [string, () => Promise<void>][] = [
   }],
 ];
 
-// Side by side: one section at a time for every four cores of the processor (E2E_JOBS sets it; 1 runs them one
-// after the other). More at once makes the browsers late on the click, which the timing checks then catch. The two
-// long sections of the practice instrument start first, the short ones fill in beside them. Each check says which
-// section it belongs to; a section that throws counts as failed. E2E_ONLY=2b,2c runs only those sections.
+// Side by side: three sections at a time for every eight cores of the processor (six on sixteen; E2E_JOBS sets it,
+// 1 runs them one after the other). The sections mostly wait for sound played in real time, so six share sixteen
+// cores well: measured three times, 176 to 179 s for all of them, against 262 s four at a time. The longest start
+// first and the short ones fill in beside them at the end. Each check says which section it belongs to; a section
+// that throws counts as failed. E2E_ONLY=2b,2c runs only those sections.
 const only = process.env.E2E_ONLY?.split(',').map((x) => x.trim());
 const chosen = sections.filter(([name]) => !only || only.includes(name));
 // a name in E2E_ONLY that no section has (a typo) is a failure, not a run that quietly checks less
 for (const name of only?.filter((n) => !sections.some(([s]) => s === n)) ?? []) check(`E2E_ONLY names a section there is: "${name}"`, false, `the sections are ${sections.map(([s]) => s).join(', ')}`);
-const width = Math.max(1, Math.min(chosen.length, Number(process.env.E2E_JOBS) || Math.floor(cpus().length / 4)));
-const LONG = ['2', '2p'];
+const width = Math.max(1, Math.min(chosen.length, Number(process.env.E2E_JOBS) || Math.floor((cpus().length * 3) / 8)));
+// the longest first, so that the short ones fill in beside them at the end (measured: seconds each, alone)
+const LONG = ['2d', '2a', '2q', '2n', '2g', '2p', '3', '2'];
 try {
-  const queue = [...chosen.filter(([name]) => LONG.includes(name)), ...chosen.filter(([name]) => !LONG.includes(name))];
+  const queue = [...LONG.map((n) => chosen.find(([name]) => name === n)).filter((x): x is (typeof chosen)[number] => !!x), ...chosen.filter(([name]) => !LONG.includes(name))];
   await Promise.all(
     Array.from({ length: width }, async () => {
       for (let job = queue.shift(); job; job = queue.shift()) {

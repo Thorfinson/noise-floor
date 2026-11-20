@@ -1272,6 +1272,8 @@ canvas.world ~ .page .sectitle h2 { text-shadow: 0 1px 12px rgba(252, 248, 242, 
 .place-chord b { font: 700 1.375rem var(--font); }
 .place-chord.known { background: #d6eadf; box-shadow: inset 0 0 0 2px var(--good); }
 .place-chord.known b::after { content: ' ✓'; color: var(--good); }
+.place-chord.now { background: #fffdf8; box-shadow: inset 0 0 0 2.5px var(--now); }
+.place-chord.passed { opacity: 0.45; }
 @media (max-height: 700px) { .place-chord svg { max-width: 84px; } }
 
 /* on Progress: the plan of when to play and the barre project, side by side */

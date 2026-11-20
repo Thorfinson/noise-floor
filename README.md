@@ -56,6 +56,7 @@ Every song that comes with the app is in the public domain; words come only with
 ```
 npm test        # unit tests: listener, singing, play-along, game rules, skills, songbook, piano book, both languages
 npm run e2e     # browser checks in Microsoft Edge: the microphone path, the practice instrument, reading sizes, tablets, offline, the voice, German
+npm run check   # both, one after the other: about four minutes on a machine with sixteen cores
 npm run build   # type check and production build
 npm run samples # once: fetch the recordings of real guitars, pianos and voices for the tests (about 680 MB)
 ```
