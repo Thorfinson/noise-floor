@@ -6,7 +6,8 @@
  * the voice (87% of the strums named right, against 95% without a voice; tests/real/singbench.ts), so a level
  * from it would not be fair.
  */
-import { backing } from '../audio/backing';
+import { renderBand } from '../audio/band';
+import { strumPatternOf } from '../music/strums';
 import { engine } from '../audio/engine';
 import { mixInto, tone } from '../audio/synth';
 import { L } from '../core/i18n';
@@ -36,7 +37,8 @@ export const singAlong: Screen = (root, [id]) => {
   let unit = 1;
   let raf = 0;
   let melodyOn = false;
-  let backingOn = store.settings.backing;
+  // the band plays along unless the player wants the click alone (the setting is shared with the lessons)
+  let backingOn = store.settings.band !== 'click';
   let shownBar = -2;
   const heardBars = new Set<number>();
   const ids = [...new Set(song.bars.flatMap((_, k) => chordsOf(song, k)))];
@@ -47,7 +49,7 @@ export const singAlong: Screen = (root, [id]) => {
      <div class="leadsheet" id="sheet"></div>
      <div class="foot"><p class="fbk info" id="fbk"></p><p class="legend">${L('The app listens to the guitar only: a bar turns green when its chord was heard. Nothing is measured.', 'Die App hört nur auf die Gitarre: Ein Takt wird grün, wenn sein Akkord gehört wurde. Gemessen wird nichts.')}</p></div>`,
     `<div class="grp"><button class="btn primary" id="go"><span>${L('Start', 'Starten')}</span> <kbd>${L('Space', 'Leertaste')}</kbd></button><button class="btn quiet" id="slower" aria-label="${L('Slower by 5%', 'Um 5 % langsamer')}">−5 % <kbd>−</kbd></button><b id="tempo"></b><button class="btn quiet" id="faster" aria-label="${L('Faster by 5%', 'Um 5 % schneller')}">+5 % <kbd>+</kbd></button></div>
-     <div class="grp"><button class="btn quiet tog" id="melody" aria-pressed="false">${L('The melody (headphones)', 'Die Melodie (Kopfhörer)')} <kbd>H</kbd></button><button class="btn quiet tog" id="backing" aria-pressed="${backingOn}">${L('Backing (headphones)', 'Begleitung (Kopfhörer)')} <kbd>A</kbd></button></div>`,
+     <div class="grp"><button class="btn quiet tog" id="melody" aria-pressed="false">${L('The melody (headphones)', 'Die Melodie (Kopfhörer)')} <kbd>H</kbd></button><button class="btn quiet tog" id="backing" aria-pressed="${backingOn}">${L('The band', 'Die Band')} <kbd>A</kbd></button></div>`,
     undefined,
     ['#/song/' + encodeURIComponent(song.id), esc(song.title)],
   );
@@ -131,7 +133,9 @@ export const singAlong: Screen = (root, [id]) => {
         return b.notes.map((n, j) => ({ u: starts[k] + at[j], id: n.strum! })).filter((c, j, a) => c.id && (j === 0 || a[j - 1].id !== c.id));
       });
       const clicks = song.bars.flatMap((_, k) => Array.from({ length: Math.round(units[k] / song.beat) }, (_, c) => ({ u: starts[k] + c * song.beat, accent: c === 0 })));
-      engine.playAt(t0, backing({ chords, clicks, units: total, unit, sr, a4: guitarA4() }), 0.9);
+      const strums = song.bars.flatMap((b, k) => noteTimes(b.notes).at.map((a) => starts[k] + a));
+      const parts = renderBand({ chords, clicks, units: total, unit, sr, a4: guitarA4(), mode: store.settings.band === 'phones' ? 'phones' : 'speakers', strums, feel: strumPatternOf(song) ?? undefined });
+      engine.playBand(t0, parts, { drums: 1, bass: 1, keys: 0.8, lead: 0 }, { volume: store.settings.bandVolume });
     }
     if (melodyOn) {
       // the melody as a soft line to sing to; under headphones only, or the microphone hears it as notes
@@ -190,6 +194,8 @@ export const singAlong: Screen = (root, [id]) => {
   };
   const toggleBacking = (): void => {
     backingOn = !backingOn;
+    store.settings.band = backingOn ? (store.settings.band === 'click' ? 'speakers' : store.settings.band) : 'click';
+    store.save();
     $('#backing', root).setAttribute('aria-pressed', String(backingOn));
   };
   const go = (): void => (running ? (stop(), draw(-1), say('info', L('Stopped.', 'Angehalten.'))) : start());
@@ -201,7 +207,7 @@ export const singAlong: Screen = (root, [id]) => {
   $('#tempo', root).textContent = `${tempo}%`;
   const stopKeys = keys({ ' ': go, '-': () => setTempo(-1), '+': () => setTempo(1), '=': () => setTempo(1), h: toggleMelody, a: toggleBacking });
   draw(-1);
-  say('info', L('The melody and the backing are for headphones: through speakers the microphone would hear them as your playing.', 'Melodie und Begleitung sind für Kopfhörer: Über Lautsprecher würde das Mikrofon sie als dein Spiel hören.'));
+  say('info', L('The melody is for headphones: through speakers the microphone would hear it as your playing. The band plays as the start page set it.', 'Die Melodie ist für Kopfhörer: Über Lautsprecher würde das Mikrofon sie als dein Spiel hören. Die Band spielt, wie auf der Startseite eingestellt.'));
   return () => {
     stop();
     stopEars();
