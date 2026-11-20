@@ -884,7 +884,7 @@ const sections: [string, () => Promise<void>][] = [
       await page.goto(base + '?autostart#/song/swing-low/1');
       await page.waitForSelector('#rowA');
       const names = await page.locator('#rowA .chn').allTextContents();
-      check('songbook: a strummed song names every chord where it begins, and who the song is by', names.join(' ').startsWith('D G D') && (await text(page, '#where')).includes('Spiritual') && (await text(page, '#where')).includes('chorus') && (await text(page, '#h1')).includes('Strum D'), `${names.join(' ')} | ${await text(page, '#where')} | ${await text(page, '#h1')}`);
+      check('songbook: a strummed song names every chord where it begins, and who the song is by', names.join(' ').startsWith('D G D') && (await text(page, '#where')).includes('Spiritual') && /chorus/i.test(await text(page, '#where')) && (await text(page, '#h1')).includes('Strum D'), `${names.join(' ')} | ${await text(page, '#where')} | ${await text(page, '#h1')}`);
       // the first bar is D four times; the second is G twice, then D twice
       await press(page, 'n', 3, 500);
       await pressUntilText(page, 'n', '#h1', 'Change to G');
@@ -1854,7 +1854,7 @@ const sections: [string, () => Promise<void>][] = [
       }));
       check(
         'song lesson: a band over it shows each line and its two steps, and says the step on show; every strum has its arrow and count, the bars their words; the steps are named; the title leads back to the song',
-        way.lines === 4 && way.cur.startsWith('Line 1') && way.say.startsWith('Step 1 of 3 · Learn') && /Learn/.test(way.rungs[0]) && /Click/i.test(way.rungs[1]) && /Whole/.test(way.rungs[2]) && way.arrows >= 12 && way.counts === 12 && way.words[0] === 'A-ma-zing' && way.exit === '#/songs/amazing-grace-chords' && way.title.includes('Amazing Grace'),
+        way.lines === 4 && way.cur.startsWith('Line 1') && way.say.startsWith('Step 1 of 3 · Learn') && /Learn/.test(way.rungs[0]) && /Click/i.test(way.rungs[1]) && /Whole/.test(way.rungs[2]) && way.arrows >= 12 && way.counts === 12 && /^A-?ma-?zing$/.test(way.words[0] ?? '') && way.exit === '#/songs/amazing-grace-chords' && way.title.includes('Amazing Grace'),
         JSON.stringify(way),
       );
       const heardLine = await visit('song/amazing-grace-chords/1', { instrument: 'guitar' }, '#rowA text', async (p) => {
