@@ -9,10 +9,19 @@
 import { FFT } from './fft';
 import { yin } from './yin';
 import { combScore, findPeaks, harmonicAmps, type Peak } from './peaks';
+import { bandOfBin, ECHO_BANDS, HEARD_FIT, type BandEcho } from './echo';
 import { CHORDS, chordNotes, freqToMidi, midiToFreq, pianoChord } from '../music/theory';
 
 export interface LevelEvent { time: number; rms: number; db: number; gateDb: number }
-export interface OnsetEvent { time: number; strength: number }
+export interface OnsetEvent {
+  time: number;
+  strength: number;
+  /**
+   * While a band plays through the speakers: the share of the onset's rise that is left once the band is taken
+   * off (near 0: it was the band's own note; near 1: all the player's). Left out without a band.
+   */
+  own?: number;
+}
 export interface NoteEvent {
   /** onset time in seconds since the listener started */
   time: number;
@@ -89,6 +98,39 @@ const CHORD_HIGH = 1600;
 const QUIET = 8e-4;
 /** default for Listener.ringThreshold */
 const RINGS = 0.05;
+/**
+ * A band through the speakers (see echo.ts) is expected this many samples earlier or later than the latency
+ * says: what the browser reports of its latency is often off by that much. Its sound is taken off wherever it may
+ * be within that span. The onset windows look ahead by the same, in hops.
+ */
+const ECHO_SLACK = 1536;
+const ECHO_RING = (2 * ECHO_SLACK) / HOP + 1;
+/**
+ * The room goes on ringing with the band after the speakers have stopped it. Its sound in the room is reckoned
+ * to die away as in a room that takes this long to fall by 60 dB (a living room is 0.3 to 0.6 s): longer is
+ * safer, as what is taken off then never ends while the microphone still hears it, which would look like a note
+ * beginning.
+ */
+const ROOM_RT60 = 0.8;
+/**
+ * An onset counts while a band plays only when at least this share of its rise is left once the band is taken
+ * off. The band's own note leaves little; a strum on top of a band note leaves most of its own.
+ */
+export const OWN_SHARE = 0.5;
+
+/**
+ * What is left of a bin of magnitude m once a share e of it is taken off as the band's, never below zero. As
+ * magnitude, not as power: taking power off (the textbook form, kinder to a strum that is far louder than the
+ * band in the same bin) left enough of the band's notes in a reverberant room to be heard as playing, several a
+ * minute where taking magnitude off left none.
+ */
+function left(m: number, e: number): number {
+  const d = m - e;
+  return d > 0 ? d : 0;
+}
+/** how far back the analysis windows look for the band's ringing on, in steps of this many samples */
+const TAIL_STEP = 2048;
+const TAIL_STEPS = 6;
 
 interface StringCheck {
   midi: number;
@@ -176,6 +218,21 @@ export class Listener {
   partialBand: [number, number] | null = null;
   onPartial?: (e: PartialEvent) => void;
 
+  /**
+   * The bands playing through the speakers that the microphone hears (the engine sets them; src/audio/echo.ts).
+   * While one plays, what it brings to each window is taken off before onsets, notes and chords are looked for.
+   * Empty under headphones, with the click alone, and when the microphone is off.
+   */
+  bands: BandEcho[] = [];
+  /**
+   * How strongly the speakers reach the microphone in each frequency band of ECHO_BANDS: what arrives for each
+   * unit of the band's own spectrum. Measured by the soundcheck (see learnedEcho). While a band plays it is also
+   * followed (followEcho), so that a speaker turned up afterwards, or no soundcheck at all, is coped with.
+   */
+  coupling: number[] | null = null;
+  /** how many times its expected share of the band is taken off: the room adds to it, and the timing is never exact */
+  echoOver = 2;
+
   private readonly ring = new Float32Array(RING);
   private total = 0;
   private readonly pend = new Float32Array(HOP);
@@ -187,6 +244,12 @@ export class Listener {
   private readonly fftO = new FFT(1024);
   private readonly magO = new Float32Array(513);
   private readonly prevO = [new Float32Array(513), new Float32Array(513), new Float32Array(513)];
+  /**
+   * While a band plays: the last three spectra of the two onset windows as they came in and with the band taken
+   * off, not compressed. How much of a rise the band explains is measured on them (see own in detectOnset).
+   */
+  private readonly linO = [0, 1, 2, 3, 4, 5].map(() => new Float32Array(513));
+  private readonly linF: Float32Array[];
   private readonly winO = new Float32Array(1024);
   private flux: number[] = [];
   /** the same measure on a long window, see detectFine */
@@ -194,7 +257,7 @@ export class Listener {
   private readonly prevF: Float32Array[];
   private fluxF: number[] = [];
   /** an onset the long window found, waiting to see whether the short window confirms it */
-  private pending: { at: number; flux: number } | null = null;
+  private pending: { at: number; flux: number; own: number } | null = null;
   private lastOnset = -1e9;
   private lastChord = -1e9;
   private ref = 0.004;
@@ -232,6 +295,38 @@ export class Listener {
   private readonly hp = new Float64Array(4);
   private readonly hpR: number;
 
+  /** the band's sound in one window, and its spectrum */
+  private readonly echoBuf = new Float32Array(CHORD_WIN);
+  private readonly echoMag = new Float32Array(CHORD_WIN / 2 + 1);
+  private readonly echoMax = new Float32Array(CHORD_WIN / 2 + 1);
+  /**
+   * The band's spectrum (before the coupling) in the two onset windows, worked out a little ahead each hop and
+   * kept for a few hops: within that span its sound may lie, however far the latency is off (ECHO_SLACK).
+   */
+  private readonly ringO = Array.from({ length: ECHO_RING }, () => new Float32Array(513));
+  private readonly ringF = Array.from({ length: ECHO_RING }, () => new Float32Array(NOTE_WIN / 2 + 1));
+  private readonly ringLive = new Uint8Array(ECHO_RING);
+  private ringAt = 0;
+  /** the band's spectrum in the onset windows with the room's ringing on: never falling faster than the room does */
+  private readonly tailO = new Float32Array(513);
+  private readonly tailF = new Float32Array(NOTE_WIN / 2 + 1);
+  /** how much of the ringing is left after one hop */
+  private readonly hopDecay: number;
+  /**
+   * Per hop, while a band plays: how strong the microphone is in each band, and how strong the band itself is
+   * there (its window ECHO_SLACK ahead). What the coupling is learned and followed from.
+   */
+  private echoLog: { mic: Float32Array; ref: Float32Array; at: number }[] = [];
+  /** where the soundcheck began in the log (the hop's sample), or -1 */
+  private learnFrom = -1;
+  /** the coupling as followed while the band plays; null until there was enough of the band to tell */
+  private followed: number[] | null = null;
+  private lastFollow = 0;
+  /** the shift the last following found, to be confirmed by the next before the timing is moved */
+  private lastLag = 0;
+  /** a band was near in this hop: the fine onset window is cleaned too */
+  private echoNow = false;
+
   constructor(sampleRate: number) {
     this.sr = sampleRate;
     this.hpR = 1 - (2 * Math.PI * 30) / sampleRate;
@@ -239,6 +334,8 @@ export class Listener {
     this.thudWin = at48(6144, sampleRate);
     this.fineBins = Math.round(1500 / (sampleRate / NOTE_WIN));
     this.prevF = [0, 1, 2].map(() => new Float32Array(this.fineBins + 2));
+    this.linF = [0, 1, 2, 3, 4, 5].map(() => new Float32Array(this.fineBins + 2));
+    this.hopDecay = Math.pow(10, (-3 * HOP) / sampleRate / ROOM_RT60);
   }
 
   /** seconds of audio processed so far */
@@ -285,6 +382,360 @@ export class Listener {
       const idx = start + i;
       out[i] = idx < 0 || idx >= this.total ? 0 : this.ring[idx & (RING - 1)];
     }
+  }
+
+  /**
+   * The soundcheck: from now on the listener measures how the band reaches the microphone. Play the band alone
+   * for a few seconds, then ask learnedEcho().
+   */
+  learnEcho(): void {
+    this.learnFrom = this.total;
+    this.echoLog = [];
+  }
+
+  /**
+   * What the soundcheck found: the coupling per frequency band, and how much later (seconds, may be negative)
+   * the band arrives than it was expected to. fit tells how clearly the microphone followed the band (0..1):
+   * near 0 it did not hear it at all, as under headphones. Taken over at once (the coupling, and the bands moved
+   * by the lateness) when the fit is HEARD_FIT or more. null when the band played too little to tell.
+   */
+  learnedEcho(): { coupling: number[]; late: number; fit: number; level: number } | null {
+    const from = this.learnFrom;
+    this.learnFrom = -1;
+    const log = this.echoLog.filter((e) => e.at >= from);
+    const found = this.fitEcho(log, true);
+    if (!found) return null;
+    // a microphone that did not follow the band at all (headphones) has told nothing to go by
+    if (found.fit >= HEARD_FIT) {
+      this.coupling = found.coupling;
+      this.followed = null;
+      this.moveBands(found.lag * HOP);
+    }
+    return { coupling: found.coupling, late: (found.lag * HOP) / this.sr, fit: found.fit, level: found.level };
+  }
+
+  /** Every band from now on arrives this many samples later than expected (negative: earlier). */
+  private moveBands(samples: number): void {
+    if (!samples) return;
+    for (const b of this.bands) b.start += samples;
+    // the spectra kept for the slack belong to the old timing
+    this.ringLive.fill(0);
+    for (const r of this.ringO) r.fill(0);
+    for (const r of this.ringF) r.fill(0);
+    this.echoLog = [];
+  }
+
+  /**
+   * How the microphone follows the band in a stretch of the log. First the lateness: the shift, within a quarter
+   * of a second, at which the microphone's strength per frequency band rises and falls most closely with the
+   * band's. Then, at that shift, the coupling of each frequency band: with the band alone (the soundcheck) the
+   * slope of the one against the other. While the player plays too, his chords ring under every moment, and a
+   * ratio of what arrives to what the band plays came out several times too high (and took his strums off with
+   * the band). So then it is the rises that are compared: where one of the band's notes begins, the microphone
+   * rises by the coupling times the band's rise, and a chord that merely rings on drops out of the difference.
+   * The median of those, taken over the band's clear beginnings.
+   */
+  private fitEcho(log: { mic: Float32Array; ref: Float32Array }[], alone: boolean): { coupling: number[]; lag: number; gain: number; fit: number; level: number } | null {
+    const B = ECHO_BANDS.length;
+    const n = log.length;
+    // the band's spectrum is logged ECHO_SLACK ahead of the microphone's
+    const ahead = ECHO_SLACK / HOP;
+    const MAXLAG = Math.round((0.25 * this.sr) / HOP);
+    if (n < 2 * MAXLAG + 40) return null;
+    let refAll = 0;
+    for (const e of log) for (let b = 0; b < B; b++) refAll += e.ref[b];
+    if (refAll <= 0) return null;
+    const corr = (lag: number): number => {
+      let total = 0;
+      for (let b = 0; b < B; b++) {
+        let sm = 0;
+        let sr = 0;
+        let smm = 0;
+        let srr = 0;
+        let smr = 0;
+        let k = 0;
+        for (let i = MAXLAG; i < n - MAXLAG; i++) {
+          const m = log[i].mic[b];
+          const r = log[i - ahead - lag]?.ref[b] ?? 0;
+          sm += m;
+          sr += r;
+          smm += m * m;
+          srr += r * r;
+          smr += m * r;
+          k++;
+        }
+        const cov = smr / k - (sm / k) * (sr / k);
+        const vm = smm / k - (sm / k) ** 2;
+        const vr = srr / k - (sr / k) ** 2;
+        // each band counts by how much of the band's sound lies in it
+        if (vm > 0 && vr > 0) total += (sr / k) * (cov / Math.sqrt(vm * vr));
+      }
+      return total;
+    };
+    let lag = 0;
+    let best = -Infinity;
+    for (let L = -MAXLAG; L <= MAXLAG; L++) {
+      const c = corr(L);
+      if (c > best) {
+        best = c;
+        lag = L;
+      }
+    }
+    // how much better the best shift fits than none: a band whose notes come evenly fits nearly as well one note
+    // off, so a small gain is no evidence of being late
+    const gain = best / Math.max(1e-12, corr(0));
+    let weight = 0;
+    for (let i = MAXLAG; i < n - MAXLAG; i++) for (let b = 0; b < B; b++) weight += log[i - ahead - lag]?.ref[b] ?? 0;
+    const fit = weight > 0 ? Math.max(0, best / (weight / (n - 2 * MAXLAG))) : 0;
+    // A frequency band the band hardly reaches (where only the edges of its drums' spectrum spill over) cannot
+    // be measured: the microphone's noise there over next to nothing would come out as a huge coupling, and
+    // taking that off would take the player off. Such a band is given the coupling of the bands around it.
+    const means: number[] = [];
+    for (let b = 0; b < B; b++) {
+      let sum = 0;
+      for (let i = MAXLAG; i < n - MAXLAG; i++) sum += log[i - ahead - lag]?.ref[b] ?? 0;
+      means.push(sum / (n - 2 * MAXLAG));
+    }
+    const strongest = Math.max(...means);
+    const coupling: (number | null)[] = [];
+    let micSum = 0;
+    for (let b = 0; b < B; b++) {
+      const pairs: [number, number][] = [];
+      let top = 0;
+      for (let i = MAXLAG; i < n - MAXLAG; i++) {
+        const r = log[i - ahead - lag]?.ref[b] ?? 0;
+        pairs.push([log[i].mic[b], r]);
+        top = Math.max(top, r);
+        micSum += log[i].mic[b];
+      }
+      if (top <= 0 || means[b] < 0.02 * strongest) {
+        coupling.push(null);
+        continue;
+      }
+      if (alone) {
+        // the slope, with the room's own noise as the intercept
+        let sm = 0;
+        let sr = 0;
+        let smr = 0;
+        let srr = 0;
+        for (const [m, r] of pairs) {
+          sm += m;
+          sr += r;
+          smr += m * r;
+          srr += r * r;
+        }
+        const k = pairs.length;
+        const v = srr / k - (sr / k) ** 2;
+        coupling.push(v > 0 ? Math.max(0, (smr / k - (sm / k) * (sr / k)) / v) : 0);
+      } else {
+        // the rise over three hops (32 ms): a note's attack and the first of the room's answer to it
+        const rises: [number, number][] = [];
+        let most = 0;
+        for (let i = 3; i < pairs.length; i++) {
+          const dr = pairs[i][1] - pairs[i - 3][1];
+          if (dr <= 0) continue;
+          rises.push([pairs[i][0] - pairs[i - 3][0], dr]);
+          most = Math.max(most, dr);
+        }
+        const ratios = rises.filter(([, dr]) => dr >= 0.3 * most).map(([dm, dr]) => Math.max(0, dm) / dr).sort((a, b) => a - b);
+        coupling.push(ratios.length >= 10 ? ratios[ratios.length >> 1] : null);
+      }
+    }
+    // Only the band's drums reached the analysed range at all (a stretch in which the player leaves no gaps): nothing
+    // can be told from that. Otherwise no band is given more than eight times the median of those measured: one
+    // measured over little is not to be trusted beyond that either.
+    const sure = coupling.filter((c, b): c is number => c !== null && ECHO_BANDS[b] < 6000).sort((a, b) => a - b);
+    if (!sure.length) return null;
+    const median = sure[sure.length >> 1];
+    const filled = coupling.map((c, b) => {
+      if (c !== null) return Math.min(c, 8 * median);
+      // the nearest measured bands on either side
+      let lo = b - 1;
+      while (lo >= 0 && coupling[lo] === null) lo--;
+      let hi = b + 1;
+      while (hi < B && coupling[hi] === null) hi++;
+      const near = [lo >= 0 ? coupling[lo] : null, hi < B ? coupling[hi] : null].filter((x): x is number => x !== null);
+      return near.length ? Math.min(Math.max(...near), 8 * median) : median;
+    });
+    return { coupling: filled, lag, gain, fit: Math.min(1, fit), level: micSum / Math.max(1, n - 2 * MAXLAG) };
+  }
+
+  /**
+   * While a band plays without a soundcheck to go by, or louder than at the soundcheck: about once a second the
+   * coupling is worked out afresh from the last eight seconds, and the timing corrected when it is clearly off.
+   */
+  private followEcho(): void {
+    if (this.learnFrom >= 0 || this.total - this.lastFollow < this.sr) return;
+    this.lastFollow = this.total;
+    const found = this.fitEcho(this.echoLog, false);
+    if (!found || found.fit < 0.15) return;
+    // up at once, down only slowly: a band in which the fiddle plays now and then is measured over few moments in
+    // the high bands, and a dip there would let its overtones through
+    const was = this.followed;
+    this.followed = found.coupling.map((c, b) => Math.max(c, 0.9 * (was?.[b] ?? 0)));
+    // The timing is only moved on clear evidence: four seconds or more of the band, a shift that fits clearly
+    // better than none, and the same shift found the time before. One second's worth just after a soundcheck once
+    // moved a band that was in time, and its notes were heard as playing.
+    const sure = this.echoLog.length * HOP >= 4 * this.sr && found.fit >= 0.4 && found.gain >= 1.2 && Math.abs(found.lag) >= 2;
+    if (sure && this.lastLag === found.lag) {
+      this.moveBands(found.lag * HOP);
+      this.lastLag = 0;
+    } else this.lastLag = sure ? found.lag : 0;
+  }
+
+  /**
+   * The coupling in one frequency band now: the soundcheck's, or what was followed when that is more, but then
+   * never more than half as much again (while the player plays, following errs high, and the soundcheck, made with
+   * the band alone, is the better measure: following is there for speakers turned up since). Below about
+   * 300 Hz a room does not spread a tone evenly but rings in a few strong modes, up to ten decibels above the
+   * average of their band: there twice as much is reckoned with (measured: a bass note in such a mode swelled up
+   * after its start and was taken for a strum).
+   */
+  private gainOf(b: number): number {
+    const c = this.coupling?.[b] ?? 0;
+    const f = this.followed?.[b] ?? 0;
+    // nothing known yet (the band has only just begun, and there was no soundcheck): as much as a loud speaker next to the microphone
+    const g = this.coupling ? Math.max(c, Math.min(f, 1.5 * c)) : this.followed ? f : 0.5;
+    return ECHO_BANDS[b + 1] !== undefined && ECHO_BANDS[b + 1] <= 350 ? 2 * g : g;
+  }
+
+  /**
+   * The band's spectrum in the window of n samples from listener sample `start`, into out: as it leaves the
+   * speakers, or (coupled) as the microphone should hear it. False when it is silent there.
+   */
+  private echoSpectrum(start: number, n: number, fft: FFT, out: Float32Array, coupled = true): boolean {
+    const buf = this.echoBuf;
+    buf.fill(0, 0, n);
+    let any = false;
+    for (const b of this.bands) if (b.add(start, n, buf)) any = true;
+    if (!any) return false;
+    fft.magnitudes(buf, out);
+    if (coupled) {
+      const map = bandOfBin(n, this.sr);
+      for (let k = 0; k <= n / 2; k++) out[k] *= this.gainOf(map[k]);
+    }
+    return true;
+  }
+
+  /**
+   * The loudest the band is in each bin over the kept hops, or what the room still rings with of what it was
+   * before, coupled, into echoMax. tail keeps the ringing from hop to hop.
+   */
+  private ringMax(ring: Float32Array[], bins: number, n: number, tail: Float32Array): void {
+    const max = this.echoMax;
+    max.fill(0, 0, bins);
+    for (let s = 0; s < ring.length; s++) {
+      if (!this.ringLive[s]) continue;
+      const r = ring[s];
+      for (let k = 0; k < bins; k++) if (r[k] > max[k]) max[k] = r[k];
+    }
+    const d = this.hopDecay;
+    for (let k = 0; k < bins; k++) {
+      const t = tail[k] * d;
+      if (t > max[k]) max[k] = t;
+      tail[k] = max[k];
+    }
+    const map = bandOfBin(n, this.sr);
+    for (let k = 0; k < bins; k++) max[k] *= this.gainOf(map[k]);
+  }
+
+  /** Takes the band off a spectrum: what it may bring to each bin, times `over` (see left). */
+  private takeOff(mag: Float32Array, echo: Float32Array, bins = mag.length, over = this.echoOver): void {
+    for (let k = 0; k < bins; k++) mag[k] = left(mag[k], over * echo[k]);
+  }
+
+  /**
+   * The band taken off the spectrum of the n samples from `start`, wherever within the slack its sound may lie,
+   * and what the room still rings with of the band before the window.
+   */
+  private cleanAt(start: number, n: number, fft: FFT, mag: Float32Array, over = this.echoOver): void {
+    if (!this.bands.length) return;
+    const looks: [number, number][] = (n >= CHORD_WIN ? [-ECHO_SLACK, 0, ECHO_SLACK] : [-ECHO_SLACK, -ECHO_SLACK / 2, 0, ECHO_SLACK / 2, ECHO_SLACK]).map((d) => [d, 1]);
+    const step = Math.pow(10, (-3 * TAIL_STEP) / this.sr / ROOM_RT60);
+    for (let j = 1; j <= TAIL_STEPS; j++) looks.push([-ECHO_SLACK - j * TAIL_STEP, Math.pow(step, j)]);
+    const bins = n / 2 + 1;
+    const max = this.echoMax;
+    max.fill(0, 0, bins);
+    let any = false;
+    for (const [d, g] of looks) {
+      if (!this.echoSpectrum(start + d, n, fft, this.echoMag)) continue;
+      any = true;
+      for (let k = 0; k < bins; k++) if (g * this.echoMag[k] > max[k]) max[k] = g * this.echoMag[k];
+    }
+    if (any) this.takeOff(mag, max, bins, over);
+  }
+
+  /**
+   * How much of what rose in this frame is left once the band is taken off: what rose, summed over the bins and
+   * not compressed, with the band taken off, against the same as it came in. Measured on magnitudes as they
+   * are, because on a compressed scale taking a constant off a partial that grows makes it grow faster: a band
+   * note that a room's resonance swells up after its start would look all the player's. lin holds the last
+   * three frames of each (0..2 as they came in, 3..5 with the band taken off) and moves on by one.
+   */
+  private ownShare(mag: Float32Array, echo: Float32Array | null, lin: Float32Array[], k0: number, k1: number): number {
+    const [a1, a2, a3, b1, b2, b3] = lin;
+    const over = this.echoOver;
+    let raw = 0;
+    let kept = 0;
+    for (let k = k0; k <= k1; k++) {
+      const m = mag[k];
+      const mc = echo ? left(m, over * echo[k]) : m;
+      const was = Math.max(a1[k], a2[k], a3[k]);
+      if (m > was) raw += m - was;
+      const wasC = Math.max(b1[k], b2[k], b3[k]);
+      if (mc > wasC) kept += mc - wasC;
+      a3[k] = m;
+      b3[k] = mc;
+    }
+    lin[0] = a3;
+    lin[1] = a1;
+    lin[2] = a2;
+    lin[3] = b3;
+    lin[4] = b1;
+    lin[5] = b2;
+    return raw > 0 ? Math.min(1, kept / raw) : 1;
+  }
+
+  /**
+   * Each hop while a band plays: its spectrum in the two onset windows ECHO_SLACK ahead goes into the ring; how
+   * strong the microphone and the band are in each frequency band goes into the log; and what the band may bring
+   * to the short window, wherever within the slack its sound lies, is left in echoMax. False when no band is near.
+   */
+  private echoHop(): boolean {
+    // a band that has ended is let go once no window still to be analysed can reach back to it
+    this.bands = this.bands.filter((b) => b.live(this.total - 3 * CHORD_WIN - 2 * ECHO_SLACK, Infinity));
+    if (!this.bands.length) {
+      this.ringLive.fill(0);
+      this.tailO.fill(0);
+      this.tailF.fill(0);
+      this.echoLog = [];
+      return false;
+    }
+    const slot = this.ringAt;
+    this.ringAt = (slot + 1) % ECHO_RING;
+    const ahead = this.total + ECHO_SLACK;
+    const o = this.echoSpectrum(ahead - 1024, 1024, this.fftO, this.ringO[slot], false);
+    if (!o) this.ringO[slot].fill(0);
+    const f = this.echoSpectrum(ahead - NOTE_WIN, NOTE_WIN, this.fftN, this.ringF[slot], false);
+    if (!f) this.ringF[slot].fill(0);
+    this.ringLive[slot] = o || f ? 1 : 0;
+    if (!this.ringLive.some((x) => x)) return false;
+    // the log, before anything is taken off: the microphone now, the band ECHO_SLACK ahead
+    const map = bandOfBin(1024, this.sr);
+    const mic = new Float32Array(ECHO_BANDS.length);
+    const ref = new Float32Array(ECHO_BANDS.length);
+    const r = this.ringO[slot];
+    for (let k = 1; k < 513; k++) {
+      mic[map[k]] += this.magO[k];
+      ref[map[k]] += r[k];
+    }
+    this.echoLog.push({ mic, ref, at: this.total });
+    // eight seconds are enough to follow it by; a soundcheck keeps all of its own
+    const keep = Math.round((8 * this.sr) / HOP);
+    if (this.learnFrom < 0 && this.echoLog.length > keep) this.echoLog.splice(0, this.echoLog.length - keep);
+    this.followEcho();
+    this.ringMax(this.ringO, 513, 1024, this.tailO);
+    return true;
   }
 
   private hop(): void {
@@ -360,6 +811,7 @@ export class Listener {
   private detectOnset(rms: number, gate: number): void {
     this.copy(this.total - 1024, 1024, this.winO);
     this.fftO.magnitudes(this.winO, this.magO);
+    this.echoNow = this.bands.length > 0 && this.echoHop();
     const hz = this.sr / 1024;
     const k0 = Math.max(1, Math.round(80 / hz));
     const k1 = Math.min(512, Math.round(6000 / hz));
@@ -369,13 +821,17 @@ export class Listener {
     // steady noise and a rattling string fluctuate, but rarely exceed their own recent maximum by much
     const [p1, p2, p3] = this.prevO;
     const cur = p3;
+    // while a band plays: what it may bring is taken off each bin (echoMax, see echoHop)
+    const echo = this.echoNow ? this.echoMax : null;
+    const over = this.echoOver;
     let flux = 0;
     let last = 0;
     let band = 0;
     for (let k = k0 - 1; k <= k1 + 1; k++) {
-      const v = Math.log1p(c * this.magO[k]);
+      const m = echo ? left(this.magO[k], over * echo[k]) : this.magO[k];
+      const v = Math.log1p(c * m);
       if (k >= k0 && k <= k1) {
-        band += this.magO[k] * this.magO[k];
+        band += m * m;
         const before = Math.max(p1[k - 1], p1[k], p1[k + 1], p2[k - 1], p2[k], p2[k + 1], last, p3[k], p3[k + 1]);
         if (v > before) flux += v - before;
       }
@@ -386,6 +842,7 @@ export class Listener {
     this.prevO[2] = p2;
     this.prevO[1] = p1;
     flux /= k1 - k0 + 1;
+    const own = this.bands.length ? this.ownShare(this.magO, echo, this.linO, k0, k1) : 1;
     // How loud the playing is, for telling a note from leftovers. Measured in the analysed band only,
     // so that a metronome tick above it does not make quiet notes look like leftovers.
     this.ref = Math.max(0.58 * Math.sqrt(band), this.ref * 0.9997, 0.004);
@@ -396,10 +853,10 @@ export class Listener {
     this.flux.push(flux);
     if (this.flux.length > 14) this.flux.shift();
 
-    if (flux > threshold && rms > gate && this.total - this.lastOnset >= 0.07 * this.sr && this.total > 0.25 * this.sr) {
+    if (flux > threshold && own >= OWN_SHARE && rms > gate && this.total - this.lastOnset >= 0.07 * this.sr && this.total > 0.25 * this.sr) {
       // the attack entered somewhere in the last hop or just before it
       this.pending = null;
-      this.fire(this.total - HOP - 256, flux);
+      this.fire(this.total - HOP - 256, flux, own);
     } else {
       this.detectFine(rms, gate, c);
       // The long window may notice a sharp attack a moment before the short one does, but the short one
@@ -408,7 +865,7 @@ export class Listener {
       const p = this.pending;
       if (p && this.total - p.at >= 3 * HOP) {
         this.pending = null;
-        this.fire(p.at - 1280, p.flux);
+        this.fire(p.at - 1280, p.flux, p.own);
       }
     }
   }
@@ -423,8 +880,12 @@ export class Listener {
   private detectFine(rms: number, gate: number, c: number): void {
     this.copy(this.total - NOTE_WIN, NOTE_WIN, this.bufN);
     this.fftN.magnitudes(this.bufN, this.magF);
+    const echo = this.echoNow ? this.echoMax : null;
+    if (echo) this.ringMax(this.ringF, this.fineBins + 2, NOTE_WIN, this.tailF);
+    const over = this.echoOver;
     const hz = this.sr / NOTE_WIN;
     const k0 = Math.max(1, Math.round(80 / hz));
+    const own = this.bands.length ? this.ownShare(this.magF, echo, this.linF, k0, this.fineBins - 1) : 1;
     const [p1, p2, p3] = this.prevF;
     const cur = p3;
     let flux = 0;
@@ -432,7 +893,7 @@ export class Listener {
     let rising = 0;
     let inRun = false;
     for (let k = k0 - 1; k <= this.fineBins; k++) {
-      const v = Math.log1p(c * this.magF[k]);
+      const v = Math.log1p(c * (echo ? left(this.magF[k], over * echo[k]) : this.magF[k]));
       if (k >= k0 && k < this.fineBins) {
         const before = Math.max(p1[k - 1], p1[k], p1[k + 1], p2[k - 1], p2[k], p2[k + 1], last, p3[k], p3[k + 1]);
         const rise = v - before;
@@ -453,15 +914,19 @@ export class Listener {
     const median = sorted.length ? sorted[sorted.length >> 1] : 0;
     this.fluxF.push(flux);
     if (this.fluxF.length > 14) this.fluxF.shift();
-    if (!this.pending && flux > 2 * median + 0.02 && rising >= 3 && rms > gate && this.total - this.lastOnset >= 0.12 * this.sr && this.total > 0.3 * this.sr) {
-      this.pending = { at: this.total, flux: 3 * flux };
+    if (!this.pending && flux > 2 * median + 0.02 && own >= OWN_SHARE && rising >= 3 && rms > gate && this.total - this.lastOnset >= 0.12 * this.sr && this.total > 0.3 * this.sr) {
+      this.pending = { at: this.total, flux: 3 * flux, own };
     }
   }
 
   /** An onset was found: tell whoever listens and queue the closer looks at it. */
-  private fire(s0: number, flux: number): void {
+  private fire(s0: number, flux: number, own = 1): void {
+    // Nothing is known yet of how strongly the speakers reach the microphone (no speaker test, and the band has
+    // only just begun): an onset just where one of the band's notes arrives, or while the room swells with it, is
+    // taken for that note. After a second or two of the band it is known (followEcho).
+    if (this.bands.length && !this.coupling && !this.followed && this.bands.some((b) => b.begins(s0 - 0.12 * this.sr - ECHO_SLACK, s0 + ECHO_SLACK + 0.02 * this.sr))) return;
     this.lastOnset = this.total;
-    this.onOnset?.({ time: s0 / this.sr, strength: flux });
+    this.onOnset?.({ time: s0 / this.sr, strength: flux, ...(this.bands.length ? { own } : {}) });
     // A finger landing on the string or the pick touching it is heard a moment before the pluck itself.
     // Two onsets less than a tenth of a second apart are one attack: the firmer one is looked at.
     const earlier = this.noteJobs[this.noteJobs.length - 1];
@@ -516,8 +981,10 @@ export class Listener {
   private newEnergy(s0: number): void {
     this.copy(s0 + this.noteDelay, NOTE_WIN, this.bufN);
     this.fftN.magnitudes(this.bufN, this.magRaw);
+    this.cleanAt(s0 + this.noteDelay, NOTE_WIN, this.fftN, this.magRaw);
     this.copy(s0 - PRE_GAP - NOTE_WIN, NOTE_WIN, this.bufN);
     this.fftN.magnitudes(this.bufN, this.magB);
+    this.cleanAt(s0 - PRE_GAP - NOTE_WIN, NOTE_WIN, this.fftN, this.magB);
     for (let k = 0; k < this.magA.length; k++) this.magA[k] = Math.max(0, this.magRaw[k] - this.magB[k]);
   }
 
@@ -801,8 +1268,10 @@ export class Listener {
     if (this.died(s0, s0 + 1024 + CHORD_WIN, 0.01).silent) return;
     this.copy(s0 + 1024, CHORD_WIN, this.bufC);
     this.fftC.magnitudes(this.bufC, this.magCA);
+    this.cleanAt(s0 + 1024, CHORD_WIN, this.fftC, this.magCA);
     this.copy(s0 - PRE_GAP - CHORD_WIN, CHORD_WIN, this.bufC);
     this.fftC.magnitudes(this.bufC, this.magCB);
+    this.cleanAt(s0 - PRE_GAP - CHORD_WIN, CHORD_WIN, this.fftC, this.magCB);
     // What belongs to the strum is what got louder with it: strings that were plucked, also those that were
     // already sounding the same note (a note two chords share). What merely rings on from before, an open
     // string the new chord does not use, has not got louder and is left out.

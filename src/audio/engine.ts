@@ -6,9 +6,11 @@
  */
 import { Listener } from './listener';
 import { LAYERS, type BandHandle, type BandParts, type Layer, type LayerGains } from './band';
+import { BandEcho, ECHO_BANDS } from './echo';
 import { chime, click, strum, tone, voiceTone, type Articulation, type Chime } from './synth';
 import { CHORDS, chordNotes, OPEN_STRINGS, pianoChord } from '../music/theory';
 import { L } from '../core/i18n';
+import { store } from '../core/store';
 
 // All the channels of the input, averaged: an interface that ignores the request for one channel may bring
 // the instrument in on its second.
@@ -26,6 +28,8 @@ export interface EngineOptions {
 
 /** How long before a chord is struck on the practice piano the one before it is let go, in seconds. */
 const LIFT = 0.05;
+/** how long a room goes on ringing with a band after it has stopped, seconds: the listener allows for it so long */
+const ROOM_RING = 0.6;
 
 const reason = (err: unknown): string => (err instanceof Error ? err.message : String(err));
 
@@ -353,6 +357,15 @@ export class AudioEngine {
     return Math.min(0.3, (this.ctx.outputLatency || 0) + (this.ctx.baseLatency || 0) + (Number.isFinite(input) ? input : 0));
   }
 
+  /**
+   * Seconds from a sound being scheduled to its arriving back at the listener through the microphone: as measured
+   * (the settings' timing, or the speaker test), otherwise as far as the browser knows it.
+   */
+  speakerLatency(): number {
+    const measured = store.settings.latency;
+    return measured >= 0 ? measured : this.latencyEstimate();
+  }
+
   /** Schedules a metronome tick for a moment on the listener's clock. volume 0 schedules nothing. */
   tick(at: number, accent: boolean, volume: number, low = false): void {
     const ctx = this.ctx;
@@ -399,11 +412,17 @@ export class AudioEngine {
   /**
    * Plays a band (src/audio/band.ts) from a moment on the listener's clock, through the speakers only, each
    * layer at its own gain. With `loop` it repeats until stopped (the game's groove). Cancelled with the ticks.
+   *
+   * A band made for speakers ('speakers'), with the microphone on, is also told to the listener: what it plays,
+   * on the listener's clock, as late as sound takes from the speakers back to the microphone. The listener then
+   * takes it off what it hears (src/audio/echo.ts). Under headphones, and with the microphone off, it is not:
+   * there the microphone hears no band (the practice instrument never passes through the speakers).
    */
   playBand(at: number, parts: BandParts, gains: LayerGains, opts: { loop?: boolean; volume?: number } = {}): BandHandle {
     const ctx = this.ctx;
     const none: BandHandle = { setGain: () => undefined, stop: () => undefined };
     if (!ctx) return none;
+    const volume = opts.volume ?? 0.9;
     let when = at + (this.offset ?? ctx.currentTime - (this.listener?.time ?? 0));
     let skip = 0;
     if (when < ctx.currentTime) {
@@ -411,7 +430,7 @@ export class AudioEngine {
       when = ctx.currentTime;
     }
     const master = ctx.createGain();
-    master.gain.value = opts.volume ?? 0.9;
+    master.gain.value = volume;
     master.connect(ctx.destination);
     const nodes = new Map<Layer, { src: AudioBufferSourceNode; gain: GainNode }>();
     for (const layer of LAYERS) {
@@ -430,6 +449,18 @@ export class AudioEngine {
       this.ticks.add(src);
       nodes.set(layer, { src, gain });
     }
+    const l = this.listener;
+    let echo: BandEcho | null = null;
+    if (parts.mode === 'speakers' && this.micOn && l) {
+      echo = new BandEcho(parts, gains, volume, (at + this.speakerLatency()) * l.sr);
+      // how strongly the speakers reach the microphone, as the speaker test measured it on this computer
+      const learned = store.settings.bandCoupling;
+      if (learned.length === ECHO_BANDS.length) l.coupling = [...learned];
+      l.bands.push(echo);
+    }
+    /** now on the listener's clock, in samples */
+    const sample = (): number => this.now() * (l?.sr ?? ctx.sampleRate);
+    const sr = l?.sr ?? ctx.sampleRate;
     return {
       setGain: (layer, g, ramp = 0.4) => {
         const n = nodes.get(layer);
@@ -438,6 +469,7 @@ export class AudioEngine {
         n.gain.gain.cancelScheduledValues(t);
         n.gain.gain.setValueAtTime(n.gain.gain.value, t);
         n.gain.gain.linearRampToValueAtTime(Math.max(0, g), t + Math.max(0.01, ramp));
+        echo?.setGain(layer, Math.max(0, g), volume, sample(), Math.max(0.01, ramp) * sr);
       },
       stop: (fade = 0.3) => {
         const t = ctx.currentTime;
@@ -451,6 +483,7 @@ export class AudioEngine {
             // already ended
           }
         }
+        echo?.stop(sample(), Math.max(0.01, fade) * sr, ROOM_RING * sr);
       },
     };
   }
@@ -524,7 +557,7 @@ export class AudioEngine {
     src.start();
   }
 
-  /** Cancels every tick that has not sounded yet. */
+  /** Cancels every tick that has not sounded yet, and every band (the listener allows for the room's ringing on). */
   clearTicks(): void {
     for (const src of this.ticks) {
       try {
@@ -534,6 +567,8 @@ export class AudioEngine {
       }
     }
     this.ticks.clear();
+    const l = this.listener;
+    if (l) for (const b of l.bands) b.stop(this.now() * l.sr, 0, ROOM_RING * l.sr);
   }
 
   private model: AudioBufferSourceNode | null = null;

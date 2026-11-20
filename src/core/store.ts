@@ -56,6 +56,11 @@ export interface Settings {
   band: 'phones' | 'speakers' | 'click';
   /** how loud the band plays, 0..1 */
   bandVolume: number;
+  /**
+   * How strongly the speakers reach the microphone on this computer, in each frequency band the listener takes the
+   * band off in (src/audio/echo.ts, ECHO_BANDS): learned by the speaker test (the hearing check). Empty until then.
+   */
+  bandCoupling: number[];
   /** everything larger, for reading from further away: 1, 1.15 or 1.3 */
   uiScale: number;
   /** chord pictures and the fretboard mirrored, for a guitar held the other way round */
@@ -171,7 +176,7 @@ interface Saved {
 const KEY = 'noise-floor/v1';
 /** Where saved data that could not be read is kept aside, so that the next save does not wipe it out. */
 export const ASIDE_KEY = 'noise-floor/v1-unreadable';
-const DEFAULTS: Settings = { a4: 440, pianoA4: 440, buzz: 0.5, mic: true, deviceId: '', practiceInstrument: false, strumSelect: true, instrument: 'guitar', click: 0.5, clickSound: 'tick', chimes: 0.5, ring: 0.05, ringTypical: 0, smallShapes: true, mutePause: true, latency: -1, lang: '', voiceLow: 0, voiceHigh: 0, voiceTol: 50, weekGoal: 4, backing: false, band: 'speakers', bandVolume: 0.7, uiScale: 1, leftHanded: false, capo: 0, tuning: 'standard', autoTempo: true, notation: 'strip', noteNames: 'auto', voiceHelp: 0, recordTakes: true, lessonHowOff: {} };
+const DEFAULTS: Settings = { a4: 440, pianoA4: 440, buzz: 0.5, mic: true, deviceId: '', practiceInstrument: false, strumSelect: true, instrument: 'guitar', click: 0.5, clickSound: 'tick', chimes: 0.5, ring: 0.05, ringTypical: 0, smallShapes: true, mutePause: true, latency: -1, lang: '', voiceLow: 0, voiceHigh: 0, voiceTol: 50, weekGoal: 4, backing: false, band: 'speakers', bandVolume: 0.7, bandCoupling: [], uiScale: 1, leftHanded: false, capo: 0, tuning: 'standard', autoTempo: true, notation: 'strip', noteNames: 'auto', voiceHelp: 0, recordTakes: true, lessonHowOff: {} };
 
 /*
  * What is read back (from this browser, a backup or a progress file) is checked field by field before the app
@@ -287,6 +292,7 @@ const SETTINGS: { [K in keyof Settings]-?: Check<Settings[K]> } = {
   backing: bool,
   band: oneOf('phones', 'speakers', 'click'),
   bandVolume: within(0, 1),
+  bandCoupling: (v) => (Array.isArray(v) && v.length <= 32 && v.every((x) => typeof x === 'number' && Number.isFinite(x) && x >= 0 && x < 1e4) ? (v as number[]) : undefined),
   uiScale: within(1, 1.3),
   leftHanded: bool,
   capo: within(0, 12),
@@ -561,8 +567,9 @@ export class Store {
   /**
    * Replaces everything with the contents of a backup (or a progress file). Returns false when the text is not
    * one. A field of the wrong type is left out, not taken. What belongs to this computer stays as it is: its
-   * microphone, how late its speakers' sound arrives, the size of its type, and the index of its recordings
-   * (the sound of those is in this browser, and another computer's index would not fit it).
+   * microphone, how late its speakers' sound arrives and how strongly they reach the microphone, the size of its
+   * type, and the index of its recordings (the sound of those is in this browser, and another computer's index
+   * would not fit it).
    */
   restore(text: string): boolean {
     let raw: unknown;
@@ -572,10 +579,10 @@ export class Store {
       return false;
     }
     if (!isObj(raw) || raw.app !== KEY || !isObj(raw.skills)) return false;
-    const { latency, deviceId, uiScale } = this.settings;
+    const { latency, deviceId, uiScale, bandCoupling } = this.settings;
     const takes = this.takes;
     this.load(raw);
-    Object.assign(this.settings, { latency, deviceId, uiScale });
+    Object.assign(this.settings, { latency, deviceId, uiScale, bandCoupling });
     this.takes = takes;
     this.save();
     return true;

@@ -4,6 +4,7 @@
  * a browser that cannot record at 48 kHz; and where a recording begins.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { renderBand } from '../src/audio/band';
 import { AudioEngine } from '../src/audio/engine';
 
 class FakeTrack {
@@ -13,6 +14,9 @@ class FakeTrack {
   private on = new Map<string, Set<() => void>>();
   stop(): void {
     this.readyState = 'ended';
+  }
+  getSettings(): Record<string, unknown> {
+    return {};
   }
   addEventListener(type: string, f: () => void): void {
     if (!this.on.has(type)) this.on.set(type, new Set());
@@ -52,7 +56,10 @@ class FakeContext {
     return { offset: { value: 0 }, connect: () => undefined, start: () => undefined };
   }
   createGain() {
-    return { gain: { value: 0 }, connect: (n: unknown) => n };
+    return { gain: { value: 0, cancelScheduledValues: () => undefined, setValueAtTime: () => undefined, linearRampToValueAtTime: () => undefined }, connect: (n: unknown) => n };
+  }
+  createBufferSource() {
+    return { buffer: null, loop: false, onended: null, connect: (n: unknown) => n, start: () => undefined, stop: () => undefined };
   }
   createMediaStreamSource() {
     if (deviceRate && this.sampleRate !== deviceRate) throw new Error('Connecting AudioNodes from AudioContexts with different sample-rate is currently not supported.');
@@ -268,5 +275,33 @@ describe('recording what the listener is given', () => {
     expect(from).toBeCloseTo((207 * 512) / sr, 6);
     expect(Math.round(samples[0] * 1e6)).toBe(207 * 512);
     expect(samples.length).toBe((300 - 207) * 512);
+  });
+});
+
+describe('the band through the engine', () => {
+  const band = (mode: 'phones' | 'speakers') =>
+    renderBand({ chords: [{ u: 0, id: 'G' }], clicks: [0, 2, 4, 6].map((u, k) => ({ u, accent: k === 0 })), units: 8, unit: 0.3, sr: 48000, a4: 440, mode });
+
+  it('tells the listener what a band for speakers plays, with the microphone on, and lets go of it when it stops', async () => {
+    const e = new AudioEngine();
+    await e.start({ mic: true });
+    const h = e.playBand(1, band('speakers'), { drums: 1, bass: 1, keys: 0.5, lead: 0 }, { volume: 0.8 });
+    expect(e.listener!.bands.length).toBe(1);
+    const echo = e.listener!.bands[0];
+    // the band arrives a little after it is scheduled: never before
+    expect(echo.start).toBeGreaterThanOrEqual(1 * e.listener!.sr);
+    h.stop(0.3);
+    expect(echo.until).toBeLessThan(Infinity);
+  });
+
+  it('tells the listener nothing of a band for headphones, nor with the microphone off: the microphone hears none', async () => {
+    const e = new AudioEngine();
+    await e.start({ mic: true });
+    e.playBand(1, band('phones'), { drums: 1, bass: 1, keys: 1, lead: 1 });
+    expect(e.listener!.bands.length).toBe(0);
+    const off = new AudioEngine();
+    await off.start({ mic: false });
+    off.playBand(1, band('speakers'), { drums: 1, bass: 1, keys: 1, lead: 1 });
+    expect(off.listener!.bands.length).toBe(0);
   });
 });
