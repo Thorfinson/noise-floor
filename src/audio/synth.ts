@@ -22,7 +22,8 @@ export interface ToneOpts {
   cents?: number;
 }
 
-function mulberry32(seed: number): () => number {
+/** A small, fast generator of random numbers that gives the same ones for the same seed. */
+export function mulberry32(seed: number): () => number {
   let a = seed >>> 0;
   return () => {
     a = (a + 0x6d2b79f5) >>> 0;

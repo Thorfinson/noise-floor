@@ -5,7 +5,8 @@
  * voice (src/core/checkrun.ts). At the end: how much was heard right, how loud the instrument and the room reach
  * the microphone, how far out of tune it is, and what to change. The check can be saved as a sound file with a
  * report, and a recording made elsewhere (a phone, another microphone) can be checked instead of playing live.
- * Nothing is sent anywhere.
+ * Nothing is sent anywhere. Its second step, the speaker test (#/check/band, src/screens/bandtest.ts), finds out
+ * whether the band can play through the speakers while the app listens.
  */
 import { engine } from '../audio/engine';
 import { encodeWav } from '../audio/wav';
@@ -16,10 +17,12 @@ import { chordName, noteName, OPEN_STRINGS } from '../music/theory';
 import { guitarA4 } from '../music/tuning';
 import { $, esc, hear, icon, keys, pianoEars, voiceEars, type Screen } from '../ui/dom';
 import { setSimTarget } from '../ui/practice';
+import { bandTest } from './bandtest';
 import { frame } from './frame';
 import { voiceRange } from './sing';
 
-export const hearingCheck: Screen = (root) => {
+export const hearingCheck: Screen = (root, params) => {
+  if (params?.[0] === 'band') return bandTest(root, params.slice(1));
   const inst = store.settings.instrument;
   const piano = inst === 'piano';
   const voice = inst === 'voice';
@@ -46,7 +49,7 @@ export const hearingCheck: Screen = (root) => {
     `<div class="head"><div class="say"><p class="eyebrow" id="eb"></p><h1 id="h1" aria-live="polite"></h1><p class="sub" id="sub"></p></div></div>
      <ol class="checklist" id="list"></ol>
      <div class="foot"><p class="fbk info" id="fbk"></p><p class="legend">${L('Play as you usually do, where you usually sit.', 'Spiel, wie du sonst spielst, dort, wo du sonst sitzt.')}</p></div>`,
-    `<div class="grp"><button class="btn primary" id="go"><span>${L('Start the check', 'Check starten')}</span> <kbd>${L('Space', 'Leertaste')}</kbd></button><button class="btn quiet" id="skip" hidden>${L('Not this one', 'Diesen nicht')} <kbd>→</kbd></button><button class="btn quiet" id="save" hidden>${L('Save the check as files', 'Check als Dateien speichern')}</button><button class="btn quiet" id="fromfile">${L('Check a recording', 'Eine Aufnahme prüfen')}</button><input type="file" id="file" accept="audio/*,.wav,.mp3,.m4a,.ogg,.webm" hidden></div>
+    `<div class="grp"><button class="btn primary" id="go"><span>${L('Start the check', 'Check starten')}</span> <kbd>${L('Space', 'Leertaste')}</kbd></button><button class="btn quiet" id="skip" hidden>${L('Not this one', 'Diesen nicht')} <kbd>→</kbd></button><button class="btn quiet" id="save" hidden>${L('Save the check as files', 'Check als Dateien speichern')}</button><button class="btn quiet" id="fromfile">${L('Check a recording', 'Eine Aufnahme prüfen')}</button><input type="file" id="file" accept="audio/*,.wav,.mp3,.m4a,.ogg,.webm" hidden>${inst === 'voice' ? '' : `<a class="btn quiet" id="bandtest" href="#/check/band">${L('Band through speakers', 'Band über Lautsprecher')}</a>`}</div>
      <p class="auto">${L('About two minutes. A recording made elsewhere, of the same things in the same order, can be checked too. Nothing is sent anywhere.', 'Etwa zwei Minuten. Eine anderswo gemachte Aufnahme derselben Dinge in derselben Reihenfolge lässt sich auch prüfen. Nichts wird irgendwohin geschickt.')}</p>`,
     undefined,
     ['#/', L('Home', 'Start')],

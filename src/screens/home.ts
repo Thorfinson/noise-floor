@@ -381,6 +381,16 @@ export const settings: Screen = (root) => {
   const check = (id: string, on: boolean): string => `<input id="${id}" type="checkbox" ${on ? 'checked' : ''}>`;
   // a value of the settings in an attribute: they may come from a backup file, so escaped like any text
   const val = (v: number | string): string => esc(String(v));
+  // what the speaker test found last time, if it ran
+  const tested = store.progress['bandtest'];
+  const verdict = store.progress['bandtest:verdict'];
+  const bandNote = tested
+    ? verdict === 0
+      ? L(`Tested ${dayMonth(tested)}: the band can play through these speakers.`, `Getestet am ${dayMonth(tested)}: Die Band kann über diese Lautsprecher spielen.`)
+      : verdict === 1
+        ? L(`Tested ${dayMonth(tested)}: through these speakers the app took the band for your playing.`, `Getestet am ${dayMonth(tested)}: Über diese Lautsprecher hielt die App die Band für dein Spiel.`)
+        : L(`Tested ${dayMonth(tested)}: the microphone did not hear the band.`, `Getestet am ${dayMonth(tested)}: Das Mikrofon hat die Band nicht gehört.`)
+    : L('Forty seconds: the band plays through your speakers, and the app checks that it still hears only you.', 'Vierzig Sekunden: Die Band spielt über deine Lautsprecher, und die App prüft, ob sie weiterhin nur dich hört.');
   const INDEX: [string, string][] = [
     ['lang', L('Language', 'Sprache')],
     ['seeing', L('Seeing it', 'Ansicht')],
@@ -413,6 +423,17 @@ export const settings: Screen = (root) => {
       ${field('click', L('Metronome loudness', 'Lautstärke des Metronoms'), L('For playing along with the click. All the way left: silent, the marker still moves.', 'Zum Mitspielen mit dem Klick. Ganz links: stumm, die Markierung bewegt sich trotzdem.'), `<input id="click" type="range" min="0" max="1" step="0.05" value="${val(s.click)}">`)}
       ${field('chimes', L('Sounds of the games', 'Klänge der Spiele'), L('Small glassy chimes for a hit, a cleared phrase, a lit stone. They are pitched so high that the listening is not disturbed by them. All the way left: silent.', 'Kleine gläserne Klänge für einen Treffer, eine geschaffte Phrase, einen leuchtenden Stein. Sie liegen so hoch, dass sie das Zuhören nicht stören. Ganz links: stumm.'), `<input id="chimes" type="range" min="0" max="1" step="0.05" value="${val(s.chimes)}">`)}
       ${field('csound', L('Metronome sound', 'Klang des Metronoms'), L('The high tick does not disturb the listening when the microphone hears it from the speakers. The low click is easier on the ear, but only with headphones.', 'Das hohe Ticken stört das Zuhören nicht, wenn das Mikrofon es aus den Lautsprechern hört. Der tiefe Klick ist angenehmer fürs Ohr, aber nur mit Kopfhörern.'), `<select id="csound"><option value="tick"${s.clickSound === 'tick' ? ' selected' : ''}>${L('High tick (for speakers)', 'Hohes Ticken (für Lautsprecher)')}</option><option value="click"${s.clickSound === 'click' ? ' selected' : ''}>${L('Low click (headphones only)', 'Tiefer Klick (nur mit Kopfhörern)')}</option></select>`)}
+      ${field('band', L('The band', 'Die Band'), L('What plays along with you. The full band needs headphones: through speakers the microphone would take it for your playing. The band for speakers plays around what the app listens for.', 'Was mit dir spielt. Die volle Band braucht Kopfhörer: Über Lautsprecher würde das Mikrofon sie für dein Spiel halten. Die Band für Lautsprecher spielt um das herum, worauf die App hört.'), `<select id="band">${(
+        [
+          ['phones', L('Full band (headphones)', 'Volle Band (Kopfhörer)')],
+          ['speakers', L('Band for speakers', 'Band für Lautsprecher')],
+          ['click', L('Click only', 'Nur Klick')],
+        ] as const
+      )
+        .map(([v, n]) => `<option value="${v}"${s.band === v ? ' selected' : ''}>${n}</option>`)
+        .join('')}</select>`)}
+      ${field('bandvol', L('Loudness of the band', 'Lautstärke der Band'), L('All the way left: silent, the click goes on.', 'Ganz links: stumm, der Klick läuft weiter.'), `<input id="bandvol" type="range" min="0" max="1" step="0.05" value="${val(s.bandVolume)}">`)}
+      <div class="field"><div><b>${L('Band through speakers', 'Band über Lautsprecher')}</b><small id="bandmsg">${bandNote}</small></div><div class="row"><a class="btn" id="bandtest" href="#/check/band">${L('Test the speakers', 'Lautsprecher testen')}</a></div></div>
       ${field('small', L('Small shapes for barre chords', 'Kleine Griffe für Barré-Akkorde'), L('Songs and runs show F♯m and Bm on four strings until the full barre has rung clean in the chord check.', 'Songs und Runden zeigen F♯m und Bm auf vier Saiten, bis das volle Barré im Akkord-Check sauber geklungen hat.'), check('small', s.smallShapes))}
       ${field('mute', L('Pause a run by muting the strings', 'Eine Runde durch Abdämpfen pausieren'), L('Hit the muted strings twice in a row and then stop: that pauses a Noise Floor run. The same again goes on.', 'Schlag die abgedämpften Saiten zweimal hintereinander an und hör dann auf: Das pausiert eine Noise-Floor-Runde. Dasselbe noch einmal, und es geht weiter.'), check('mute', s.mutePause))}
       ${field('strum', L('Choose menu cards from the instrument', 'Menükarten mit dem Instrument wählen'), L('Strum Em, Am or C, or play C, D or E on the piano, for the first, second or third card. With the voice the number keys choose.', 'Schlag Em, Am oder C an oder spiel C, D oder E am Klavier, für die erste, zweite oder dritte Karte. Bei der Stimme wählen die Zifferntasten.'), check('strum', s.strumSelect))}
@@ -479,6 +500,12 @@ export const settings: Screen = (root) => {
     applyScale();
   };
   bind('click', (el) => (s.click = Number(el.value)));
+  bind('bandvol', (el) => (s.bandVolume = Number(el.value)));
+  $<HTMLSelectElement>('#band', root).onchange = (e) => {
+    const v = (e.target as HTMLSelectElement).value;
+    s.band = v === 'phones' || v === 'click' ? v : 'speakers';
+    store.save();
+  };
   bind('chimes', (el) => {
     s.chimes = Number(el.value);
     engine.chime('clear', s.chimes);
