@@ -49,6 +49,13 @@ export interface Settings {
   weekGoal: number;
   /** a soft bass and chords under playing along with the click, for headphones: the microphone must not hear it */
   backing: boolean;
+  /**
+   * The band under playing along (src/audio/band.ts): 'phones' the full band, for headphones; 'speakers' a band
+   * arranged around what the microphone listens for, safe through speakers; 'click' no band, the click alone.
+   */
+  band: 'phones' | 'speakers' | 'click';
+  /** how loud the band plays, 0..1 */
+  bandVolume: number;
   /** everything larger, for reading from further away: 1, 1.15 or 1.3 */
   uiScale: number;
   /** chord pictures and the fretboard mirrored, for a guitar held the other way round */
@@ -164,7 +171,7 @@ interface Saved {
 const KEY = 'noise-floor/v1';
 /** Where saved data that could not be read is kept aside, so that the next save does not wipe it out. */
 export const ASIDE_KEY = 'noise-floor/v1-unreadable';
-const DEFAULTS: Settings = { a4: 440, pianoA4: 440, buzz: 0.5, mic: true, deviceId: '', practiceInstrument: false, strumSelect: true, instrument: 'guitar', click: 0.5, clickSound: 'tick', chimes: 0.5, ring: 0.05, ringTypical: 0, smallShapes: true, mutePause: true, latency: -1, lang: '', voiceLow: 0, voiceHigh: 0, voiceTol: 50, weekGoal: 4, backing: false, uiScale: 1, leftHanded: false, capo: 0, tuning: 'standard', autoTempo: true, notation: 'strip', noteNames: 'auto', voiceHelp: 0, recordTakes: true, lessonHowOff: {} };
+const DEFAULTS: Settings = { a4: 440, pianoA4: 440, buzz: 0.5, mic: true, deviceId: '', practiceInstrument: false, strumSelect: true, instrument: 'guitar', click: 0.5, clickSound: 'tick', chimes: 0.5, ring: 0.05, ringTypical: 0, smallShapes: true, mutePause: true, latency: -1, lang: '', voiceLow: 0, voiceHigh: 0, voiceTol: 50, weekGoal: 4, backing: false, band: 'speakers', bandVolume: 0.7, uiScale: 1, leftHanded: false, capo: 0, tuning: 'standard', autoTempo: true, notation: 'strip', noteNames: 'auto', voiceHelp: 0, recordTakes: true, lessonHowOff: {} };
 
 /*
  * What is read back (from this browser, a backup or a progress file) is checked field by field before the app
@@ -278,6 +285,8 @@ const SETTINGS: { [K in keyof Settings]-?: Check<Settings[K]> } = {
   voiceTol: within(1, 200),
   weekGoal: within(1, 7),
   backing: bool,
+  band: oneOf('phones', 'speakers', 'click'),
+  bandVolume: within(0, 1),
   uiScale: within(1, 1.3),
   leftHanded: bool,
   capo: within(0, 12),
